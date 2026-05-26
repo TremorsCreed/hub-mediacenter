@@ -28,6 +28,7 @@ class HubService : Service() {
         const val PREFS = "hub_agent"
         const val PREF_HUB_URL = "hub_url"
         const val PREF_DEVICE_NAME = "device_name"
+        const val PREF_DEVICE_ID = "device_id"
         const val DEFAULT_HUB_PORT = "8020"
 
         var statusCallback: ((String) -> Unit)? = null
@@ -52,8 +53,12 @@ class HubService : Service() {
     private val hubConfig = AtomicReference<HubConfig?>(null)
 
     private val deviceId by lazy {
-        Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
-            ?: Build.SERIAL.ifEmpty { "device-${System.currentTimeMillis()}" }
+        val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs.getString(PREF_DEVICE_ID, null) ?: run {
+            val id = java.util.UUID.randomUUID().toString().replace("-", "").take(16)
+            prefs.edit().putString(PREF_DEVICE_ID, id).apply()
+            id
+        }
     }
 
     private fun prefs() = getSharedPreferences(PREFS, Context.MODE_PRIVATE)

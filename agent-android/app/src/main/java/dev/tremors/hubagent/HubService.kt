@@ -164,7 +164,7 @@ class HubService : Service() {
     }
 
     private fun handlePlay(json: JSONObject) {
-        val cmd = PlayCommand.fromJson(json)
+        val cmd = PlayCommand.fromJson(json, hubConfig.get())
         Log.i(TAG, "Play: ${cmd.title} via ${cmd.app}")
         updateNotification("Playing: ${cmd.title}")
 

@@ -10,6 +10,7 @@ const ConfigSchema = z.object({
   xtream_user: z.string().default(''),
   xtream_pass: z.string().default(''),
   xtream_ext: z.string().default('ts'),
+  plex_server_id: z.string().default(''),
   app_mappings: z.record(z.string()).default({})
 })
 
@@ -28,18 +29,19 @@ router.put('/', async (req, res) => {
   const parsed = ConfigSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
 
-  const { xtream_server, xtream_user, xtream_pass, xtream_ext, app_mappings } = parsed.data
+  const { xtream_server, xtream_user, xtream_pass, xtream_ext, plex_server_id, app_mappings } = parsed.data
   await db.execute({
-    sql: `INSERT INTO device_config (device_id, xtream_server, xtream_user, xtream_pass, xtream_ext, app_mappings, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+    sql: `INSERT INTO device_config (device_id, xtream_server, xtream_user, xtream_pass, xtream_ext, plex_server_id, app_mappings, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(device_id) DO UPDATE SET
             xtream_server = excluded.xtream_server,
             xtream_user = excluded.xtream_user,
             xtream_pass = excluded.xtream_pass,
             xtream_ext = excluded.xtream_ext,
+            plex_server_id = excluded.plex_server_id,
             app_mappings = excluded.app_mappings,
             updated_at = excluded.updated_at`,
-    args: [id, xtream_server, xtream_user, xtream_pass, xtream_ext, JSON.stringify(app_mappings), Date.now()]
+    args: [id, xtream_server, xtream_user, xtream_pass, xtream_ext, plex_server_id, JSON.stringify(app_mappings), Date.now()]
   })
 
   // Push config to agent if connected
@@ -47,7 +49,7 @@ router.put('/', async (req, res) => {
   if (agent?.ws.readyState === 1) {
     agent.ws.send(JSON.stringify({
       type: 'config',
-      xtream_server, xtream_user, xtream_pass, xtream_ext, app_mappings
+      xtream_server, xtream_user, xtream_pass, xtream_ext, plex_server_id, app_mappings
     }))
   }
 

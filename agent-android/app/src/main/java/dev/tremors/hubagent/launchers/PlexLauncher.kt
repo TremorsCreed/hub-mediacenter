@@ -38,13 +38,17 @@ class PlexLauncher : BaseLauncher {
         // Plex deep link: opens specific media in the Plex app
         // Format: plex://play?contentKey=/library/metadata/{id}
         return try {
-            val uri = Uri.parse("plex://play?contentKey=/library/metadata/$plexId")
+            val uri = if (cmd.plexServerId.isNullOrEmpty()) {
+                Uri.parse("plex://play?contentKey=/library/metadata/$plexId")
+            } else {
+                Uri.parse("plex://server/${cmd.plexServerId}/com.plexapp.plugins.library/library/metadata/$plexId")
+            }
             val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                 setPackage(PKG)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             ctx.startActivity(intent)
-            Log.i(TAG, "Launched Plex for contentKey /library/metadata/$plexId")
+            Log.i(TAG, "Launched Plex: $uri")
             LaunchResult.Success
         } catch (e: ActivityNotFoundException) {
             Log.w(TAG, "Plex deep link failed, falling back to home: ${e.message}")

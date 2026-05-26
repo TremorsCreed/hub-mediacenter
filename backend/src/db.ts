@@ -65,6 +65,7 @@ export async function initDb() {
       xtream_user TEXT NOT NULL DEFAULT '',
       xtream_pass TEXT NOT NULL DEFAULT '',
       xtream_ext TEXT NOT NULL DEFAULT 'ts',
+      plex_server_id TEXT NOT NULL DEFAULT '',
       app_mappings TEXT NOT NULL DEFAULT '{}',
       updated_at INTEGER NOT NULL DEFAULT 0
     );

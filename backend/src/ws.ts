@@ -67,6 +67,7 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
           xtream_user: cfg.xtream_user,
           xtream_pass: cfg.xtream_pass,
           xtream_ext: cfg.xtream_ext,
+          plex_server_id: cfg.plex_server_id,
           app_mappings: JSON.parse(cfg.app_mappings as string)
         }))
       }

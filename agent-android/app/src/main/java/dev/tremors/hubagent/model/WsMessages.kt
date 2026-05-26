@@ -22,15 +22,17 @@ data class PlayCommand(
     val app: String,
     val title: String,
     val plexId: String?,
+    val plexServerId: String?,
     val tiviMateChannel: String?,
     val requester: String
 ) {
     companion object {
-        fun fromJson(json: JSONObject) = PlayCommand(
+        fun fromJson(json: JSONObject, config: HubConfig? = null) = PlayCommand(
             catalogId = json.optString("catalog_id"),
             app = json.optString("app"),
             title = json.optString("title"),
             plexId = json.optString("plex_id").ifEmpty { null },
+            plexServerId = config?.plexServerId?.ifEmpty { null },
             tiviMateChannel = json.optString("tivimate_channel").ifEmpty { null },
             requester = json.optString("requester", "unknown")
         )
@@ -65,6 +67,7 @@ data class HubConfig(
     val xtreamUser: String,
     val xtreamPass: String,
     val xtreamExt: String,
+    val plexServerId: String,
     val appMappings: Map<String, String>
 ) {
     companion object {
@@ -73,6 +76,7 @@ data class HubConfig(
             xtreamUser = json.optString("xtream_user"),
             xtreamPass = json.optString("xtream_pass"),
             xtreamExt = json.optString("xtream_ext", "ts"),
+            plexServerId = json.optString("plex_server_id"),
             appMappings = json.optJSONObject("app_mappings")?.let { obj ->
                 obj.keys().asSequence().associateWith { obj.getString(it) }
             } ?: emptyMap()

@@ -56,6 +56,7 @@ export interface DeviceConfig {
   xtream_user: string
   xtream_pass: string
   xtream_ext: string
+  plex_server_id: string
   app_mappings: Record<string, string>
 }
 

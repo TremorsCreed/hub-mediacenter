@@ -4,7 +4,7 @@ import { Wifi, WifiOff, Trash2, ChevronDown, ChevronUp, Save } from 'lucide-reac
 
 const CONTENT_TYPES = ['movie', 'episode', 'live_channel', 'vod', 'music']
 const APP_NAMES: Record<string, string> = { iptv: 'IPTV (Xtream)', plex: 'Plex', kodi: 'Kodi' }
-const DEFAULT_CONFIG: DeviceConfig = { xtream_server: '', xtream_user: '', xtream_pass: '', xtream_ext: 'ts', app_mappings: {} }
+const DEFAULT_CONFIG: DeviceConfig = { xtream_server: '', xtream_user: '', xtream_pass: '', xtream_ext: 'ts', plex_server_id: '', app_mappings: {} }
 
 function ConfigPanel({ deviceId, capabilities }: { deviceId: string; capabilities: { app: string }[] }) {
   const [cfg, setCfg] = useState<DeviceConfig>(DEFAULT_CONFIG)
@@ -83,7 +83,18 @@ function ConfigPanel({ deviceId, capabilities }: { deviceId: string; capabilitie
       </div>
 
       <div>
-          <div className="text-xs text-zinc-400 font-medium mb-2 uppercase tracking-wide">App par type de contenu</div>
+          <div className="text-xs text-zinc-400 font-medium mb-2 uppercase tracking-wide">Plex</div>
+        <div className="mb-4">
+          <label className="text-xs text-zinc-500 block mb-1">Machine Identifier</label>
+          <input
+            className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500 font-mono"
+            placeholder="728a8f0043d36a117c9b21d3998a4a6aa2faee74"
+            value={cfg.plex_server_id}
+            onChange={e => set('plex_server_id', e.target.value)}
+          />
+        </div>
+
+        <div className="text-xs text-zinc-400 font-medium mb-2 uppercase tracking-wide">App par type de contenu</div>
           <div className="grid grid-cols-2 gap-2">
             {CONTENT_TYPES.map(type => (
               <div key={type} className="flex items-center gap-2">

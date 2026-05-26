@@ -2,7 +2,7 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#111118">
+    android:background="#0d0d14">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -14,96 +14,106 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Hub MediaCenter — Agent"
-            android:textSize="22sp"
+            android:textSize="24sp"
+            android:textStyle="bold"
             android:textColor="#ffffff"
-            android:layout_marginBottom="32dp" />
+            android:layout_marginBottom="36dp" />
 
         <!-- Hub connection -->
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="HUB" android:textColor="#7777aa" android:textSize="11sp"
-            android:letterSpacing="0.15" android:layout_marginBottom="8dp"/>
+            android:text="HUB" android:textColor="#aaaadd" android:textSize="12sp"
+            android:textStyle="bold" android:letterSpacing="0.15" android:layout_marginBottom="10dp"/>
 
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="WebSocket URL" android:textColor="#888888" android:textSize="13sp"/>
+            android:text="WebSocket URL" android:textColor="#cccccc" android:textSize="14sp"
+            android:layout_marginBottom="4dp"/>
         <EditText android:id="@+id/etHubUrl"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:textColor="#ffffff" android:background="#1e1e2e" android:padding="12dp"
-            android:inputType="textUri" android:textSize="15sp" android:layout_marginBottom="12dp"
-            android:hint="ws://192.168.1.15:8020" android:textColorHint="#444455"/>
+            android:textColor="#ffffff" android:background="#1e1e30" android:padding="14dp"
+            android:inputType="textUri" android:textSize="16sp" android:layout_marginBottom="16dp"
+            android:hint="ws://192.168.1.15:8020" android:textColorHint="#666688"/>
 
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Device Name" android:textColor="#888888" android:textSize="13sp"/>
+            android:text="Device Name" android:textColor="#cccccc" android:textSize="14sp"
+            android:layout_marginBottom="4dp"/>
         <EditText android:id="@+id/etDeviceName"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:textColor="#ffffff" android:background="#1e1e2e" android:padding="12dp"
-            android:inputType="text" android:textSize="15sp" android:layout_marginBottom="28dp"
-            android:hint="Shield Salon" android:textColorHint="#444455"/>
+            android:textColor="#ffffff" android:background="#1e1e30" android:padding="14dp"
+            android:inputType="text" android:textSize="16sp" android:layout_marginBottom="32dp"
+            android:hint="Shield Salon" android:textColorHint="#666688"/>
 
         <!-- Xtream Codes / Elon IPTV -->
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="XTREAM CODES / IPTV" android:textColor="#7777aa" android:textSize="11sp"
-            android:letterSpacing="0.15" android:layout_marginBottom="8dp"/>
+            android:text="XTREAM CODES / IPTV" android:textColor="#aaaadd" android:textSize="12sp"
+            android:textStyle="bold" android:letterSpacing="0.15" android:layout_marginBottom="10dp"/>
 
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Server URL" android:textColor="#888888" android:textSize="13sp"/>
+            android:text="Server URL" android:textColor="#cccccc" android:textSize="14sp"
+            android:layout_marginBottom="4dp"/>
         <EditText android:id="@+id/etXtreamServer"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:textColor="#ffffff" android:background="#1e1e2e" android:padding="12dp"
-            android:inputType="textUri" android:textSize="15sp" android:layout_marginBottom="12dp"
-            android:hint="http://elon-iptv.com:8080" android:textColorHint="#444455"/>
+            android:textColor="#ffffff" android:background="#1e1e30" android:padding="14dp"
+            android:inputType="textUri" android:textSize="16sp" android:layout_marginBottom="16dp"
+            android:hint="http://elon-iptv.com:8080" android:textColorHint="#666688"/>
 
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:layout_marginBottom="12dp">
+            android:orientation="horizontal" android:layout_marginBottom="16dp">
             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:orientation="vertical" android:layout_marginEnd="8dp">
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Username" android:textColor="#888888" android:textSize="13sp"/>
+                    android:text="Username" android:textColor="#cccccc" android:textSize="14sp"
+                    android:layout_marginBottom="4dp"/>
                 <EditText android:id="@+id/etXtreamUser"
                     android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:textColor="#ffffff" android:background="#1e1e2e" android:padding="12dp"
-                    android:inputType="text" android:textSize="15sp"
-                    android:hint="user" android:textColorHint="#444455"/>
+                    android:textColor="#ffffff" android:background="#1e1e30" android:padding="14dp"
+                    android:inputType="text" android:textSize="16sp"
+                    android:hint="user" android:textColorHint="#666688"/>
             </LinearLayout>
             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:orientation="vertical">
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Password" android:textColor="#888888" android:textSize="13sp"/>
+                    android:text="Password" android:textColor="#cccccc" android:textSize="14sp"
+                    android:layout_marginBottom="4dp"/>
                 <EditText android:id="@+id/etXtreamPass"
                     android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:textColor="#ffffff" android:background="#1e1e2e" android:padding="12dp"
-                    android:inputType="textPassword" android:textSize="15sp"
-                    android:hint="password" android:textColorHint="#444455"/>
+                    android:textColor="#ffffff" android:background="#1e1e30" android:padding="14dp"
+                    android:inputType="textPassword" android:textSize="16sp"
+                    android:hint="password" android:textColorHint="#666688"/>
             </LinearLayout>
         </LinearLayout>
 
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Stream extension (ts or m3u8)" android:textColor="#888888" android:textSize="13sp"/>
+            android:text="Stream extension (ts ou m3u8)" android:textColor="#cccccc" android:textSize="14sp"
+            android:layout_marginBottom="4dp"/>
         <EditText android:id="@+id/etXtreamExt"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:textColor="#ffffff" android:background="#1e1e2e" android:padding="12dp"
-            android:inputType="text" android:textSize="15sp" android:layout_marginBottom="32dp"
-            android:hint="ts" android:textColorHint="#444455"/>
+            android:textColor="#ffffff" android:background="#1e1e30" android:padding="14dp"
+            android:inputType="text" android:textSize="16sp" android:layout_marginBottom="36dp"
+            android:hint="ts" android:textColorHint="#666688"/>
 
         <!-- Buttons -->
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:layout_marginBottom="20dp">
+            android:orientation="horizontal" android:layout_marginBottom="24dp">
             <Button android:id="@+id/btnSave"
-                android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                android:text="Save" android:backgroundTint="#2a2a4e" android:textColor="#ffffff"
+                android:layout_width="0dp" android:layout_height="56dp" android:layout_weight="1"
+                android:text="SAVE" android:backgroundTint="#3a3a6e" android:textColor="#ffffff"
+                android:textSize="15sp" android:textStyle="bold"
                 android:layout_marginEnd="8dp"/>
             <Button android:id="@+id/btnStart"
-                android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                android:text="Start" android:backgroundTint="#1a5e2a" android:textColor="#ffffff"
+                android:layout_width="0dp" android:layout_height="56dp" android:layout_weight="1"
+                android:text="START" android:backgroundTint="#1a7a30" android:textColor="#ffffff"
+                android:textSize="15sp" android:textStyle="bold"
                 android:layout_marginEnd="8dp"/>
             <Button android:id="@+id/btnStop"
-                android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                android:text="Stop" android:backgroundTint="#5e1a1a" android:textColor="#ffffff"/>
+                android:layout_width="0dp" android:layout_height="56dp" android:layout_weight="1"
+                android:text="STOP" android:backgroundTint="#7a1a1a" android:textColor="#ffffff"
+                android:textSize="15sp" android:textStyle="bold"/>
         </LinearLayout>
 
         <TextView android:id="@+id/tvStatus"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:textColor="#888888" android:textSize="13sp" android:padding="12dp"
-            android:background="#1e1e2e" android:text="Agent stopped"/>
+            android:textColor="#dddddd" android:textSize="14sp" android:padding="16dp"
+            android:background="#1e1e30" android:text="Agent arrêté"/>
 
     </LinearLayout>
 </ScrollView>

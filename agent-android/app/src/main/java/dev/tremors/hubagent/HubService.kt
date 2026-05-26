@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import dev.tremors.hubagent.launchers.*
 import dev.tremors.hubagent.model.*
+import java.util.concurrent.atomic.AtomicReference
 import okhttp3.*
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
@@ -27,10 +28,6 @@ class HubService : Service() {
         const val PREFS = "hub_agent"
         const val PREF_HUB_URL = "hub_url"
         const val PREF_DEVICE_NAME = "device_name"
-        const val PREF_XTREAM_SERVER = "xtream_server"
-        const val PREF_XTREAM_USER = "xtream_user"
-        const val PREF_XTREAM_PASS = "xtream_pass"
-        const val PREF_XTREAM_EXT = "xtream_ext"
         const val DEFAULT_HUB_PORT = "8020"
 
         var statusCallback: ((String) -> Unit)? = null
@@ -52,6 +49,7 @@ class HubService : Service() {
     private var webSocket: WebSocket? = null
     private var reconnectAttempts = 0
     private val maxReconnectDelay = 60_000L
+    private val hubConfig = AtomicReference<HubConfig?>(null)
 
     private val deviceId by lazy {
         Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
@@ -67,13 +65,13 @@ class HubService : Service() {
         prefs().getString(PREF_HUB_URL, "ws://192.168.1.15:$DEFAULT_HUB_PORT")!!
 
     private fun buildLaunchers(): List<BaseLauncher> {
-        val p = prefs()
-        val xtreamConfig = XtreamConfig(
-            serverUrl = p.getString(PREF_XTREAM_SERVER, "") ?: "",
-            username = p.getString(PREF_XTREAM_USER, "") ?: "",
-            password = p.getString(PREF_XTREAM_PASS, "") ?: "",
-            ext = p.getString(PREF_XTREAM_EXT, "ts") ?: "ts"
-        )
+        val cfg = hubConfig.get()
+        val xtreamConfig = if (cfg != null) XtreamConfig(
+            serverUrl = cfg.xtreamServer,
+            username = cfg.xtreamUser,
+            password = cfg.xtreamPass,
+            ext = cfg.xtreamExt
+        ) else XtreamConfig("", "", "", "ts")
         return listOfNotNull(
             PlexLauncher(),
             if (xtreamConfig.isConfigured()) XtreamLauncher(xtreamConfig) else TiviMateLauncher(),
@@ -127,8 +125,16 @@ class HubService : Service() {
             }
 
             override fun onMessage(ws: WebSocket, text: String) {
-                try { handleMessage(JSONObject(text)) }
-                catch (e: Exception) { Log.e(TAG, "Parse error: $text", e) }
+                try {
+                    val json = JSONObject(text)
+                    if (json.optString("type") == "config") {
+                        hubConfig.set(HubConfig.fromJson(json))
+                        Log.i(TAG, "Config received from Hub")
+                        updateNotification("Connected — $deviceName")
+                    } else {
+                        handleMessage(json)
+                    }
+                } catch (e: Exception) { Log.e(TAG, "Parse error: $text", e) }
             }
 
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
@@ -198,9 +204,8 @@ class HubService : Service() {
         if (pm.getLaunchIntentForPackage(PlexLauncher.PKG) != null)
             caps.add(DeviceCapability("plex", PlexLauncher.PKG, listOf("movie", "episode", "music"), "intent_deep_link"))
 
-        val p = prefs()
-        if (p.getString(PREF_XTREAM_SERVER, "").isNullOrEmpty().not()
-            && p.getString(PREF_XTREAM_USER, "").isNullOrEmpty().not()) {
+        val cfg = hubConfig.get()
+        if (cfg != null && cfg.xtreamServer.isNotEmpty() && cfg.xtreamUser.isNotEmpty()) {
             caps.add(DeviceCapability("tivimate", "xtream", listOf("live_channel", "vod"), "xtream_direct"))
         } else if (pm.getLaunchIntentForPackage(TiviMateLauncher.PKG) != null) {
             caps.add(DeviceCapability("tivimate", TiviMateLauncher.PKG, listOf("live_channel", "vod"), "intent_custom"))

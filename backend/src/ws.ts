@@ -8,7 +8,7 @@ interface ConnectedAgent {
   device_id: string
 }
 
-const agents = new Map<string, ConnectedAgent>()
+export const agents = new Map<string, ConnectedAgent>()
 
 export function setupWebSocket(server: Server) {
   const wss = new WebSocketServer({ server, path: '/ws' })
@@ -57,6 +57,19 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
         args: [device_id]
       })
       console.log(`[ws] registered: ${device_id} (${msg.name})`)
+      // Push stored config to agent
+      const { rows } = await db.execute({ sql: 'SELECT * FROM device_config WHERE device_id = ?', args: [device_id] })
+      if (rows.length) {
+        const cfg = rows[0] as any
+        agents.get(device_id)?.ws.send(JSON.stringify({
+          type: 'config',
+          xtream_server: cfg.xtream_server,
+          xtream_user: cfg.xtream_user,
+          xtream_pass: cfg.xtream_pass,
+          xtream_ext: cfg.xtream_ext,
+          app_mappings: JSON.parse(cfg.app_mappings as string)
+        }))
+      }
       break
     }
     case 'state_update': {

@@ -19,9 +19,8 @@
             android:textColor="#ffffff"
             android:layout_marginBottom="36dp" />
 
-        <!-- Hub connection -->
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="HUB" android:textColor="#aaaadd" android:textSize="12sp"
+            android:text="CONNEXION AU HUB" android:textColor="#aaaadd" android:textSize="12sp"
             android:textStyle="bold" android:letterSpacing="0.15" android:layout_marginBottom="10dp"/>
 
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
@@ -34,62 +33,18 @@
             android:hint="ws://192.168.1.15:8020" android:textColorHint="#666688"/>
 
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Device Name" android:textColor="#cccccc" android:textSize="14sp"
+            android:text="Nom de l'appareil" android:textColor="#cccccc" android:textSize="14sp"
             android:layout_marginBottom="4dp"/>
         <EditText android:id="@+id/etDeviceName"
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:textColor="#ffffff" android:background="#1e1e30" android:padding="14dp"
-            android:inputType="text" android:textSize="16sp" android:layout_marginBottom="32dp"
+            android:inputType="text" android:textSize="16sp" android:layout_marginBottom="36dp"
             android:hint="Shield Salon" android:textColorHint="#666688"/>
 
-        <!-- Xtream Codes / Elon IPTV -->
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="XTREAM CODES / IPTV" android:textColor="#aaaadd" android:textSize="12sp"
-            android:textStyle="bold" android:letterSpacing="0.15" android:layout_marginBottom="10dp"/>
-
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Server URL" android:textColor="#cccccc" android:textSize="14sp"
-            android:layout_marginBottom="4dp"/>
-        <EditText android:id="@+id/etXtreamServer"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:textColor="#ffffff" android:background="#1e1e30" android:padding="14dp"
-            android:inputType="textUri" android:textSize="16sp" android:layout_marginBottom="16dp"
-            android:hint="http://elon-iptv.com:8080" android:textColorHint="#666688"/>
-
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:layout_marginBottom="16dp">
-            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
-                android:layout_weight="1" android:orientation="vertical" android:layout_marginEnd="8dp">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Username" android:textColor="#cccccc" android:textSize="14sp"
-                    android:layout_marginBottom="4dp"/>
-                <EditText android:id="@+id/etXtreamUser"
-                    android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:textColor="#ffffff" android:background="#1e1e30" android:padding="14dp"
-                    android:inputType="text" android:textSize="16sp"
-                    android:hint="user" android:textColorHint="#666688"/>
-            </LinearLayout>
-            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
-                android:layout_weight="1" android:orientation="vertical">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="Password" android:textColor="#cccccc" android:textSize="14sp"
-                    android:layout_marginBottom="4dp"/>
-                <EditText android:id="@+id/etXtreamPass"
-                    android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:textColor="#ffffff" android:background="#1e1e30" android:padding="14dp"
-                    android:inputType="textPassword" android:textSize="16sp"
-                    android:hint="password" android:textColorHint="#666688"/>
-            </LinearLayout>
-        </LinearLayout>
-
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Stream extension (ts ou m3u8)" android:textColor="#cccccc" android:textSize="14sp"
-            android:layout_marginBottom="4dp"/>
-        <EditText android:id="@+id/etXtreamExt"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:textColor="#ffffff" android:background="#1e1e30" android:padding="14dp"
-            android:inputType="text" android:textSize="16sp" android:layout_marginBottom="36dp"
-            android:hint="ts" android:textColorHint="#666688"/>
+            android:text="Les credentials IPTV et les préférences d'apps se configurent\ndepuis le Hub (192.168.1.15:3050 → Devices)."
+            android:textColor="#666688" android:textSize="13sp" android:layout_marginBottom="36dp"
+            android:lineSpacingExtra="4dp"/>
 
         <!-- Buttons -->
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"

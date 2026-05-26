@@ -14,33 +14,20 @@ class MainActivity : AppCompatActivity() {
 
         val prefs = getSharedPreferences(HubService.PREFS, Context.MODE_PRIVATE)
 
-        val etHubUrl      = findViewById<EditText>(R.id.etHubUrl)
-        val etDeviceName  = findViewById<EditText>(R.id.etDeviceName)
-        val etXtreamSrv   = findViewById<EditText>(R.id.etXtreamServer)
-        val etXtreamUser  = findViewById<EditText>(R.id.etXtreamUser)
-        val etXtreamPass  = findViewById<EditText>(R.id.etXtreamPass)
-        val etXtreamExt   = findViewById<EditText>(R.id.etXtreamExt)
-        val tvStatus      = findViewById<TextView>(R.id.tvStatus)
-        val btnSave       = findViewById<Button>(R.id.btnSave)
-        val btnStart      = findViewById<Button>(R.id.btnStart)
-        val btnStop       = findViewById<Button>(R.id.btnStop)
+        val etHubUrl     = findViewById<EditText>(R.id.etHubUrl)
+        val etDeviceName = findViewById<EditText>(R.id.etDeviceName)
+        val tvStatus     = findViewById<TextView>(R.id.tvStatus)
+        val btnSave      = findViewById<Button>(R.id.btnSave)
+        val btnStart     = findViewById<Button>(R.id.btnStart)
+        val btnStop      = findViewById<Button>(R.id.btnStop)
 
-        // Load saved config
         etHubUrl.setText(prefs.getString(HubService.PREF_HUB_URL, "ws://192.168.1.15:${HubService.DEFAULT_HUB_PORT}"))
         etDeviceName.setText(prefs.getString(HubService.PREF_DEVICE_NAME, "${Build.MANUFACTURER} ${Build.MODEL}"))
-        etXtreamSrv.setText(prefs.getString(HubService.PREF_XTREAM_SERVER, ""))
-        etXtreamUser.setText(prefs.getString(HubService.PREF_XTREAM_USER, ""))
-        etXtreamPass.setText(prefs.getString(HubService.PREF_XTREAM_PASS, ""))
-        etXtreamExt.setText(prefs.getString(HubService.PREF_XTREAM_EXT, "ts"))
 
         btnSave.setOnClickListener {
             prefs.edit()
-                .putString(HubService.PREF_HUB_URL,       etHubUrl.text.toString().trim())
-                .putString(HubService.PREF_DEVICE_NAME,    etDeviceName.text.toString().trim())
-                .putString(HubService.PREF_XTREAM_SERVER,  etXtreamSrv.text.toString().trim())
-                .putString(HubService.PREF_XTREAM_USER,    etXtreamUser.text.toString().trim())
-                .putString(HubService.PREF_XTREAM_PASS,    etXtreamPass.text.toString().trim())
-                .putString(HubService.PREF_XTREAM_EXT,     etXtreamExt.text.toString().trim().ifEmpty { "ts" })
+                .putString(HubService.PREF_HUB_URL,    etHubUrl.text.toString().trim())
+                .putString(HubService.PREF_DEVICE_NAME, etDeviceName.text.toString().trim())
                 .apply()
             tvStatus.text = "Settings saved"
         }
@@ -52,7 +39,7 @@ class MainActivity : AppCompatActivity() {
 
         btnStop.setOnClickListener {
             HubService.stop(this)
-            tvStatus.text = "Agent stopped"
+            tvStatus.text = "Agent arrêté"
         }
     }
 

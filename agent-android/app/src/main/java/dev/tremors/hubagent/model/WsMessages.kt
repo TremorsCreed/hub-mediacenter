@@ -60,4 +60,24 @@ fun buildStateUpdate(status: String, catalogId: String? = null, app: String? = n
         app?.let { put("app", it) }
     }.toString()
 
+data class HubConfig(
+    val xtreamServer: String,
+    val xtreamUser: String,
+    val xtreamPass: String,
+    val xtreamExt: String,
+    val appMappings: Map<String, String>
+) {
+    companion object {
+        fun fromJson(json: JSONObject) = HubConfig(
+            xtreamServer = json.optString("xtream_server"),
+            xtreamUser = json.optString("xtream_user"),
+            xtreamPass = json.optString("xtream_pass"),
+            xtreamExt = json.optString("xtream_ext", "ts"),
+            appMappings = json.optJSONObject("app_mappings")?.let { obj ->
+                obj.keys().asSequence().associateWith { obj.getString(it) }
+            } ?: emptyMap()
+        )
+    }
+}
+
 fun buildPing(): String = JSONObject().apply { put("type", "ping") }.toString()

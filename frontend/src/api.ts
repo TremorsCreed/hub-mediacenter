@@ -51,6 +51,14 @@ export interface HistoryEntry {
   requester: string
 }
 
+export interface DeviceConfig {
+  xtream_server: string
+  xtream_user: string
+  xtream_pass: string
+  xtream_ext: string
+  app_mappings: Record<string, string>
+}
+
 export interface PlayIntent {
   query?: string
   catalog_id?: string
@@ -76,6 +84,16 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return r.json()
 }
 
+async function put<T>(path: string, body: unknown): Promise<T> {
+  const r = await fetch(`${BASE}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
 async function del<T>(path: string): Promise<T> {
   const r = await fetch(`${BASE}${path}`, { method: 'DELETE' })
   if (!r.ok) throw new Error(await r.text())
@@ -85,7 +103,9 @@ async function del<T>(path: string): Promise<T> {
 export const api = {
   devices: {
     list: () => get<Device[]>('/devices'),
-    remove: (id: string) => del<{ ok: boolean }>(`/devices/${id}`)
+    remove: (id: string) => del<{ ok: boolean }>(`/devices/${id}`),
+    getConfig: (id: string) => get<DeviceConfig>(`/devices/${id}/config`),
+    saveConfig: (id: string, cfg: DeviceConfig) => put<{ ok: boolean }>(`/devices/${id}/config`, cfg)
   },
   catalog: {
     search: (q: string) => get<CatalogEntry[]>(`/catalog/search?q=${encodeURIComponent(q)}`),

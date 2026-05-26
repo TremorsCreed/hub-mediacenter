@@ -8,6 +8,7 @@ import catalogRouter from './routes/catalog'
 import playRouter from './routes/play'
 import stateRouter from './routes/state'
 import zaparooRouter from './routes/zaparoo'
+import configRouter from './routes/config'
 
 const app = express()
 const PORT = parseInt(process.env.PORT ?? '8020', 10)
@@ -16,6 +17,7 @@ app.use(cors())
 app.use(express.json())
 
 app.use('/api/devices', devicesRouter)
+app.use('/api/devices/:id/config', configRouter)
 app.use('/api/catalog', catalogRouter)
 app.use('/api/play', playRouter)
 app.use('/api/state', stateRouter)

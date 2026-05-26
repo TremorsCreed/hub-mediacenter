@@ -58,5 +58,15 @@ export async function initDb() {
       ended_at INTEGER,
       requester TEXT NOT NULL DEFAULT 'manual'
     );
+
+    CREATE TABLE IF NOT EXISTS device_config (
+      device_id TEXT PRIMARY KEY,
+      xtream_server TEXT NOT NULL DEFAULT '',
+      xtream_user TEXT NOT NULL DEFAULT '',
+      xtream_pass TEXT NOT NULL DEFAULT '',
+      xtream_ext TEXT NOT NULL DEFAULT 'ts',
+      app_mappings TEXT NOT NULL DEFAULT '{}',
+      updated_at INTEGER NOT NULL DEFAULT 0
+    );
   `)
 }

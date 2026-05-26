@@ -29,7 +29,7 @@
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:textColor="#ffffff" android:background="#1e1e2e" android:padding="12dp"
             android:inputType="textUri" android:textSize="15sp" android:layout_marginBottom="12dp"
-            android:hint="ws://192.168.1.15:8020" android:hintTextColor="#444455"/>
+            android:hint="ws://192.168.1.15:8020" android:textColorHint="#444455"/>
 
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Device Name" android:textColor="#888888" android:textSize="13sp"/>
@@ -37,7 +37,7 @@
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:textColor="#ffffff" android:background="#1e1e2e" android:padding="12dp"
             android:inputType="text" android:textSize="15sp" android:layout_marginBottom="28dp"
-            android:hint="Shield Salon" android:hintTextColor="#444455"/>
+            android:hint="Shield Salon" android:textColorHint="#444455"/>
 
         <!-- Xtream Codes / Elon IPTV -->
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
@@ -50,7 +50,7 @@
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:textColor="#ffffff" android:background="#1e1e2e" android:padding="12dp"
             android:inputType="textUri" android:textSize="15sp" android:layout_marginBottom="12dp"
-            android:hint="http://elon-iptv.com:8080" android:hintTextColor="#444455"/>
+            android:hint="http://elon-iptv.com:8080" android:textColorHint="#444455"/>
 
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
             android:orientation="horizontal" android:layout_marginBottom="12dp">
@@ -62,7 +62,7 @@
                     android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:textColor="#ffffff" android:background="#1e1e2e" android:padding="12dp"
                     android:inputType="text" android:textSize="15sp"
-                    android:hint="user" android:hintTextColor="#444455"/>
+                    android:hint="user" android:textColorHint="#444455"/>
             </LinearLayout>
             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:orientation="vertical">
@@ -72,7 +72,7 @@
                     android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:textColor="#ffffff" android:background="#1e1e2e" android:padding="12dp"
                     android:inputType="textPassword" android:textSize="15sp"
-                    android:hint="password" android:hintTextColor="#444455"/>
+                    android:hint="password" android:textColorHint="#444455"/>
             </LinearLayout>
         </LinearLayout>
 
@@ -82,7 +82,7 @@
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:textColor="#ffffff" android:background="#1e1e2e" android:padding="12dp"
             android:inputType="text" android:textSize="15sp" android:layout_marginBottom="32dp"
-            android:hint="ts" android:hintTextColor="#444455"/>
+            android:hint="ts" android:textColorHint="#444455"/>
 
         <!-- Buttons -->
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"

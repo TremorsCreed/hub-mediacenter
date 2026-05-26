@@ -33,6 +33,8 @@ class HubService : Service() {
         const val PREF_XTREAM_EXT = "xtream_ext"
         const val DEFAULT_HUB_PORT = "8020"
 
+        var statusCallback: ((String) -> Unit)? = null
+
         fun start(ctx: Context) {
             val intent = Intent(ctx, HubService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(intent)
@@ -236,7 +238,9 @@ class HubService : Service() {
             .setOngoing(true)
             .build()
 
-    private fun updateNotification(status: String) =
+    private fun updateNotification(status: String) {
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
             .notify(NOTIF_ID, buildNotification(status))
+        android.os.Handler(mainLooper).post { statusCallback?.invoke(status) }
+    }
 }

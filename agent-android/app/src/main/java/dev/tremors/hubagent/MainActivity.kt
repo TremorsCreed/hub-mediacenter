@@ -55,4 +55,16 @@ class MainActivity : AppCompatActivity() {
             tvStatus.text = "Agent stopped"
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        HubService.statusCallback = { status ->
+            findViewById<TextView>(R.id.tvStatus).text = status
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        HubService.statusCallback = null
+    }
 }

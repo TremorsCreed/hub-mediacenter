@@ -3,6 +3,7 @@ import { api, Device, DeviceConfig } from '../api'
 import { Wifi, WifiOff, Trash2, ChevronDown, ChevronUp, Save } from 'lucide-react'
 
 const CONTENT_TYPES = ['movie', 'episode', 'live_channel', 'vod', 'music']
+const APP_NAMES: Record<string, string> = { iptv: 'IPTV (Xtream)', plex: 'Plex', kodi: 'Kodi' }
 const DEFAULT_CONFIG: DeviceConfig = { xtream_server: '', xtream_user: '', xtream_pass: '', xtream_ext: 'ts', app_mappings: {} }
 
 function ConfigPanel({ deviceId, capabilities }: { deviceId: string; capabilities: { app: string }[] }) {
@@ -29,7 +30,7 @@ function ConfigPanel({ deviceId, capabilities }: { deviceId: string; capabilitie
     }
   }
 
-  const appOptions = ['', ...capabilities.map(c => c.app)]
+  const appOptions = ['', 'plex', 'iptv', 'kodi']
 
   return (
     <div className="mt-3 pt-3 border-t border-zinc-800 space-y-4">
@@ -81,8 +82,7 @@ function ConfigPanel({ deviceId, capabilities }: { deviceId: string; capabilitie
         </div>
       </div>
 
-      {capabilities.length > 0 && (
-        <div>
+      <div>
           <div className="text-xs text-zinc-400 font-medium mb-2 uppercase tracking-wide">App par type de contenu</div>
           <div className="grid grid-cols-2 gap-2">
             {CONTENT_TYPES.map(type => (
@@ -93,13 +93,13 @@ function ConfigPanel({ deviceId, capabilities }: { deviceId: string; capabilitie
                   value={cfg.app_mappings[type] ?? ''}
                   onChange={e => setMapping(type, e.target.value)}
                 >
-                  {appOptions.map(a => <option key={a} value={a}>{a || '— auto —'}</option>)}
+                  {appOptions.map(a => <option key={a} value={a}>{a ? (APP_NAMES[a] ?? a) : '— auto —'}</option>)}
                 </select>
               </div>
             ))}
           </div>
         </div>
-      )}
+      </div>
 
       <button
         onClick={save}

@@ -15,7 +15,7 @@ import dev.tremors.hubagent.model.PlayCommand
  */
 class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
 
-    override val appId = "tivimate" // handles commands targeting tivimate
+    override val appId = "iptv"
 
     companion object {
         private const val TAG = "XtreamLauncher"
@@ -31,7 +31,7 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
     }
 
     override fun canHandle(cmd: PlayCommand) =
-        cmd.app == "tivimate" && config.isConfigured()
+        cmd.app == "iptv" && config.isConfigured()
 
     override fun launch(ctx: Context, cmd: PlayCommand): LaunchResult {
         val streamId = cmd.tiviMateChannel

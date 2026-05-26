@@ -206,9 +206,9 @@ class HubService : Service() {
 
         val cfg = hubConfig.get()
         if (cfg != null && cfg.xtreamServer.isNotEmpty() && cfg.xtreamUser.isNotEmpty()) {
-            caps.add(DeviceCapability("tivimate", "xtream", listOf("live_channel", "vod"), "xtream_direct"))
+            caps.add(DeviceCapability("iptv", "xtream", listOf("live_channel", "vod"), "xtream_direct"))
         } else if (pm.getLaunchIntentForPackage(TiviMateLauncher.PKG) != null) {
-            caps.add(DeviceCapability("tivimate", TiviMateLauncher.PKG, listOf("live_channel", "vod"), "intent_custom"))
+            caps.add(DeviceCapability("iptv", TiviMateLauncher.PKG, listOf("live_channel", "vod"), "intent_custom"))
         }
 
         for (pkg in listOf("org.xbmc.kodi", "tv.kodi.kodi"))

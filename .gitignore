@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.db
+.env
+
+# Android
+agent-android/.gradle/
+agent-android/app/build/
+agent-android/local.properties
+*.apk
+*.aab

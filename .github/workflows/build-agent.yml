@@ -8,7 +8,7 @@ on:
   pull_request:
     paths:
       - 'agent-android/**'
-  workflow_dispatch:   # allows manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   build:
@@ -24,8 +24,10 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
       - name: Cache Gradle
         uses: actions/cache@v4
@@ -36,12 +38,9 @@ jobs:
           key: gradle-${{ hashFiles('agent-android/**/*.gradle*', 'agent-android/**/libs.versions.toml') }}
           restore-keys: gradle-
 
-      - name: Make gradlew executable
-        run: chmod +x agent-android/gradlew
-
       - name: Build debug APK
         working-directory: agent-android
-        run: ./gradlew assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

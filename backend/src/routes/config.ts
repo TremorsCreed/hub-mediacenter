@@ -14,7 +14,7 @@ const ConfigSchema = z.object({
 })
 
 router.get('/', async (req, res) => {
-  const { id } = req.params
+  const id = (req as any).params.id as string
   const { rows } = await db.execute({ sql: 'SELECT * FROM device_config WHERE device_id = ?', args: [id] })
   if (!rows.length) {
     return res.json({ xtream_server: '', xtream_user: '', xtream_pass: '', xtream_ext: 'ts', app_mappings: {} })
@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
 })
 
 router.put('/', async (req, res) => {
-  const { id } = req.params
+  const id = (req as any).params.id as string
   const parsed = ConfigSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
 

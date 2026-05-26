@@ -110,7 +110,6 @@ function ConfigPanel({ deviceId, capabilities }: { deviceId: string; capabilitie
             ))}
           </div>
         </div>
-      </div>
 
       <button
         onClick={save}

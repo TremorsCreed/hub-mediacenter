@@ -35,13 +35,11 @@ class PlexLauncher : BaseLauncher {
             return launchHome(ctx)
         }
 
-        // Plex deep link: opens specific media in the Plex app
-        // Format: plex://play?contentKey=/library/metadata/{id}
         return try {
             val uri = if (cmd.plexServerId.isNullOrEmpty()) {
                 Uri.parse("plex://play?contentKey=/library/metadata/$plexId")
             } else {
-                Uri.parse("plex://server/${cmd.plexServerId}/com.plexapp.plugins.library/library/metadata/$plexId")
+                Uri.parse("plex://play?contentKey=/library/metadata/$plexId&server=${cmd.plexServerId}")
             }
             val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                 setPackage(PKG)

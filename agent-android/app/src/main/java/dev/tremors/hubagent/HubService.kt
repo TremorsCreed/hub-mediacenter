@@ -201,7 +201,8 @@ class HubService : Service() {
         val pm = packageManager
         val caps = mutableListOf<DeviceCapability>()
 
-        if (pm.getLaunchIntentForPackage(PlexLauncher.PKG) != null)
+        if (pm.getLaunchIntentForPackage(PlexLauncher.PKG) != null
+            || pm.getLeanbackLaunchIntentForPackage(PlexLauncher.PKG) != null)
             caps.add(DeviceCapability("plex", PlexLauncher.PKG, listOf("movie", "episode", "music"), "intent_deep_link"))
 
         val cfg = hubConfig.get()

@@ -17,9 +17,14 @@ class PlexLauncher : BaseLauncher {
 
     override fun canHandle(cmd: PlayCommand) = cmd.app == appId
 
-    override fun launch(ctx: Context, cmd: PlayCommand): LaunchResult {
+    private fun isInstalled(ctx: Context): Boolean {
         val pm = ctx.packageManager
-        if (pm.getLaunchIntentForPackage(PKG) == null) {
+        return pm.getLaunchIntentForPackage(PKG) != null
+            || pm.getLeanbackLaunchIntentForPackage(PKG) != null
+    }
+
+    override fun launch(ctx: Context, cmd: PlayCommand): LaunchResult {
+        if (!isInstalled(ctx)) {
             return LaunchResult.AppNotInstalled(PKG)
         }
 
@@ -49,7 +54,9 @@ class PlexLauncher : BaseLauncher {
 
     private fun launchHome(ctx: Context): LaunchResult {
         return try {
-            val intent = ctx.packageManager.getLaunchIntentForPackage(PKG)!!.apply {
+            val pm = ctx.packageManager
+            val intent = (pm.getLeanbackLaunchIntentForPackage(PKG)
+                ?: pm.getLaunchIntentForPackage(PKG))!!.apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             ctx.startActivity(intent)

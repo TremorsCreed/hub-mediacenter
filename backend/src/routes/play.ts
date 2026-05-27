@@ -255,6 +255,7 @@ router.post('/', async (req, res) => {
     title: entry.title,
     plex_id: entry.plex_id ?? undefined,
     tivimate_channel: entry.tivimate_id ?? undefined,
+    iptv_type: iptv_type ?? (entry.type === 'vod' ? 'vod' : entry.type === 'live_channel' ? 'live' : undefined),
     requester: requester as RequesterType
   }
 

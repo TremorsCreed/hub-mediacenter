@@ -40,26 +40,32 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
             return LaunchResult.Error("No stream_id provided")
         }
 
-        val streamUrl = config.buildStreamUrl(streamId)
-        Log.i(TAG, "Xtream stream URL: $streamUrl")
+        // Type par défaut = live (rétrocompat) si non précisé par le hub
+        val type = cmd.iptvType ?: "live"
+        val streamUrl = config.buildStreamUrl(streamId, type)
+        Log.i(TAG, "Xtream stream URL ($type): $streamUrl")
 
-        // Find the best available player
         val pm = ctx.packageManager
         val playerPkg = PREFERRED_PLAYERS.firstOrNull {
             pm.getLaunchIntentForPackage(it) != null
         }
+        Log.i(TAG, "Selected player: ${playerPkg ?: "(system chooser)"}")
 
         return try {
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(Uri.parse(streamUrl), "video/*")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
                 playerPkg?.let { setPackage(it) }
             }
             ctx.startActivity(intent)
             Log.i(TAG, "Launched stream in ${playerPkg ?: "system player"}")
             LaunchResult.Success
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch stream: ${e.message}")
+            Log.e(TAG, "Failed to launch stream: ${e.message}", e)
             LaunchResult.Error("No video player found: ${e.message}")
         }
     }
@@ -69,12 +75,26 @@ data class XtreamConfig(
     val serverUrl: String,    // e.g. http://elon-iptv.com:8080
     val username: String,
     val password: String,
-    val ext: String = "ts"    // ts or m3u8
+    val ext: String = "ts"    // ts ou m3u8 — utilisé pour les live channels
 ) {
     fun isConfigured() = serverUrl.isNotEmpty() && username.isNotEmpty() && password.isNotEmpty()
 
-    fun buildStreamUrl(streamId: String): String {
+    /**
+     * Construit l'URL stream selon le format Xtream Codes :
+     * - live   : http://{server}/{user}/{pass}/{streamId}.{ext}      (ext = ts ou m3u8)
+     * - vod    : http://{server}/movie/{user}/{pass}/{streamId}.mp4  (ou mkv/avi selon source)
+     * - series : http://{server}/series/{user}/{pass}/{streamId}.mp4
+     *
+     * Pour VOD on tente mp4 par défaut (format le plus courant). L'extension réelle
+     * peut varier — un appel get_vod_info au préalable serait plus fiable mais
+     * la majorité des sources Xtream servent en mp4.
+     */
+    fun buildStreamUrl(streamId: String, type: String = "live"): String {
         val base = serverUrl.trimEnd('/')
-        return "$base/$username/$password/$streamId.$ext"
+        return when (type) {
+            "vod" -> "$base/movie/$username/$password/$streamId.mp4"
+            "series" -> "$base/series/$username/$password/$streamId.mp4"
+            else -> "$base/$username/$password/$streamId.$ext"
+        }
     }
 }

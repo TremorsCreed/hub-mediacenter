@@ -74,5 +74,6 @@ export interface WsPlayCommand extends WsMessage {
   plex_id?: string
   plex_watch_url?: string
   tivimate_channel?: string
+  iptv_type?: 'live' | 'vod'
   requester: RequesterType
 }

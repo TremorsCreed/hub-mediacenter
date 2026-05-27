@@ -25,6 +25,7 @@ data class PlayCommand(
     val plexServerId: String?,
     val plexWatchUrl: String?,
     val tiviMateChannel: String?,
+    val iptvType: String?,  // "live" ou "vod"
     val requester: String
 ) {
     companion object {
@@ -36,6 +37,7 @@ data class PlayCommand(
             plexServerId = config?.plexServerId?.ifEmpty { null },
             plexWatchUrl = json.optString("plex_watch_url").ifEmpty { null },
             tiviMateChannel = json.optString("tivimate_channel").ifEmpty { null },
+            iptvType = json.optString("iptv_type").ifEmpty { null },
             requester = json.optString("requester", "unknown")
         )
     }

@@ -150,6 +150,85 @@ router.get('/sections', async (_req, res) => {
   }
 })
 
+// GET /api/plex/discover/search?q=... — recherche universelle Plex Discover
+// (movies/shows agrégés depuis tous les providers, Netflix/Disney+/Prime inclus
+// via les availabilities du metadata).
+router.get('/discover/search', async (req, res) => {
+  const cfg = await getConfig()
+  if (!cfg.auth_token) return res.status(400).json({ error: 'not connected to plex' })
+  const q = (req.query.q as string)?.trim()
+  if (!q) return res.json([])
+  try {
+    const url = `https://discover.provider.plex.tv/library/search?query=${encodeURIComponent(q)}&searchTypes=movies,tv&searchProviders=discover&includeMetadata=1&X-Plex-Token=${cfg.auth_token}`
+    const r = await fetch(url, { headers: { Accept: 'application/json' } })
+    if (!r.ok) return res.status(502).json({ error: 'plex discover unreachable' })
+    const data: any = await r.json()
+    const results: any[] = []
+    for (const sec of (data?.MediaContainer?.SearchResults ?? [])) {
+      for (const sr of (sec.SearchResult ?? [])) {
+        const m = sr.Metadata
+        if (!m?.guid) continue
+        results.push({
+          guid: m.guid as string,                   // plex://show/...  ou plex://movie/...
+          key: m.key as string | undefined,         // /library/metadata/{ratingKey}
+          ratingKey: m.ratingKey as string | undefined,
+          title: m.title as string,
+          year: m.year as number | undefined,
+          type: m.type as string,                   // movie | show
+          thumb: m.thumb as string | undefined,
+          art: m.art as string | undefined,
+          summary: m.summary as string | undefined,
+          duration: m.duration as number | undefined,
+          score: sr.score as number | undefined,
+        })
+      }
+    }
+    res.json(results)
+  } catch (e: any) {
+    res.status(502).json({ error: e.message })
+  }
+})
+
+// GET /api/plex/discover/:ratingKey/availabilities — où le film/série est dispo
+router.get('/discover/:ratingKey/availabilities', async (req, res) => {
+  const cfg = await getConfig()
+  if (!cfg.auth_token) return res.status(400).json({ error: 'not connected to plex' })
+  try {
+    const url = `https://metadata.provider.plex.tv/library/metadata/${req.params.ratingKey}/availabilities?X-Plex-Token=${cfg.auth_token}`
+    const r = await fetch(url, { headers: { Accept: 'application/json' } })
+    if (!r.ok) return res.status(502).json({ error: 'plex metadata unreachable' })
+    const data: any = await r.json()
+    const list = (data?.MediaContainer?.Availability ?? []).map((a: any) => ({
+      platform: a.platform as string,
+      title: a.title as string,
+      url: a.url as string,
+      offerType: a.offerType as string | undefined,  // subscription | buy | rent | free
+      price: a.price as number | null,
+      quality: a.quality as string | undefined,
+    }))
+    res.json(list)
+  } catch (e: any) {
+    res.status(502).json({ error: e.message })
+  }
+})
+
+// GET /api/plex/discover/image?url=... — proxy d'image absolute (les thumbs Discover
+// pointent sur image.tmdb.org / metadata-static.plex.tv directement, donc mixed-content
+// sur HTTP). On rentre pas par /api/plex/image qui suppose un path serveur.
+router.get('/discover/image', async (req, res) => {
+  const url = req.query.url as string
+  if (!url || !/^https?:\/\//.test(url)) return res.status(400).end()
+  try {
+    const r = await fetch(url)
+    if (!r.ok) return res.status(r.status).end()
+    res.set('Content-Type', r.headers.get('content-type') ?? 'image/jpeg')
+    res.set('Cache-Control', 'public, max-age=2592000, immutable')
+    res.send(Buffer.from(await r.arrayBuffer()))
+  } catch {
+    res.status(502).end()
+  }
+})
+
 // GET /api/plex/onDeck?limit=20 — items en cours de lecture (continue watching)
 router.get('/onDeck', async (req, res) => {
   const cfg = await getConfig()

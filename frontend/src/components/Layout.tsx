@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Tv, Library, History, Play, LayoutDashboard, Settings, Film, KeyRound, Radio, FolderOpen } from 'lucide-react'
+import { Tv, Library, History, Play, LayoutDashboard, Settings, Film, KeyRound, Radio, FolderOpen, Compass } from 'lucide-react'
 import { api } from '../api'
 
 const topNav = [
@@ -16,7 +16,7 @@ const bottomNav = [
 ]
 
 export default function Layout() {
-  const [modules, setModules] = useState<{ plex: boolean; iptv: boolean }>({ plex: false, iptv: false })
+  const [modules, setModules] = useState<{ plex: boolean; iptv: boolean; discover: boolean }>({ plex: false, iptv: false, discover: false })
   const location = useLocation()
 
   const refreshModules = useCallback(() => {
@@ -24,7 +24,7 @@ export default function Layout() {
       api.plex.status().catch(() => ({ connected: false })),
       api.iptv.credentials().catch(() => []),
     ]).then(([plex, iptv]) => {
-      setModules({ plex: plex.connected, iptv: iptv.length > 0 })
+      setModules({ plex: plex.connected, iptv: iptv.length > 0, discover: plex.connected })
     })
   }, [])
 
@@ -79,6 +79,12 @@ export default function Layout() {
             <NavLink to="/catalog/iptv" className={subLinkClass}>
               <Radio size={12} strokeWidth={1.8} />
               IPTV
+            </NavLink>
+          )}
+          {modules.discover && (
+            <NavLink to="/catalog/discover" className={subLinkClass}>
+              <Compass size={12} strokeWidth={1.8} />
+              Discover
             </NavLink>
           )}
           <div className="h-3" />

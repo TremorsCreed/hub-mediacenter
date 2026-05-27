@@ -14,6 +14,19 @@
         <package android:name="tv.tivimate.appplayer" />
         <package android:name="org.xbmc.kodi" />
         <package android:name="tv.kodi.kodi" />
+        <!-- Streaming services (Discover deep links) -->
+        <package android:name="com.netflix.ninja" />
+        <package android:name="com.netflix.mediaclient" />
+        <package android:name="com.disney.disneyplus" />
+        <package android:name="com.amazon.amazonvideo.livingroom" />
+        <package android:name="com.amazon.avod.thirdpartyclient" />
+        <package android:name="com.apple.atve.androidtv.appletv" />
+        <package android:name="com.apple.atve.amazon.appletv" />
+        <package android:name="com.google.android.youtube.tv" />
+        <package android:name="com.spotify.tv.android" />
+        <package android:name="com.wbd.stream" />
+        <package android:name="com.hbo.hbonow" />
+        <package android:name="com.cbs.ott" />
     </queries>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />

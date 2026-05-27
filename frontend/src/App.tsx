@@ -8,6 +8,7 @@ import History from './pages/History'
 import Settings from './pages/Settings'
 import Plex from './pages/Plex'
 import Iptv from './pages/Iptv'
+import Discover from './pages/Discover'
 import Credentials from './pages/Credentials'
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="catalog" element={<Catalog />} />
         <Route path="catalog/plex" element={<Plex />} />
         <Route path="catalog/iptv" element={<Iptv />} />
+        <Route path="catalog/discover" element={<Discover />} />
         <Route path="play" element={<PlayPage />} />
         <Route path="history" element={<History />} />
         <Route path="settings" element={<Settings />} />

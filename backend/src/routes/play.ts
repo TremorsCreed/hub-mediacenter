@@ -173,9 +173,11 @@ const PlaySchema = z.object({
   plex_id: z.string().optional(),
   iptv_stream_id: z.string().optional(),
   iptv_type: z.enum(['live', 'vod']).optional(),
+  external_url: z.string().optional(),                 // URL pour deep link (Netflix, Disney+, ...)
+  external_platform: z.string().optional(),            // ex "netflix", "disney+", "primevideo"
   title: z.string().optional(),
   thumb: z.string().optional(),
-  resume: z.boolean().optional(),  // pour Plex : reprendre depuis viewOffset au lieu de 0
+  resume: z.boolean().optional(),
   device_id: z.string().optional(),
   app: z.string().optional(),
   requester: z.enum(['zaparoo', 'llm', 'n8n', 'manual', 'ha']).default('manual')
@@ -219,12 +221,18 @@ router.post('/', async (req, res) => {
   const parsed = PlaySchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
 
-  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, title, thumb, resume, device_id, app, requester } = parsed.data
+  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, external_url, external_platform, title, thumb, resume, device_id, app, requester } = parsed.data
 
   // 1. Resolve catalog entry
   let entry: CatalogEntry | null = null
 
-  if (plex_id) {
+  if (external_url) {
+    entry = {
+      id: `ext:${external_platform ?? 'web'}:${Buffer.from(external_url).toString('base64').slice(0, 16)}`,
+      title: title ?? 'External',
+      type: 'movie',
+    } as CatalogEntry
+  } else if (plex_id) {
     entry = { id: `plex:${plex_id}`, title: title ?? 'Plex', type: 'movie', plex_id } as CatalogEntry
   } else if (iptv_stream_id) {
     entry = {
@@ -379,15 +387,21 @@ router.post('/', async (req, res) => {
     }
   }
 
+  // App externe (Netflix, Disney+, etc.) : on force app=external pour que l'agent
+  // route vers le ExternalUrlLauncher (deep link Intent ACTION_VIEW).
+  const finalApp: AppId = external_url ? 'external' : resolved_app
+
   const cmd: WsPlayCommand = {
     type: 'play',
     catalog_id: entry.id,
-    app: resolved_app,
+    app: finalApp,
     title: entry.title,
     plex_id: entry.plex_id ?? undefined,
     tivimate_channel: entry.tivimate_id ?? undefined,
     iptv_type: resolvedIptvType,
     stream_url: streamUrl,
+    external_url: external_url ?? undefined,
+    external_platform: external_platform ?? undefined,
     requester: requester as RequesterType
   }
 

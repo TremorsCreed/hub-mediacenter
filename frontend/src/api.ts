@@ -79,12 +79,37 @@ export interface PlayIntent {
   plex_id?: string
   iptv_stream_id?: string
   iptv_type?: 'live' | 'vod'
+  external_url?: string
+  external_platform?: string
   title?: string
   thumb?: string
   resume?: boolean
   device_id?: string
   app?: string
   requester: string
+}
+
+export interface DiscoverItem {
+  guid: string
+  key?: string
+  ratingKey?: string
+  title: string
+  year?: number
+  type: 'movie' | 'show' | string
+  thumb?: string
+  art?: string
+  summary?: string
+  duration?: number
+  score?: number
+}
+
+export interface DiscoverAvailability {
+  platform: string  // "netflix" | "disney+" | "primevideo" | "appletvplus" | ...
+  title: string     // libellé affiché ("Netflix")
+  url: string
+  offerType?: 'subscription' | 'buy' | 'rent' | 'free' | string
+  price?: number | null
+  quality?: string
 }
 
 export interface IptvCategory { id: string; name: string }
@@ -218,6 +243,9 @@ export const api = {
     disconnect: () => del<{ ok: boolean }>('/plex/token'),
     sections: () => get<PlexSection[]>('/plex/sections'),
     onDeck: (limit = 20) => get<PlexOnDeckItem[]>(`/plex/onDeck?limit=${limit}`),
+    discoverSearch: (q: string) => get<DiscoverItem[]>(`/plex/discover/search?q=${encodeURIComponent(q)}`),
+    discoverAvailabilities: (ratingKey: string) => get<DiscoverAvailability[]>(`/plex/discover/${ratingKey}/availabilities`),
+    discoverImageUrl: (url?: string) => url ? `${BASE}/plex/discover/image?url=${encodeURIComponent(url)}` : '',
     sectionItems: (id: string, opts: { start?: number; size?: number; sort?: string; search?: string } = {}) => {
       const p = new URLSearchParams()
       if (opts.start !== undefined) p.set('start', String(opts.start))

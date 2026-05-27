@@ -90,7 +90,8 @@ class HubService : Service() {
         return listOfNotNull(
             PlexLauncher(),
             if (xtreamConfig.isConfigured()) XtreamLauncher(xtreamConfig) else TiviMateLauncher(),
-            KodiLauncher()
+            KodiLauncher(),
+            ExternalUrlLauncher()
         )
     }
 

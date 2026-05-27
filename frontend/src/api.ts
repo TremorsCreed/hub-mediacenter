@@ -104,12 +104,15 @@ export interface DiscoverItem {
 }
 
 export interface DiscoverAvailability {
-  platform: string  // "netflix" | "disney+" | "primevideo" | "appletvplus" | ...
+  platform: string  // "netflix" | "disney+" | "primevideo" | "iptv" | ...
   title: string     // libellé affiché ("Netflix")
   url: string
   offerType?: 'subscription' | 'buy' | 'rent' | 'free' | string
   price?: number | null
   quality?: string
+  // Présent uniquement pour platform="iptv" — pointe sur le VOD du credential Xtream
+  iptv_credential_id?: number
+  iptv_stream_id?: string
 }
 
 export interface IptvCategory { id: string; name: string }
@@ -244,7 +247,13 @@ export const api = {
     sections: () => get<PlexSection[]>('/plex/sections'),
     onDeck: (limit = 20) => get<PlexOnDeckItem[]>(`/plex/onDeck?limit=${limit}`),
     discoverSearch: (q: string) => get<DiscoverItem[]>(`/plex/discover/search?q=${encodeURIComponent(q)}`),
-    discoverAvailabilities: (ratingKey: string) => get<DiscoverAvailability[]>(`/plex/discover/${ratingKey}/availabilities`),
+    discoverAvailabilities: (ratingKey: string, title?: string, year?: number) => {
+      const p = new URLSearchParams()
+      if (title) p.set('title', title)
+      if (year) p.set('year', String(year))
+      const qs = p.toString()
+      return get<DiscoverAvailability[]>(`/plex/discover/${ratingKey}/availabilities${qs ? '?' + qs : ''}`)
+    },
     discoverImageUrl: (url?: string) => url ? `${BASE}/plex/discover/image?url=${encodeURIComponent(url)}` : '',
     sectionItems: (id: string, opts: { start?: number; size?: number; sort?: string; search?: string } = {}) => {
       const p = new URLSearchParams()

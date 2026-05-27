@@ -13,6 +13,7 @@ import plexRouter from './routes/plex'
 import credentialsRouter from './routes/credentials'
 import iptvRouter from './routes/iptv'
 import controlRouter from './routes/control'
+import { preloadAll as preloadIptvVod } from './iptvVodCache'
 
 const app = express()
 const PORT = parseInt(process.env.PORT ?? '8020', 10)
@@ -35,6 +36,9 @@ app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }))
 
 async function start() {
   await initDb()
+  // Préchauffe les listes VOD IPTV en arrière-plan pour que le 1er cross-ref Discover
+  // soit instantané. Ne bloque pas le démarrage.
+  preloadIptvVod().catch(() => {})
   const server = http.createServer(app)
   setupWebSocket(server)
   server.listen(PORT, () => {

@@ -16,6 +16,7 @@ const PLATFORM_STYLE: Record<string, { label: string; bg: string; fg: string }> 
   hbo:            { label: 'HBO',            bg: '#1a1a1a', fg: '#fff' },
   'paramount+':   { label: 'Paramount+',     bg: '#0064ff', fg: '#fff' },
   paramountplus:  { label: 'Paramount+',     bg: '#0064ff', fg: '#fff' },
+  iptv:           { label: 'IPTV (VOD)',     bg: '#f59e0b', fg: '#0d0d14' },
 }
 
 function platformStyle(p: string) {
@@ -62,7 +63,7 @@ export default function Discover() {
     setAvailabilities(null)
     setLoadingAv(true)
     const key = item.ratingKey || item.guid.split('/').pop() || ''
-    api.plex.discoverAvailabilities(key)
+    api.plex.discoverAvailabilities(key, item.title, item.year)
       .then(setAvailabilities)
       .catch(() => setAvailabilities([]))
       .finally(() => setLoadingAv(false))
@@ -73,9 +74,12 @@ export default function Discover() {
     if (!selected) return
     setLaunching(av.platform)
     try {
+      // Plateforme IPTV (cross-ref VOD Xtream) : on lance comme un play IPTV classique
+      const intent = av.platform === 'iptv' && av.iptv_stream_id
+        ? { iptv_stream_id: av.iptv_stream_id, iptv_type: 'vod' as const, app: 'iptv' }
+        : { external_url: av.url, external_platform: av.platform }
       const r = await api.play({
-        external_url: av.url,
-        external_platform: av.platform,
+        ...intent,
         title: selected.title,
         thumb: selected.thumb,
         device_id: deviceId,

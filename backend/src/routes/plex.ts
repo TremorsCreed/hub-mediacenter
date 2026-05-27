@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { db } from '../db'
 import crypto from 'crypto'
+import { findIptvVodMatch, listActiveCredentialIds } from '../iptvVodCache'
 
 const router = Router()
 
@@ -189,10 +190,13 @@ router.get('/discover/search', async (req, res) => {
   }
 })
 
-// GET /api/plex/discover/:ratingKey/availabilities — où le film/série est dispo
+// GET /api/plex/discover/:ratingKey/availabilities?title=&year= — plateformes dispo
+// Inclut le cross-ref avec les listes VOD IPTV cachées si title/year fournis.
 router.get('/discover/:ratingKey/availabilities', async (req, res) => {
   const cfg = await getConfig()
   if (!cfg.auth_token) return res.status(400).json({ error: 'not connected to plex' })
+  const title = req.query.title as string | undefined
+  const year = req.query.year ? parseInt(req.query.year as string) : undefined
   try {
     const url = `https://metadata.provider.plex.tv/library/metadata/${req.params.ratingKey}/availabilities?X-Plex-Token=${cfg.auth_token}`
     const r = await fetch(url, { headers: { Accept: 'application/json' } })
@@ -202,10 +206,31 @@ router.get('/discover/:ratingKey/availabilities', async (req, res) => {
       platform: a.platform as string,
       title: a.title as string,
       url: a.url as string,
-      offerType: a.offerType as string | undefined,  // subscription | buy | rent | free
+      offerType: a.offerType as string | undefined,
       price: a.price as number | null,
       quality: a.quality as string | undefined,
+      iptv_credential_id: undefined as number | undefined,
+      iptv_stream_id: undefined as string | undefined,
     }))
+
+    // Cross-ref VOD IPTV (si title fourni)
+    if (title) {
+      for (const credId of await listActiveCredentialIds()) {
+        const match = await findIptvVodMatch(credId, title, year)
+        if (match) {
+          list.push({
+            platform: 'iptv',
+            title: 'IPTV',
+            url: `internal://iptv/${credId}/${match.stream_id}`,
+            offerType: 'subscription',
+            price: null,
+            quality: undefined,
+            iptv_credential_id: credId,
+            iptv_stream_id: match.stream_id,
+          })
+        }
+      }
+    }
     res.json(list)
   } catch (e: any) {
     res.status(502).json({ error: e.message })

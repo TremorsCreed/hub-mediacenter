@@ -34,21 +34,40 @@ async function buildIptvStreamUrl(deviceId: string, streamId: string, type: 'liv
   if (!server || !user || !pass) return null
   const base = server.replace(/\/+$/, '')
 
+  let url: string
   if (type === 'vod') {
     // Récupérer container_extension via get_vod_info — l'extension réelle varie (mkv/mp4/avi)
     let containerExt = 'mp4'
     try {
-      const url = `${base}/player_api.php?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&action=get_vod_info&vod_id=${streamId}`
-      const r = await fetch(url, { signal: AbortSignal.timeout(5000) } as any)
+      const apiUrl = `${base}/player_api.php?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&action=get_vod_info&vod_id=${streamId}`
+      const r = await fetch(apiUrl, { signal: AbortSignal.timeout(5000) } as any)
       if (r.ok) {
         const data: any = await r.json()
         containerExt = data?.movie_data?.container_extension || data?.info?.container_extension || 'mp4'
       }
     } catch (e) { console.warn('[iptv] get_vod_info failed:', (e as any).message) }
-    return `${base}/movie/${user}/${pass}/${streamId}.${containerExt}`
+    url = `${base}/movie/${user}/${pass}/${streamId}.${containerExt}`
+  } else {
+    url = `${base}/${user}/${pass}/${streamId}.${ext}`
   }
-  // Live channel
-  return `${base}/${user}/${pass}/${streamId}.${ext}`
+
+  // Résoudre la redirection 302 Xtream → URL directe du serveur de stream.
+  // Beaucoup de players (notamment VLC sur certaines builds) bricolent quand
+  // la redirection change d'host et de port (ex: tv.infinitrx.online → 103.176.90.96).
+  try {
+    const r = await fetch(url, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: { Range: 'bytes=0-0' },
+      signal: AbortSignal.timeout(5000),
+    } as any)
+    const loc = r.headers.get('location')
+    if (loc && (r.status === 301 || r.status === 302 || r.status === 303 || r.status === 307 || r.status === 308)) {
+      console.log(`[iptv] resolved redirect → ${loc}`)
+      return loc
+    }
+  } catch (e) { console.warn('[iptv] redirect resolve failed:', (e as any).message) }
+  return url
 }
 
 async function waitForPlexClient(deviceIp: string, maxMs: number = 10000): Promise<boolean> {

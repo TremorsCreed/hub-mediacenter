@@ -200,7 +200,8 @@ class HubService : Service() {
                 if (style == "player") {
                     val image = json.optString("image").ifEmpty { null }
                     val appLabel = json.optString("app_label").ifEmpty { null }
-                    overlay.showPlayer(title, message, appLabel, image, duration)
+                    val imageKind = json.optString("image_kind").ifEmpty { "poster" }
+                    overlay.showPlayer(title, message, appLabel, image, imageKind, duration)
                 } else {
                     overlay.show(title, message, duration)
                 }

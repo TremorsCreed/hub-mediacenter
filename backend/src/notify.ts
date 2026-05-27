@@ -10,6 +10,7 @@ export interface OverlayPayload {
   message: string
   duration?: number
   image?: string
+  image_kind?: 'poster' | 'logo'
   app_label?: string
 }
 

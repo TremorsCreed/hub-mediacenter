@@ -202,6 +202,7 @@ export function sendOverlay(device_id: string, payload: {
   duration?: number
   style?: 'small' | 'player'
   image?: string       // URL absolue (chargée par l'agent)
+  image_kind?: 'poster' | 'logo'  // poster=centerCrop 2:3, logo=fitCenter carré
   app_label?: string   // label en haut de la card player (ex "PLEX", "IPTV")
   action?: 'hide'      // si fourni, retire l'overlay au lieu d'afficher
 }): boolean {

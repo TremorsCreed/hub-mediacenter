@@ -320,6 +320,7 @@ router.post('/', async (req, res) => {
         message: 'En lecture sur Plex',
         app_label: 'PLEX',
         image: plexImageUrl,
+        image_kind: 'poster',
       })
 
       // Update playback_state — sinon le dashboard reste sur "idle" pour les plays
@@ -383,6 +384,8 @@ router.post('/', async (req, res) => {
     message: resolvedIptvType === 'live' ? 'Live en cours' : 'En lecture',
     app_label: (resolved_app as string).toUpperCase(),
     image: buildImageUrl(req, thumb, resolved_app as string),
+    // Pour IPTV (logos chaînes) ratio carré → fitCenter ; VOD souvent posters → poster
+    image_kind: resolved_app === 'iptv' && resolvedIptvType !== 'vod' ? 'logo' : 'poster',
   })
 
   await db.execute({

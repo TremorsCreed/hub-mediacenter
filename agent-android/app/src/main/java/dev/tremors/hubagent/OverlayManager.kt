@@ -17,6 +17,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import okhttp3.OkHttpClient
@@ -104,7 +105,7 @@ class OverlayManager(private val ctx: Context) {
         } catch (e: Exception) { Log.e(TAG, "addView small", e) }
     }
 
-    fun showPlayer(title: String, message: String, appLabel: String?, imageUrl: String?, durationSec: Int = 0) = handler.post {
+    fun showPlayer(title: String, message: String, appLabel: String?, imageUrl: String?, imageKind: String = "poster", durationSec: Int = 0) = handler.post {
         if (!hasPermission()) { Log.w(TAG, "no overlay perm"); return@post }
         hidePlayer(false)
         val view = try { LayoutInflater.from(ctx).inflate(R.layout.overlay_player, null) }
@@ -114,7 +115,23 @@ class OverlayManager(private val ctx: Context) {
         view.findViewById<TextView>(R.id.overlayPlayerApp).text = (appLabel ?: "HUB MEDIACENTER").uppercase()
 
         val img = view.findViewById<ImageView>(R.id.overlayPlayerImage)
-        clipRounded(img, dp(6f))
+        val frame = view.findViewById<FrameLayout>(R.id.overlayPlayerImageFrame)
+
+        // Poster (Plex, VOD) : cadre 80×120 ratio 2:3, centerCrop bord à bord
+        // Logo (IPTV live) : cadre 100×100 carré, fitCenter avec padding pour respirer
+        val isPoster = imageKind == "poster"
+        val w = dp(if (isPoster) 80f else 100f).toInt()
+        val h = dp(if (isPoster) 120f else 100f).toInt()
+        frame.layoutParams = frame.layoutParams.apply { width = w; height = h }
+        if (isPoster) {
+            img.scaleType = ImageView.ScaleType.CENTER_CROP
+            img.setPadding(0, 0, 0, 0)
+        } else {
+            img.scaleType = ImageView.ScaleType.FIT_CENTER
+            val p = dp(8f).toInt()
+            img.setPadding(p, p, p, p)
+        }
+        clipRounded(frame, dp(8f))
 
         val params = baseParams().apply {
             gravity = Gravity.BOTTOM or Gravity.START

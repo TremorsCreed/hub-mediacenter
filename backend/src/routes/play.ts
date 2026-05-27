@@ -8,7 +8,14 @@ import { notifyOverlay, notifyOverlayPlayer, hideOverlay } from '../notify'
 
 // Helper pour construire l'URL stream Xtream complète côté backend.
 // On résout l'extension réelle pour les VOD via get_vod_info (container_extension).
-async function buildIptvStreamUrl(deviceId: string, streamId: string, type: 'live' | 'vod'): Promise<string | null> {
+// Pour series, le streamId est en réalité l'episode_id et l'extension est fournie
+// par le frontend (déjà récupérée via get_series_info à l'ouverture de la série).
+async function buildIptvStreamUrl(
+  deviceId: string,
+  streamId: string,
+  type: 'live' | 'vod' | 'series',
+  explicitExt?: string,
+): Promise<string | null> {
   const { rows: cfgRows } = await db.execute({ sql: 'SELECT * FROM device_config WHERE device_id = ?', args: [deviceId] })
   const cfg = cfgRows[0] as any | undefined
   let server = '', user = '', pass = '', ext = 'ts'
@@ -36,17 +43,23 @@ async function buildIptvStreamUrl(deviceId: string, streamId: string, type: 'liv
   const base = server.replace(/\/+$/, '')
 
   let url: string
-  if (type === 'vod') {
+  if (type === 'series') {
+    // streamId = episode_id ; extension fournie par le frontend (get_series_info)
+    const epExt = (explicitExt || 'mp4').replace(/^\./, '')
+    url = `${base}/series/${user}/${pass}/${streamId}.${epExt}`
+  } else if (type === 'vod') {
     // Récupérer container_extension via get_vod_info — l'extension réelle varie (mkv/mp4/avi)
-    let containerExt = 'mp4'
-    try {
-      const apiUrl = `${base}/player_api.php?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&action=get_vod_info&vod_id=${streamId}`
-      const r = await fetch(apiUrl, { signal: AbortSignal.timeout(5000) } as any)
-      if (r.ok) {
-        const data: any = await r.json()
-        containerExt = data?.movie_data?.container_extension || data?.info?.container_extension || 'mp4'
-      }
-    } catch (e) { console.warn('[iptv] get_vod_info failed:', (e as any).message) }
+    let containerExt = explicitExt?.replace(/^\./, '') || 'mp4'
+    if (!explicitExt) {
+      try {
+        const apiUrl = `${base}/player_api.php?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&action=get_vod_info&vod_id=${streamId}`
+        const r = await fetch(apiUrl, { signal: AbortSignal.timeout(5000) } as any)
+        if (r.ok) {
+          const data: any = await r.json()
+          containerExt = data?.movie_data?.container_extension || data?.info?.container_extension || 'mp4'
+        }
+      } catch (e) { console.warn('[iptv] get_vod_info failed:', (e as any).message) }
+    }
     url = `${base}/movie/${user}/${pass}/${streamId}.${containerExt}`
   } else {
     url = `${base}/${user}/${pass}/${streamId}.${ext}`
@@ -172,7 +185,8 @@ const PlaySchema = z.object({
   ean: z.string().optional(),
   plex_id: z.string().optional(),
   iptv_stream_id: z.string().optional(),
-  iptv_type: z.enum(['live', 'vod']).optional(),
+  iptv_type: z.enum(['live', 'vod', 'series']).optional(),
+  iptv_ext: z.string().optional(),  // container_extension (pour series episode)
   external_url: z.string().optional(),                 // URL pour deep link (Netflix, Disney+, ...)
   external_platform: z.string().optional(),            // ex "netflix", "disney+", "primevideo"
   title: z.string().optional(),
@@ -221,7 +235,7 @@ router.post('/', async (req, res) => {
   const parsed = PlaySchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
 
-  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, external_url, external_platform, title, thumb, resume, device_id, app, requester } = parsed.data
+  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, iptv_ext, external_url, external_platform, title, thumb, resume, device_id, app, requester } = parsed.data
 
   // 1. Resolve catalog entry
   let entry: CatalogEntry | null = null
@@ -236,9 +250,9 @@ router.post('/', async (req, res) => {
     entry = { id: `plex:${plex_id}`, title: title ?? 'Plex', type: 'movie', plex_id } as CatalogEntry
   } else if (iptv_stream_id) {
     entry = {
-      id: `iptv:${iptv_stream_id}`,
+      id: `iptv:${iptv_type ?? 'live'}:${iptv_stream_id}`,
       title: title ?? 'IPTV',
-      type: (iptv_type === 'vod' ? 'vod' : 'live_channel') as any,
+      type: (iptv_type === 'vod' ? 'vod' : iptv_type === 'series' ? 'episode' : 'live_channel') as any,
       tivimate_id: iptv_stream_id,
     } as CatalogEntry
   } else if (catalog_id) {
@@ -375,10 +389,11 @@ router.post('/', async (req, res) => {
   }
 
   // 5. Autres apps : WebSocket vers l'agent
-  const resolvedIptvType = iptv_type ?? (entry.type === 'vod' ? 'vod' : entry.type === 'live_channel' ? 'live' : undefined)
+  const resolvedIptvType: 'live' | 'vod' | 'series' | undefined = iptv_type
+    ?? (entry.type === 'vod' ? 'vod' : entry.type === 'episode' ? 'series' : entry.type === 'live_channel' ? 'live' : undefined)
   let streamUrl: string | undefined
   if (resolved_app === 'iptv' && entry.tivimate_id && resolvedIptvType) {
-    const url = await buildIptvStreamUrl(target_device_id, entry.tivimate_id, resolvedIptvType)
+    const url = await buildIptvStreamUrl(target_device_id, entry.tivimate_id, resolvedIptvType, iptv_ext)
     if (url) {
       streamUrl = url
       console.log(`[iptv] resolved ${resolvedIptvType} stream URL: ${url}`)

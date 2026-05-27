@@ -78,7 +78,8 @@ export interface PlayIntent {
   ean?: string
   plex_id?: string
   iptv_stream_id?: string
-  iptv_type?: 'live' | 'vod'
+  iptv_type?: 'live' | 'vod' | 'series'
+  iptv_ext?: string
   external_url?: string
   external_platform?: string
   title?: string
@@ -124,8 +125,43 @@ export interface IptvStream {
   added?: string
   rating?: string
   year?: string
-  language?: string  // "FR", "EN", ... (undefined si non détecté)
-  type: 'live' | 'vod'
+  language?: string
+  type: 'live' | 'vod' | 'series'
+}
+
+export interface IptvEpisode {
+  episode_id: string
+  episode_num: number
+  title: string
+  plot?: string
+  duration?: string
+  rating?: string
+  air_date?: string
+  container_extension: string
+  movie_image?: string
+}
+
+export interface IptvSeason {
+  season_number: number
+  name: string
+  cover?: string
+  overview?: string
+  episode_count: number
+  episodes: IptvEpisode[]
+}
+
+export interface IptvSeriesInfo {
+  info: {
+    name: string
+    cover?: string
+    plot?: string
+    cast?: string
+    director?: string
+    genre?: string
+    release_date?: string
+    rating?: string
+  }
+  seasons: IptvSeason[]
 }
 
 export interface PlexSection {
@@ -230,9 +266,9 @@ export const api = {
   },
   iptv: {
     credentials: () => get<{ id: number; name: string }[]>('/iptv/credentials'),
-    categories: (credId: number, type: 'live' | 'vod') => get<IptvCategory[]>(`/iptv/${credId}/categories?type=${type}`),
-    languages: (credId: number, type: 'live' | 'vod') => get<{ code: string; count: number }[]>(`/iptv/${credId}/languages?type=${type}`),
-    streams: (credId: number, opts: { type: 'live' | 'vod'; category?: string; search?: string; languages?: string[]; start?: number; limit?: number }) => {
+    categories: (credId: number, type: 'live' | 'vod' | 'series') => get<IptvCategory[]>(`/iptv/${credId}/categories?type=${type}`),
+    languages: (credId: number, type: 'live' | 'vod' | 'series') => get<{ code: string; count: number }[]>(`/iptv/${credId}/languages?type=${type}`),
+    streams: (credId: number, opts: { type: 'live' | 'vod' | 'series'; category?: string; search?: string; languages?: string[]; start?: number; limit?: number }) => {
       const p = new URLSearchParams({ type: opts.type })
       if (opts.category) p.set('category', opts.category)
       if (opts.search) p.set('search', opts.search)
@@ -241,6 +277,7 @@ export const api = {
       if (opts.limit) p.set('limit', String(opts.limit))
       return get<{ total: number; start: number; size: number; items: IptvStream[] }>(`/iptv/${credId}/streams?${p}`)
     },
+    seriesInfo: (credId: number, seriesId: string) => get<IptvSeriesInfo>(`/iptv/${credId}/series/${seriesId}`),
     imageUrl: (url?: string) => url ? `${BASE}/iptv/image?url=${encodeURIComponent(url)}` : '',
   },
   plex: {

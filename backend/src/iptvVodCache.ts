@@ -30,7 +30,7 @@ export function detectLanguage(name: string): string | undefined {
   return code
 }
 
-type Kind = 'vod' | 'live'
+type Kind = 'vod' | 'live' | 'series'
 
 interface CacheEntry {
   items: StreamEntry[]
@@ -61,7 +61,9 @@ async function fetchCred(credId: number) {
 async function fetchAll(credId: number, kind: Kind): Promise<StreamEntry[]> {
   const cred = await fetchCred(credId)
   if (!cred) return []
-  const action = kind === 'vod' ? 'get_vod_streams' : 'get_live_streams'
+  const action = kind === 'vod' ? 'get_vod_streams'
+                : kind === 'series' ? 'get_series'
+                : 'get_live_streams'
   const url = `${cred.server}/player_api.php?username=${encodeURIComponent(cred.user)}&password=${encodeURIComponent(cred.pass)}&action=${action}`
   console.log(`[iptv-cache] fetching ${kind} list for credential #${credId}...`)
   const t0 = Date.now()
@@ -71,13 +73,15 @@ async function fetchAll(credId: number, kind: Kind): Promise<StreamEntry[]> {
     const data = await r.json() as any[]
     const items: StreamEntry[] = (data ?? []).map(s => {
       const name = String(s.name ?? '')
+      // Pour les séries Xtream, l'identifiant principal est series_id (pas stream_id)
+      const id = kind === 'series' ? String(s.series_id ?? s.num ?? s.stream_id ?? '') : String(s.stream_id)
       return {
-        stream_id: String(s.stream_id),
+        stream_id: id,
         name,
         year: String(s.releaseDate ?? s.year ?? ''),
-        logo: (s.stream_icon || s.cover) as string | undefined,
+        logo: (s.cover || s.stream_icon) as string | undefined,
         category_id: String(s.category_id ?? ''),
-        added: s.added as string | undefined,
+        added: (s.last_modified ?? s.added) as string | undefined,
         rating: s.rating as string | undefined,
         language: detectLanguage(name),
       }
@@ -106,6 +110,7 @@ export async function getList(credId: number, kind: Kind): Promise<StreamEntry[]
 
 export const getVodList = (credId: number) => getList(credId, 'vod')
 export const getLiveList = (credId: number) => getList(credId, 'live')
+export const getSeriesList = (credId: number) => getList(credId, 'series')
 
 export function normalizeTitle(s: string): string {
   return s.toLowerCase()
@@ -145,18 +150,20 @@ export async function listActiveCredentialIds(): Promise<number[]> {
   return rows.map((r: any) => Number(r.id))
 }
 
-// Précharge VOD + Live au démarrage backend (fire-and-forget).
+// Précharge VOD + Live + Series au démarrage backend (fire-and-forget).
 export async function preloadAll() {
   const ids = await listActiveCredentialIds()
   for (const id of ids) {
     getVodList(id).catch(() => {})
     getLiveList(id).catch(() => {})
+    getSeriesList(id).catch(() => {})
   }
-  if (ids.length) console.log(`[iptv-cache] preloading ${ids.length} credential(s) (vod + live)...`)
+  if (ids.length) console.log(`[iptv-cache] preloading ${ids.length} credential(s) (vod + live + series)...`)
 }
 
 // Invalide les caches d'un credential (à appeler quand on update/delete une credential)
 export function invalidate(credId: number) {
   cache.delete(key('vod', credId))
   cache.delete(key('live', credId))
+  cache.delete(key('series', credId))
 }

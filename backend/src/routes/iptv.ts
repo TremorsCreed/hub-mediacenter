@@ -35,12 +35,14 @@ router.get('/credentials', async (_req, res) => {
   res.json(rows.map((r: any) => ({ id: r.id, name: r.name })))
 })
 
-// GET /api/iptv/:credId/categories?type=live|vod
+// GET /api/iptv/:credId/categories?type=live|vod|series
 router.get('/:credId/categories', async (req, res) => {
   const cred = await getXtreamCred(req.params.credId)
   if (!cred) return res.status(404).json({ error: 'credential not found or incomplete' })
   const type = (req.query.type as string) ?? 'live'
-  const action = type === 'vod' ? 'get_vod_categories' : 'get_live_categories'
+  const action = type === 'vod' ? 'get_vod_categories'
+               : type === 'series' ? 'get_series_categories'
+               : 'get_live_categories'
   try {
     const data = await xtreamCall(cred, action) as any[]
     res.json(data.map(c => ({ id: String(c.category_id), name: c.category_name as string })))
@@ -53,7 +55,8 @@ router.get('/:credId/categories', async (req, res) => {
 router.get('/:credId/streams', async (req, res) => {
   const credId = parseInt(req.params.credId)
   if (!credId) return res.status(404).json({ error: 'invalid credential id' })
-  const type = ((req.query.type as string) === 'vod' ? 'vod' : 'live') as 'vod' | 'live'
+  const typeRaw = req.query.type as string
+  const type = (typeRaw === 'vod' ? 'vod' : typeRaw === 'series' ? 'series' : 'live') as 'vod' | 'live' | 'series'
   const category = req.query.category as string | undefined
   const searchRaw = ((req.query.search as string) ?? '').trim()
   const start = Math.max(0, parseInt((req.query.start as string) ?? '0'))
@@ -95,11 +98,66 @@ router.get('/:credId/streams', async (req, res) => {
   }
 })
 
-// GET /api/iptv/:credId/languages?type=live|vod — langues détectées avec compte
+// GET /api/iptv/:credId/series/:seriesId — détail d'une série : saisons + épisodes
+// Pas de cache disque, appelé seulement à l'ouverture d'une série (rare vs liste).
+router.get('/:credId/series/:seriesId', async (req, res) => {
+  const cred = await getXtreamCred(req.params.credId)
+  if (!cred) return res.status(404).json({ error: 'credential not found or incomplete' })
+  try {
+    const data: any = await xtreamCall(cred, 'get_series_info', { series_id: req.params.seriesId })
+    const info = data.info ?? {}
+    const seasons: any[] = data.seasons ?? []
+    const episodesByseason: Record<string, any[]> = data.episodes ?? {}
+    // Normalisation : on retourne un tableau de saisons triées avec leurs épisodes.
+    const seasonsOut = Object.keys(episodesByseason)
+      .map(k => Number(k))
+      .sort((a, b) => a - b)
+      .map(seasonNum => {
+        const seasonMeta = seasons.find((s: any) => Number(s.season_number) === seasonNum) ?? {}
+        const eps = (episodesByseason[String(seasonNum)] ?? []).map((ep: any) => ({
+          episode_id: String(ep.id),
+          episode_num: Number(ep.episode_num),
+          title: String(ep.title ?? ''),
+          plot: ep.info?.plot as string | undefined,
+          duration: ep.info?.duration as string | undefined,
+          rating: ep.info?.rating as string | undefined,
+          air_date: ep.info?.releasedate as string | undefined,
+          container_extension: String(ep.container_extension ?? 'mp4'),
+          movie_image: (ep.info?.movie_image || ep.info?.cover_big) as string | undefined,
+        }))
+        return {
+          season_number: seasonNum,
+          name: String(seasonMeta.name ?? `Saison ${seasonNum}`),
+          cover: seasonMeta.cover as string | undefined,
+          overview: seasonMeta.overview as string | undefined,
+          episode_count: eps.length,
+          episodes: eps,
+        }
+      })
+    res.json({
+      info: {
+        name: info.name as string,
+        cover: info.cover as string | undefined,
+        plot: info.plot as string | undefined,
+        cast: info.cast as string | undefined,
+        director: info.director as string | undefined,
+        genre: info.genre as string | undefined,
+        release_date: info.release_date as string | undefined,
+        rating: info.rating as string | undefined,
+      },
+      seasons: seasonsOut,
+    })
+  } catch (e: any) {
+    res.status(502).json({ error: e.message })
+  }
+})
+
+// GET /api/iptv/:credId/languages?type=live|vod|series — langues détectées avec compte
 router.get('/:credId/languages', async (req, res) => {
   const credId = parseInt(req.params.credId)
   if (!credId) return res.status(404).json({ error: 'invalid credential id' })
-  const type = ((req.query.type as string) === 'vod' ? 'vod' : 'live') as 'vod' | 'live'
+  const typeRaw = req.query.type as string
+  const type = (typeRaw === 'vod' ? 'vod' : typeRaw === 'series' ? 'series' : 'live') as 'vod' | 'live' | 'series'
   try {
     const all = await getList(credId, type)
     const counts = new Map<string, number>()

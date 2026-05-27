@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, Device, IptvCategory, IptvStream } from '../api'
-import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages } from 'lucide-react'
+import { api, Device, IptvCategory, IptvSeriesInfo, IptvStream } from '../api'
+import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 300
 
@@ -16,7 +16,11 @@ const COMMON_LANG_LABELS: Record<string, string> = {
 export default function Iptv() {
   const [creds, setCreds] = useState<{ id: number; name: string }[]>([])
   const [credId, setCredId] = useState<number | null>(null)
-  const [type, setType] = useState<'live' | 'vod'>('live')
+  const [type, setType] = useState<'live' | 'vod' | 'series'>('live')
+  const [selectedSeries, setSelectedSeries] = useState<IptvStream | null>(null)
+  const [seriesInfo, setSeriesInfo] = useState<IptvSeriesInfo | null>(null)
+  const [loadingSeries, setLoadingSeries] = useState(false)
+  const [openSeasons, setOpenSeasons] = useState<Set<number>>(new Set([1]))
   const [categories, setCategories] = useState<IptvCategory[]>([])
   const [categoryId, setCategoryId] = useState<string>('')
   const [streams, setStreams] = useState<IptvStream[]>([])
@@ -126,6 +130,11 @@ export default function Iptv() {
   }, [credId, type, categoryId, debouncedSearch, selectedLangs, total, loadingMore, loading])
 
   const play = async (s: IptvStream) => {
+    // Series : on n'envoie pas directement, on ouvre la modale détail
+    if (s.type === 'series') {
+      openSeries(s)
+      return
+    }
     if (!deviceId) {
       setToast({ msg: 'Sélectionne un device', ok: false })
       return
@@ -149,6 +158,49 @@ export default function Iptv() {
       setTimeout(() => setToast(null), 3500)
     }
   }
+
+  const openSeries = async (s: IptvStream) => {
+    setSelectedSeries(s)
+    setSeriesInfo(null)
+    setLoadingSeries(true)
+    setOpenSeasons(new Set([1]))
+    try {
+      const info = await api.iptv.seriesInfo(credId!, s.stream_id)
+      setSeriesInfo(info)
+    } catch (e: any) {
+      setToast({ msg: `Erreur série : ${e.message}`, ok: false })
+      setTimeout(() => setToast(null), 4000)
+    } finally {
+      setLoadingSeries(false)
+    }
+  }
+
+  const playEpisode = async (episodeId: string, ext: string, title: string) => {
+    if (!deviceId) { setToast({ msg: 'Sélectionne un device', ok: false }); return }
+    setLaunching(`ep-${episodeId}`)
+    try {
+      const r = await api.play({
+        iptv_stream_id: episodeId,
+        iptv_type: 'series',
+        iptv_ext: ext,
+        title,
+        thumb: selectedSeries?.logo,
+        app: 'iptv',
+        device_id: deviceId,
+        requester: 'manual',
+      })
+      setToast({ msg: `▶ ${r.title}`, ok: true })
+      setSelectedSeries(null)
+    } catch (e: any) {
+      setToast({ msg: `Échec : ${e.message}`, ok: false })
+    } finally {
+      setLaunching(null)
+      setTimeout(() => setToast(null), 3500)
+    }
+  }
+
+  const toggleSeason = (n: number) =>
+    setOpenSeasons(prev => { const s = new Set(prev); s.has(n) ? s.delete(n) : s.add(n); return s })
 
   if (creds.length === 0) {
     return (
@@ -185,6 +237,12 @@ export default function Iptv() {
             className={`flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors ${type === 'vod' ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:text-zinc-200'}`}
           >
             <Film size={13} /> VOD
+          </button>
+          <button
+            onClick={() => setType('series')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors ${type === 'series' ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:text-zinc-200'}`}
+          >
+            <MonitorPlay size={13} /> Séries
           </button>
         </div>
 
@@ -255,7 +313,7 @@ export default function Iptv() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
           <input
             className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 pl-8 text-sm focus:outline-none focus:border-zinc-600"
-            placeholder={type === 'live' ? 'Rechercher une chaîne…' : 'Rechercher un film…'}
+            placeholder={type === 'live' ? 'Rechercher une chaîne…' : type === 'series' ? 'Rechercher une série…' : 'Rechercher un film…'}
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -344,8 +402,91 @@ export default function Iptv() {
         </div>
       )}
 
+      {/* Modale détail série : saisons accordéon + épisodes */}
+      {selectedSeries && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setSelectedSeries(null)}>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg max-w-3xl w-full my-8 relative" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setSelectedSeries(null)} className="absolute top-3 right-3 text-zinc-500 hover:text-white z-10">
+              <X size={18} />
+            </button>
+
+            <div className="p-5 border-b border-zinc-800">
+              <div className="flex gap-4">
+                {(seriesInfo?.info.cover || selectedSeries.logo) && (
+                  <img
+                    src={api.iptv.imageUrl(seriesInfo?.info.cover || selectedSeries.logo)}
+                    alt={selectedSeries.name}
+                    className="w-28 h-40 object-cover rounded shrink-0 bg-zinc-800"
+                    onError={e => { e.currentTarget.style.display = 'none' }}
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-lg font-semibold leading-tight">{seriesInfo?.info.name ?? selectedSeries.name}</h2>
+                  <div className="text-xs text-zinc-500 mt-1 flex gap-3 flex-wrap">
+                    {seriesInfo?.info.release_date && <span>{seriesInfo.info.release_date.slice(0, 4)}</span>}
+                    {seriesInfo?.info.genre && <span>{seriesInfo.info.genre}</span>}
+                    {seriesInfo?.info.rating && <span>★ {seriesInfo.info.rating}</span>}
+                  </div>
+                  {seriesInfo?.info.plot && (
+                    <p className="text-sm text-zinc-300 mt-3 line-clamp-4">{seriesInfo.info.plot}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5">
+              {loadingSeries && (
+                <div className="flex items-center justify-center py-8 text-zinc-500 gap-2 text-sm">
+                  <Loader2 size={14} className="animate-spin" /> Chargement des épisodes…
+                </div>
+              )}
+              {!loadingSeries && seriesInfo && seriesInfo.seasons.length === 0 && (
+                <div className="text-sm text-zinc-600 py-6 text-center">Aucun épisode disponible.</div>
+              )}
+              {!loadingSeries && seriesInfo?.seasons.map(season => {
+                const isOpen = openSeasons.has(season.season_number)
+                return (
+                  <div key={season.season_number} className="border-t border-zinc-800 first:border-t-0">
+                    <button
+                      onClick={() => toggleSeason(season.season_number)}
+                      className="w-full flex items-center gap-2 py-3 text-left hover:text-amber-400 transition-colors"
+                    >
+                      {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                      <span className="font-medium">{season.name}</span>
+                      <span className="text-xs text-zinc-500">· {season.episode_count} épisode{season.episode_count > 1 ? 's' : ''}</span>
+                    </button>
+                    {isOpen && (
+                      <div className="space-y-1 pb-3">
+                        {season.episodes.map(ep => {
+                          const busy = launching === `ep-${ep.episode_id}`
+                          return (
+                            <button
+                              key={ep.episode_id}
+                              onClick={() => playEpisode(ep.episode_id, ep.container_extension, `${selectedSeries.name} — S${season.season_number}E${ep.episode_num} ${ep.title}`)}
+                              disabled={busy}
+                              className="w-full flex items-center gap-3 px-2 py-2 rounded hover:bg-zinc-800 text-left disabled:opacity-50 transition-colors"
+                            >
+                              <div className="text-xs text-zinc-500 w-12 shrink-0">S{season.season_number}E{ep.episode_num}</div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm truncate">{ep.title}</div>
+                                {ep.air_date && <div className="text-[11px] text-zinc-600">{ep.air_date}</div>}
+                              </div>
+                              {busy ? <Loader2 size={14} className="animate-spin text-amber-400" /> : <Play size={12} className="text-zinc-600" fill="currentColor" />}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && (
-        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded shadow-lg text-sm font-medium ${
+        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded shadow-lg text-sm font-medium z-[60] ${
           toast.ok ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
         }`}>
           {toast.msg}

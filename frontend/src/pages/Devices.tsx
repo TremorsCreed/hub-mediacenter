@@ -157,8 +157,8 @@ function ConfigPanel({ deviceId, capabilities, credentials }: { deviceId: string
             checked={cfg.tvoverlay_enabled}
             onChange={e => setCfg(prev => ({ ...prev, tvoverlay_enabled: e.target.checked }))}
           />
-          <span className="text-sm text-zinc-200">TvOverlay</span>
-          <span className="text-xs text-zinc-500">— notifications visuelles sur le device (requiert l'app TvOverlay installée, port 5001)</span>
+          <span className="text-sm text-zinc-200">Overlay notifications</span>
+          <span className="text-xs text-zinc-500">— affiche les étapes de play (préparation, lecture, contrôles) en overlay sur l'écran du device</span>
         </label>
       </div>
 

@@ -175,6 +175,7 @@ class HubService : Service() {
 
     private val handlerThread = android.os.HandlerThread("hub-cmd").apply { start() }
     private val cmdHandler = android.os.Handler(handlerThread.looper)
+    private val overlay by lazy { OverlayManager(applicationContext) }
 
     private fun handleMessage(json: JSONObject) {
         when (json.optString("type")) {
@@ -188,6 +189,12 @@ class HubService : Service() {
                 updateNotification(text)
             }
             "control" -> cmdHandler.post { try { handleControl(json.optString("action")) } catch (e: Exception) { Log.e(TAG, "handleControl", e) } }
+            "overlay" -> {
+                val title = json.optString("title").ifEmpty { "Hub MediaCenter" }
+                val message = json.optString("message")
+                val duration = json.optInt("duration", 4)
+                if (message.isNotEmpty()) overlay.show(title, message, duration)
+            }
             "pong" -> Log.d(TAG, "pong")
             else -> Log.w(TAG, "Unknown: ${json.optString("type")}")
         }

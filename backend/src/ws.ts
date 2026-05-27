@@ -190,6 +190,13 @@ export function sendControl(device_id: string, action: string): boolean {
   return true
 }
 
+export function sendOverlay(device_id: string, payload: { title?: string; message: string; duration?: number }): boolean {
+  const agent = agents.get(device_id)
+  if (!agent || agent.ws.readyState !== WebSocket.OPEN) return false
+  agent.ws.send(JSON.stringify({ type: 'overlay', ...payload }))
+  return true
+}
+
 export function isConnected(device_id: string): boolean {
   const a = agents.get(device_id)
   return !!a && a.ws.readyState === WebSocket.OPEN

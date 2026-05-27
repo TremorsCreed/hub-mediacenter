@@ -64,9 +64,33 @@ export interface PlayIntent {
   query?: string
   catalog_id?: string
   ean?: string
+  plex_id?: string
+  title?: string
   device_id?: string
   app?: string
   requester: string
+}
+
+export interface PlexSection {
+  id: string
+  title: string
+  type: string
+  agent?: string
+}
+
+export interface PlexItem {
+  ratingKey: string
+  title: string
+  year?: number
+  type: string
+  thumb?: string
+  art?: string
+  summary?: string
+  duration?: number
+  rating?: number
+  contentRating?: string
+  addedAt?: number
+  viewCount?: number
 }
 
 async function get<T>(path: string): Promise<T> {
@@ -124,5 +148,15 @@ export const api = {
     startPin: () => post<{ id: number; pin: string; auth_url: string }>('/plex/pin', {}),
     pollPin: (id: number) => get<{ done: boolean; server_url?: string }>(`/plex/pin/${id}`),
     disconnect: () => del<{ ok: boolean }>('/plex/token'),
+    sections: () => get<PlexSection[]>('/plex/sections'),
+    sectionItems: (id: string, opts: { start?: number; size?: number; sort?: string; search?: string } = {}) => {
+      const p = new URLSearchParams()
+      if (opts.start !== undefined) p.set('start', String(opts.start))
+      if (opts.size !== undefined) p.set('size', String(opts.size))
+      if (opts.sort) p.set('sort', opts.sort)
+      if (opts.search) p.set('search', opts.search)
+      return get<{ total: number; start: number; size: number; items: PlexItem[] }>(`/plex/sections/${id}/all?${p}`)
+    },
+    imageUrl: (path?: string) => path ? `${BASE}/plex/image?path=${encodeURIComponent(path)}` : '',
   }
 }

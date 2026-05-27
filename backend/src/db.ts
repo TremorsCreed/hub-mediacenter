@@ -97,4 +97,5 @@ export async function initDb() {
   try { await db.execute("ALTER TABLE device_config ADD COLUMN xtream_credential_id INTEGER") } catch {}
   try { await db.execute("ALTER TABLE playback_state ADD COLUMN title TEXT") } catch {}
   try { await db.execute("ALTER TABLE device_config ADD COLUMN tvoverlay_enabled INTEGER NOT NULL DEFAULT 0") } catch {}
+  try { await db.execute("ALTER TABLE device_config ADD COLUMN overlay_player_duration INTEGER NOT NULL DEFAULT 0") } catch {}
 }

@@ -13,7 +13,8 @@ const ConfigSchema = z.object({
   plex_server_id: z.string().default(''),
   app_mappings: z.record(z.string()).default({}),
   xtream_credential_id: z.number().nullable().optional(),
-  tvoverlay_enabled: z.boolean().default(false)
+  tvoverlay_enabled: z.boolean().default(false),
+  overlay_player_duration: z.number().int().min(0).max(600).default(0)
 })
 
 async function resolveXtream(credId: number | null | undefined, fallback: { xtream_server: string; xtream_user: string; xtream_pass: string; xtream_ext: string }) {
@@ -33,7 +34,7 @@ router.get('/', async (req, res) => {
   const id = (req as any).params.id as string
   const { rows } = await db.execute({ sql: 'SELECT * FROM device_config WHERE device_id = ?', args: [id] })
   if (!rows.length) {
-    return res.json({ xtream_server: '', xtream_user: '', xtream_pass: '', xtream_ext: 'ts', plex_server_id: '', app_mappings: {}, xtream_credential_id: null, tvoverlay_enabled: false })
+    return res.json({ xtream_server: '', xtream_user: '', xtream_pass: '', xtream_ext: 'ts', plex_server_id: '', app_mappings: {}, xtream_credential_id: null, tvoverlay_enabled: false, overlay_player_duration: 0 })
   }
   const r = rows[0] as any
   const resolved = await resolveXtream(r.xtream_credential_id, r)
@@ -42,7 +43,8 @@ router.get('/', async (req, res) => {
     ...resolved,
     app_mappings: JSON.parse(r.app_mappings as string),
     xtream_credential_id: r.xtream_credential_id ?? null,
-    tvoverlay_enabled: !!r.tvoverlay_enabled
+    tvoverlay_enabled: !!r.tvoverlay_enabled,
+    overlay_player_duration: r.overlay_player_duration ?? 0
   })
 })
 
@@ -51,10 +53,10 @@ router.put('/', async (req, res) => {
   const parsed = ConfigSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
 
-  const { xtream_server, xtream_user, xtream_pass, xtream_ext, plex_server_id, app_mappings, xtream_credential_id, tvoverlay_enabled } = parsed.data
+  const { xtream_server, xtream_user, xtream_pass, xtream_ext, plex_server_id, app_mappings, xtream_credential_id, tvoverlay_enabled, overlay_player_duration } = parsed.data
   await db.execute({
-    sql: `INSERT INTO device_config (device_id, xtream_server, xtream_user, xtream_pass, xtream_ext, plex_server_id, app_mappings, xtream_credential_id, tvoverlay_enabled, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    sql: `INSERT INTO device_config (device_id, xtream_server, xtream_user, xtream_pass, xtream_ext, plex_server_id, app_mappings, xtream_credential_id, tvoverlay_enabled, overlay_player_duration, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(device_id) DO UPDATE SET
             xtream_server = excluded.xtream_server,
             xtream_user = excluded.xtream_user,
@@ -64,8 +66,9 @@ router.put('/', async (req, res) => {
             app_mappings = excluded.app_mappings,
             xtream_credential_id = excluded.xtream_credential_id,
             tvoverlay_enabled = excluded.tvoverlay_enabled,
+            overlay_player_duration = excluded.overlay_player_duration,
             updated_at = excluded.updated_at`,
-    args: [id, xtream_server, xtream_user, xtream_pass, xtream_ext, plex_server_id, JSON.stringify(app_mappings), xtream_credential_id ?? null, tvoverlay_enabled ? 1 : 0, Date.now()]
+    args: [id, xtream_server, xtream_user, xtream_pass, xtream_ext, plex_server_id, JSON.stringify(app_mappings), xtream_credential_id ?? null, tvoverlay_enabled ? 1 : 0, overlay_player_duration, Date.now()]
   })
 
   // Résoudre les credentials Xtream effectifs avant de pousser à l'agent

@@ -9,35 +9,40 @@ export interface OverlayPayload {
   title: string
   message: string
   duration?: number
-  image?: string       // URL absolue accessible depuis le device
+  image?: string
   app_label?: string
 }
 
-async function isEnabled(deviceId: string): Promise<boolean> {
+async function getConfig(deviceId: string): Promise<{ enabled: boolean; playerDuration: number }> {
   try {
     const { rows } = await db.execute({
-      sql: `SELECT COALESCE(dc.tvoverlay_enabled, 0) as enabled
+      sql: `SELECT COALESCE(dc.tvoverlay_enabled, 0) as enabled,
+                   COALESCE(dc.overlay_player_duration, 0) as player_duration
             FROM devices d LEFT JOIN device_config dc ON dc.device_id = d.id
             WHERE d.id = ?`,
       args: [deviceId]
     })
-    return !!(rows[0] as any)?.enabled
-  } catch { return false }
+    const r = rows[0] as any
+    return { enabled: !!r?.enabled, playerDuration: Number(r?.player_duration ?? 0) }
+  } catch { return { enabled: false, playerDuration: 0 } }
 }
 
-// Petite notif en haut-droite, auto-hide (préparation, contrôles)
 export async function notifyOverlay(deviceId: string, payload: OverlayPayload): Promise<void> {
-  if (!(await isEnabled(deviceId))) return
+  const cfg = await getConfig(deviceId)
+  if (!cfg.enabled) return
   sendOverlay(deviceId, { style: 'small', duration: payload.duration ?? 4, ...payload })
 }
 
-// Belle card pleine largeur en bas, persistante (le temps du film)
 export async function notifyOverlayPlayer(deviceId: string, payload: OverlayPayload): Promise<void> {
-  if (!(await isEnabled(deviceId))) return
-  sendOverlay(deviceId, { style: 'player', duration: payload.duration ?? 0, ...payload })
+  const cfg = await getConfig(deviceId)
+  if (!cfg.enabled) return
+  // duration explicite > config device > 0 (persistant)
+  const duration = payload.duration ?? cfg.playerDuration
+  sendOverlay(deviceId, { style: 'player', duration, ...payload })
 }
 
 export async function hideOverlay(deviceId: string): Promise<void> {
-  if (!(await isEnabled(deviceId))) return
+  const cfg = await getConfig(deviceId)
+  if (!cfg.enabled) return
   sendOverlay(deviceId, { action: 'hide', message: '' })
 }

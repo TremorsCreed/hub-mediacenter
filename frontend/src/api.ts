@@ -60,6 +60,7 @@ export interface DeviceConfig {
   app_mappings: Record<string, string>
   xtream_credential_id: number | null
   tvoverlay_enabled: boolean
+  overlay_player_duration: number  // secondes, 0 = persistant
 }
 
 export interface Credential {

@@ -4,7 +4,7 @@ import { Wifi, WifiOff, Trash2, ChevronDown, ChevronUp, Save, KeyRound } from 'l
 
 const CONTENT_TYPES = ['movie', 'episode', 'live_channel', 'vod', 'music']
 const APP_NAMES: Record<string, string> = { iptv: 'IPTV (Xtream)', plex: 'Plex', kodi: 'Kodi' }
-const DEFAULT_CONFIG: DeviceConfig = { xtream_server: '', xtream_user: '', xtream_pass: '', xtream_ext: 'ts', plex_server_id: '', app_mappings: {}, xtream_credential_id: null, tvoverlay_enabled: false }
+const DEFAULT_CONFIG: DeviceConfig = { xtream_server: '', xtream_user: '', xtream_pass: '', xtream_ext: 'ts', plex_server_id: '', app_mappings: {}, xtream_credential_id: null, tvoverlay_enabled: false, overlay_player_duration: 0 }
 
 function ConfigPanel({ deviceId, capabilities, credentials }: { deviceId: string; capabilities: { app: string }[]; credentials: Credential[] }) {
   const [cfg, setCfg] = useState<DeviceConfig>(DEFAULT_CONFIG)
@@ -150,7 +150,7 @@ function ConfigPanel({ deviceId, capabilities, credentials }: { deviceId: string
 
       <div>
         <div className="text-xs text-zinc-400 font-medium mb-2 uppercase tracking-wide">Modules</div>
-        <label className="flex items-center gap-2 cursor-pointer select-none">
+        <label className="flex items-center gap-2 cursor-pointer select-none mb-2">
           <input
             type="checkbox"
             className="accent-amber-500"
@@ -158,8 +158,20 @@ function ConfigPanel({ deviceId, capabilities, credentials }: { deviceId: string
             onChange={e => setCfg(prev => ({ ...prev, tvoverlay_enabled: e.target.checked }))}
           />
           <span className="text-sm text-zinc-200">Overlay notifications</span>
-          <span className="text-xs text-zinc-500">— affiche les étapes de play (préparation, lecture, contrôles) en overlay sur l'écran du device</span>
+          <span className="text-xs text-zinc-500">— card avec miniature sur l'écran du device pendant la lecture</span>
         </label>
+        {cfg.tvoverlay_enabled && (
+          <div className="flex items-center gap-2 pl-6 mt-1">
+            <span className="text-xs text-zinc-500 w-44 shrink-0">Auto-hide après (secondes)</span>
+            <input
+              type="number" min={0} max={600}
+              className="w-20 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-zinc-500"
+              value={cfg.overlay_player_duration}
+              onChange={e => setCfg(prev => ({ ...prev, overlay_player_duration: Math.max(0, Math.min(600, parseInt(e.target.value || '0'))) }))}
+            />
+            <span className="text-xs text-zinc-600">0 = reste affiché pendant tout le film</span>
+          </div>
+        )}
       </div>
 
       <button

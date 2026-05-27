@@ -268,16 +268,18 @@ class HubService : Service() {
         return caps
     }
 
-    private fun getLocalIp(): String? = try {
-        val cm = applicationContext.getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-        val network = cm.activeNetwork ?: return null
-        val props = cm.getLinkProperties(network) ?: return null
-        props.linkAddresses
-            .map { it.address }
-            .filterIsInstance<java.net.Inet4Address>()
-            .firstOrNull { !it.isLoopbackAddress }
-            ?.hostAddress
-    } catch (e: Exception) { null }
+    private fun getLocalIp(): String? {
+        return try {
+            val cm = applicationContext.getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            val network = cm.activeNetwork ?: return null
+            val props = cm.getLinkProperties(network) ?: return null
+            props.linkAddresses
+                .map { it.address }
+                .filterIsInstance<java.net.Inet4Address>()
+                .firstOrNull { !it.isLoopbackAddress }
+                ?.hostAddress
+        } catch (e: Exception) { null }
+    }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

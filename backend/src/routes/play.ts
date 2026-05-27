@@ -8,29 +8,80 @@ import { resolvePlexWatchUrl } from './plex'
 async function plexRemotePlay(deviceIp: string, ratingKey: string, plexToken: string, plexServerUrl: string, machineId: string): Promise<boolean> {
   const playerBase = `http://${deviceIp}:32500/player/playback`
   const serverUrl = new URL(plexServerUrl)
-  const headers = {
-    'X-Plex-Token': plexToken,
-    'X-Plex-Product': 'Hub MediaCenter',
+  const serverPort = serverUrl.port || '32400'
+  const commonHeaders = {
     'X-Plex-Client-Identifier': 'hub-mediacenter',
-    'X-Plex-Platform': 'Android',
-    'X-Plex-Device-Name': 'Shield TV',
+    'X-Plex-Product': 'Hub MediaCenter',
+    'X-Plex-Version': '1.0.0',
+    'X-Plex-Platform': 'Linux',
+    'X-Plex-Device-Name': 'Hub MediaCenter',
   }
   try {
-    await fetch(`${playerBase}/stop?type=video`, { method: 'POST', headers }).catch(() => {})
-    await new Promise(r => setTimeout(r, 2000))
-    const params = new URLSearchParams({
+    // 1. Créer un PlayQueue sur le serveur Plex
+    const uri = `server://${machineId}/com.plexapp.plugins.library/library/metadata/${ratingKey}`
+    const queueParams = new URLSearchParams({
+      type: 'video',
+      uri,
+      continuous: '0',
+      shuffle: '0',
+      repeat: '0',
+      includeChapters: '1',
+    })
+    const queueRes = await fetch(`${plexServerUrl}/playQueues?${queueParams}`, {
+      method: 'POST',
+      headers: { ...commonHeaders, 'X-Plex-Token': plexToken, Accept: 'application/json' },
+    })
+    if (!queueRes.ok) {
+      console.error('[plex] playQueue creation failed:', queueRes.status, await queueRes.text())
+      return false
+    }
+    const queueData: any = await queueRes.json()
+    const playQueueID = queueData?.MediaContainer?.playQueueID
+    if (!playQueueID) {
+      console.error('[plex] no playQueueID in response:', JSON.stringify(queueData).slice(0, 300))
+      return false
+    }
+
+    // 2. Récupérer le machineIdentifier du player Shield (X-Plex-Target-Client-Identifier)
+    let targetClientId = ''
+    try {
+      const resRes = await fetch(`http://${deviceIp}:32500/resources`, { headers: commonHeaders })
+      const xml = await resRes.text()
+      const m = xml.match(/machineIdentifier="([^"]+)"/)
+      targetClientId = m?.[1] ?? ''
+    } catch {}
+
+    // 3. Stop la lecture en cours
+    await fetch(`${playerBase}/stop?type=video`, {
+      method: 'POST',
+      headers: { ...commonHeaders, 'X-Plex-Token': plexToken },
+    }).catch(() => {})
+    await new Promise(r => setTimeout(r, 1000))
+
+    // 4. Envoyer playMedia au player avec le containerKey du PlayQueue
+    const playParams = new URLSearchParams({
       key: `/library/metadata/${ratingKey}`,
       offset: '0',
-      protocol: 'http',
-      address: serverUrl.hostname,
-      port: serverUrl.port || '32400',
       machineIdentifier: machineId,
-      directPlay: '1',
-      directStream: '1',
+      address: serverUrl.hostname,
+      port: serverPort,
+      protocol: 'http',
+      containerKey: `/playQueues/${playQueueID}?own=1&window=200`,
+      token: plexToken,
+      commandID: '1',
+      providerIdentifier: 'com.plexapp.plugins.library',
+      type: 'video',
     })
-    const r = await fetch(`${playerBase}/playMedia?${params}`, { method: 'POST', headers })
+    const playHeaders: Record<string, string> = {
+      ...commonHeaders,
+      'X-Plex-Token': plexToken,
+    }
+    if (targetClientId) playHeaders['X-Plex-Target-Client-Identifier'] = targetClientId
+    const r = await fetch(`${playerBase}/playMedia?${playParams}`, { method: 'POST', headers: playHeaders })
+    if (!r.ok) console.error('[plex] playMedia failed:', r.status, await r.text())
     return r.ok
-  } catch {
+  } catch (e) {
+    console.error('[plex] remote play error:', e)
     return false
   }
 }

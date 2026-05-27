@@ -69,6 +69,47 @@
             android:ellipsize="end"
             android:text="En lecture" />
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="8dp">
+
+            <TextView
+                android:id="@+id/overlayPlayerPosition"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#94a3b8"
+                android:textSize="11sp"
+                android:fontFamily="monospace"
+                android:text="" />
+
+            <ProgressBar
+                android:id="@+id/overlayPlayerProgress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="0dp"
+                android:layout_height="4dp"
+                android:layout_weight="1"
+                android:layout_marginStart="10dp"
+                android:layout_marginEnd="10dp"
+                android:max="1000"
+                android:progress="0"
+                android:progressTint="#f59e0b"
+                android:progressBackgroundTint="#2a2a3a"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/overlayPlayerDuration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#94a3b8"
+                android:textSize="11sp"
+                android:fontFamily="monospace"
+                android:text="" />
+
+        </LinearLayout>
+
     </LinearLayout>
 
 </LinearLayout>

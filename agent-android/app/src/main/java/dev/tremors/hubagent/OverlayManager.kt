@@ -19,6 +19,7 @@ import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.ProgressBar
 import android.widget.TextView
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -166,6 +167,54 @@ class OverlayManager(private val ctx: Context) {
                 }
             }
         }
+    }
+
+    /**
+     * Met à jour l'overlay player en place (sans recréer la view) pour refléter
+     * un changement d'état lecture/pause + position/durée.
+     *
+     * - paused → message "⏸ En pause · {app}", couleur du tag passe en gris clair
+     * - playing → message "▶ En lecture · {app}", couleur orange
+     * - position / duration > 0 → progress bar visible + textes "MM:SS / MM:SS"
+     */
+    fun updatePlayerStatus(playing: Boolean, paused: Boolean, positionMs: Long, durationMs: Long, appLabel: String?) = handler.post {
+        val view = playerView ?: return@post
+        val msg = view.findViewById<TextView>(R.id.overlayPlayerMessage)
+        val tag = view.findViewById<TextView>(R.id.overlayPlayerApp)
+        val pos = view.findViewById<TextView>(R.id.overlayPlayerPosition)
+        val dur = view.findViewById<TextView>(R.id.overlayPlayerDuration)
+        val bar = view.findViewById<ProgressBar>(R.id.overlayPlayerProgress)
+
+        val app = (appLabel ?: tag.text?.toString() ?: "").uppercase()
+        when {
+            paused -> {
+                msg.text = "⏸  En pause · $app"
+                tag.setTextColor(0xFF94A3B8.toInt())
+            }
+            playing -> {
+                msg.text = "▶  En lecture · $app"
+                tag.setTextColor(0xFFF59E0B.toInt())
+            }
+        }
+        if (durationMs > 0) {
+            pos.text = formatTime(positionMs)
+            dur.text = formatTime(durationMs)
+            bar.visibility = View.VISIBLE
+            bar.max = 1000
+            bar.progress = ((positionMs.coerceAtLeast(0L) * 1000L) / durationMs).toInt().coerceIn(0, 1000)
+        } else {
+            pos.text = ""; dur.text = ""
+            bar.visibility = View.GONE
+        }
+    }
+
+    private fun formatTime(ms: Long): String {
+        if (ms < 0) return "0:00"
+        val totalSec = ms / 1000L
+        val h = totalSec / 3600L
+        val m = (totalSec % 3600L) / 60L
+        val s = totalSec % 60L
+        return if (h > 0) String.format("%d:%02d:%02d", h, m, s) else String.format("%d:%02d", m, s)
     }
 
     fun hidePlayer() = handler.post { hidePlayer(true) }

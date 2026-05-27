@@ -339,37 +339,44 @@ class HubService : Service() {
             val s = it.playbackState?.state
             s == PlaybackState.STATE_PLAYING || s == PlaybackState.STATE_PAUSED || s == PlaybackState.STATE_BUFFERING
         }
-        val snapshot = if (active == null) "stopped" else {
-            val pkg = active.packageName
-            val title = active.metadata?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE)
-                ?: active.metadata?.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
-            val state = when (active.playbackState?.state) {
-                PlaybackState.STATE_PAUSED -> "paused"
-                PlaybackState.STATE_BUFFERING -> "playing"
-                else -> "playing"
+        if (active == null) {
+            if (lastReportedSessionState != "stopped") {
+                lastReportedSessionState = "stopped"
+                overlay.hidePlayer()
+                sendState("stopped")
             }
-            "$state|$pkg|$title"
+            return
         }
-        // Ne report que si changement, pour pas spammer le serveur ni écraser un title
-        // posé par /api/play avec un title vide vu en route.
+
+        val pkg = active.packageName
+        val title = active.metadata?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE)
+            ?: active.metadata?.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
+        val playbackState = active.playbackState
+        val isPaused = playbackState?.state == PlaybackState.STATE_PAUSED
+        val isPlaying = playbackState?.state == PlaybackState.STATE_PLAYING ||
+                        playbackState?.state == PlaybackState.STATE_BUFFERING
+        val state = if (isPaused) "paused" else "playing"
+        val appLabel = packageToAppLabel(pkg)
+
+        // Position + durée. Pour PLAYING, position est l'instantané ; on l'extrapole
+        // pour pas faire saccader la barre quand on tick toutes les 4s.
+        val rawPosition = playbackState?.position ?: 0L
+        val positionUpdatedAt = playbackState?.lastPositionUpdateTime ?: 0L
+        val position = if (isPlaying && positionUpdatedAt > 0)
+            rawPosition + (android.os.SystemClock.elapsedRealtime() - positionUpdatedAt)
+        else rawPosition
+        val duration = active.metadata?.getLong(android.media.MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+
+        // Toujours update l'overlay à chaque tick (sinon la barre de progression ne bouge
+        // pas et le badge ⏸/▶ ne reflète pas le state).
+        overlay.updatePlayerStatus(isPlaying, isPaused, position, duration, appLabel)
+
+        // Anti-spam WS : on n'envoie state_update que si état/title/app ont changé.
+        val snapshot = "$state|$pkg|$title"
         if (snapshot == lastReportedSessionState) return
         lastReportedSessionState = snapshot
-        if (active == null) {
-            // Plus aucune session active → on retire le player overlay
-            overlay.hidePlayer()
-            sendState("stopped")
-        } else {
-            val pkg = active.packageName
-            val title = active.metadata?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE)
-                ?: active.metadata?.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
-            val state = when (active.playbackState?.state) {
-                PlaybackState.STATE_PAUSED -> "paused"
-                else -> "playing"
-            }
-            val appLabel = packageToAppLabel(pkg)
-            Log.i(TAG, "Active session: $appLabel ($pkg) — $title — $state")
-            sendState(state, null, appLabel, title)
-        }
+        Log.i(TAG, "Active session changed: $appLabel ($pkg) — $title — $state")
+        sendState(state, null, appLabel, title)
     }
 
     private fun packageToAppLabel(pkg: String): String = when {

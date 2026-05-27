@@ -404,8 +404,11 @@ export default function Iptv() {
 
       {/* Modale détail série : saisons accordéon + épisodes */}
       {selectedSeries && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setSelectedSeries(null)}>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg max-w-3xl w-full my-8 relative" onClick={e => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-start justify-center p-4 overflow-y-auto"
+          onClick={() => setSelectedSeries(null)}
+        >
+          <div className="bg-zinc-900/95 border border-zinc-700 rounded-lg max-w-3xl w-full my-8 relative shadow-2xl" onClick={e => e.stopPropagation()}>
             <button onClick={() => setSelectedSeries(null)} className="absolute top-3 right-3 text-zinc-500 hover:text-white z-10">
               <X size={18} />
             </button>
@@ -486,7 +489,7 @@ export default function Iptv() {
       )}
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded shadow-lg text-sm font-medium z-[60] ${
+        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded shadow-lg text-sm font-medium z-[110] ${
           toast.ok ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
         }`}>
           {toast.msg}

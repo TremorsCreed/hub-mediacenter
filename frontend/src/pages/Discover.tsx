@@ -180,11 +180,11 @@ export default function Discover() {
       {/* Modale détail / availabilities */}
       {selected && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-center justify-center p-4"
           onClick={() => setSelected(null)}
         >
           <div
-            className="bg-zinc-900 border border-zinc-800 rounded-lg max-w-2xl w-full p-6 relative"
+            className="bg-zinc-900/95 border border-zinc-700 rounded-lg max-w-2xl w-full p-6 relative shadow-2xl"
             onClick={e => e.stopPropagation()}
           >
             <button
@@ -251,7 +251,7 @@ export default function Discover() {
       )}
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded shadow-lg text-sm font-medium z-50 ${
+        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded shadow-lg text-sm font-medium z-[110] ${
           toast.ok ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
         }`}>
           {toast.msg}

@@ -78,17 +78,6 @@ class OverlayManager(private val ctx: Context) {
 
         val img = view.findViewById<ImageView>(R.id.overlayPlayerImage)
         clipRounded(img, dp(6f))
-        if (!imageUrl.isNullOrEmpty()) {
-            Log.i(TAG, "loading image: $imageUrl")
-            loadImageAsync(imageUrl) { bmp ->
-                if (bmp != null && playerView === view) {
-                    Log.i(TAG, "image loaded ${bmp.width}x${bmp.height}, applying")
-                    img.setImageBitmap(bmp)
-                } else {
-                    Log.w(TAG, "image not set (bmp=${bmp != null}, viewMatches=${playerView === view})")
-                }
-            }
-        }
 
         val params = baseParams().apply {
             gravity = Gravity.BOTTOM or Gravity.START
@@ -100,7 +89,22 @@ class OverlayManager(private val ctx: Context) {
             view.alpha = 0f; view.translationY = 60f
             view.animate().alpha(1f).translationY(0f).setDuration(350).start()
             if (durationSec > 0) handler.postDelayed(hidePlayerRunnable, (durationSec * 1000L))
-        } catch (e: Exception) { Log.e(TAG, "addView player", e) }
+        } catch (e: Exception) { Log.e(TAG, "addView player", e); return@post }
+
+        // Lancer le download d'image APRÈS l'addView pour éviter une race avec playerView=view.
+        // setImageBitmap sur une view détachée est silent no-op donc safe même si on a hide
+        // entre temps.
+        if (!imageUrl.isNullOrEmpty()) {
+            Log.i(TAG, "loading image: $imageUrl")
+            loadImageAsync(imageUrl) { bmp ->
+                if (bmp != null) {
+                    Log.i(TAG, "image loaded ${bmp.width}x${bmp.height}, applying")
+                    img.setImageBitmap(bmp)
+                } else {
+                    Log.w(TAG, "image load returned null for $imageUrl")
+                }
+            }
+        }
     }
 
     fun hidePlayer() = handler.post { hidePlayer(true) }

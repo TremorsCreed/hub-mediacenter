@@ -158,6 +158,11 @@ class HubService : Service() {
         when (json.optString("type")) {
             "play" -> handlePlay(json)
             "stop" -> { updateNotification("Connected — $deviceName"); sendState("stopped") }
+            "notify" -> {
+                val text = json.optString("text").ifEmpty { "Activité Hub" }
+                Log.i(TAG, "Notify: $text")
+                updateNotification(text)
+            }
             "pong" -> Log.d(TAG, "pong")
             else -> Log.w(TAG, "Unknown: ${json.optString("type")}")
         }

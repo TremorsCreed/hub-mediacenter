@@ -126,6 +126,13 @@ export function sendPlayCommand(device_id: string, cmd: WsPlayCommand): boolean 
   return true
 }
 
+export function sendNotify(device_id: string, text: string): boolean {
+  const agent = agents.get(device_id)
+  if (!agent || agent.ws.readyState !== WebSocket.OPEN) return false
+  agent.ws.send(JSON.stringify({ type: 'notify', text }))
+  return true
+}
+
 export function isConnected(device_id: string): boolean {
   const a = agents.get(device_id)
   return !!a && a.ws.readyState === WebSocket.OPEN

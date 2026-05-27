@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db'
-import { sendPlayCommand, isConnected, getConnectedIds } from '../ws'
+import { sendPlayCommand, sendNotify, isConnected, getConnectedIds } from '../ws'
 import { AppId, CatalogEntry, RequesterType, WsPlayCommand } from '../types'
 import { resolvePlexWatchUrl } from './plex'
 
@@ -176,10 +176,12 @@ router.post('/', async (req, res) => {
     if (plexCfg?.auth_token && plexCfg?.server_url && deviceIp) {
       const ok = await plexRemotePlay(deviceIp, entry.plex_id, plexCfg.auth_token, plexCfg.server_url, plexCfg.server_machine_id)
       if (!ok) return res.status(502).json({ error: 'plex remote control failed' })
+      sendNotify(target_device_id, `Playing: ${entry.title}`)
       await db.execute({
         sql: `INSERT INTO playback_history (device_id, catalog_id, app, title, started_at, requester) VALUES (?, ?, ?, ?, ?, ?)`,
         args: [target_device_id, entry.id, resolved_app, entry.title, Date.now(), requester]
       })
+      console.log(`[plex] remote control ok: ${entry.title} → ${target_device_id}`)
       return res.json({ ok: true, device_id: target_device_id, catalog_id: entry.id, title: entry.title, app: resolved_app })
     }
     // Fallback : watch URL via agent si pas de config Plex

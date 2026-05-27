@@ -44,8 +44,27 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
     case 'register': {
       const capabilities = (msg.capabilities as DeviceCapability[]) ?? []
       const incomingIp = (msg.ip as string) || ''
+      const name = msg.name as string
+      const platform = msg.platform as string
+
+      // Dédup : un device qui se ré-enregistre après un uninstall/reinstall obtient
+      // un nouveau device_id (UUID random dans SharedPreferences). On supprime tout
+      // device existant qui partage le couple (name, platform) — même hardware logique.
+      // Conséquence bonus : l'historique reste cohérent et les playback_state orphelins
+      // sont nettoyés automatiquement par la cascade plus bas.
+      const { rows: dupes } = await db.execute({
+        sql: 'SELECT id FROM devices WHERE name = ? AND platform = ? AND id != ?',
+        args: [name, platform, device_id]
+      })
+      for (const r of dupes) {
+        const oldId = (r as any).id as string
+        console.log(`[ws] dedup: removing old device ${oldId} (same name/platform as ${device_id})`)
+        await db.execute({ sql: 'DELETE FROM playback_state WHERE device_id = ?', args: [oldId] })
+        await db.execute({ sql: 'DELETE FROM device_config WHERE device_id = ?', args: [oldId] })
+        await db.execute({ sql: 'DELETE FROM devices WHERE id = ?', args: [oldId] })
+      }
+
       // Ne PAS écraser l'IP avec une valeur vide — préserver la précédente.
-      // (l'app Android pré-fix ConnectivityManager renvoie null sur Android 12+/Shield TV)
       await db.execute({
         sql: `INSERT INTO devices (id, name, platform, ip, last_seen, capabilities)
               VALUES (?, ?, ?, ?, ?, ?)
@@ -54,10 +73,12 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
                 ip = COALESCE(NULLIF(excluded.ip, ''), devices.ip),
                 last_seen = excluded.last_seen,
                 capabilities = excluded.capabilities`,
-        args: [device_id, msg.name as string, msg.platform as string, incomingIp || null, Date.now(), JSON.stringify(capabilities)]
+        args: [device_id, name, platform, incomingIp || null, Date.now(), JSON.stringify(capabilities)]
       })
+      // Reset à stopped : l'agent vient de se (re)connecter, aucune lecture n'est active.
       await db.execute({
-        sql: `INSERT INTO playback_state (device_id, status) VALUES (?, 'stopped') ON CONFLICT(device_id) DO NOTHING`,
+        sql: `INSERT INTO playback_state (device_id, status) VALUES (?, 'stopped')
+              ON CONFLICT(device_id) DO UPDATE SET status = 'stopped', catalog_id = NULL, title = NULL, app = NULL`,
         args: [device_id]
       })
       console.log(`[ws] registered: ${device_id} (${msg.name})${incomingIp ? ` ip=${incomingIp}` : ' (no ip, kept previous)'}`)
@@ -106,8 +127,15 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
     }
     case 'state_update': {
       await db.execute({
-        sql: `UPDATE playback_state SET status = ?, catalog_id = ?, app = ?, started_at = ? WHERE device_id = ?`,
-        args: [msg.status as string, (msg.catalog_id as string) ?? null, (msg.app as string) ?? null, msg.status === 'playing' ? Date.now() : null, device_id]
+        sql: `UPDATE playback_state SET status = ?, catalog_id = ?, app = ?, title = ?, started_at = ? WHERE device_id = ?`,
+        args: [
+          msg.status as string,
+          (msg.catalog_id as string) ?? null,
+          (msg.app as string) ?? null,
+          (msg.title as string) ?? null,
+          msg.status === 'playing' ? Date.now() : null,
+          device_id,
+        ]
       })
       break
     }

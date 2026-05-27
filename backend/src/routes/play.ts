@@ -219,6 +219,13 @@ router.post('/', async (req, res) => {
       const ok = await plexRemotePlay(deviceIp, entry.plex_id, plexCfg.auth_token, plexCfg.server_url, plexCfg.server_machine_id)
       if (!ok) return res.status(502).json({ error: 'plex remote control failed' })
 
+      // Update playback_state — sinon le dashboard reste sur "idle" pour les plays
+      // qui passent par Remote Control (ils ne déclenchent pas de state_update WS).
+      await db.execute({
+        sql: `UPDATE playback_state SET status='playing', catalog_id=?, title=?, app='plex', started_at=? WHERE device_id=?`,
+        args: [entry.id, entry.title, Date.now(), target_device_id]
+      })
+
       // Foreground l'app sur la fiche du film après que la lecture a démarré côté serveur.
       // Sur Android 12+ les "background activity starts" sont bloqués, donc cet Intent
       // depuis l'agent (qui est foreground service) est notre seul moyen de focus Plex.
@@ -265,6 +272,11 @@ router.post('/', async (req, res) => {
   if (!sendPlayCommand(target_device_id, cmd)) {
     return res.status(503).json({ error: 'failed to send command to device' })
   }
+
+  await db.execute({
+    sql: `UPDATE playback_state SET status='playing', catalog_id=?, title=?, app=?, started_at=? WHERE device_id=?`,
+    args: [entry.id, entry.title, resolved_app, Date.now(), target_device_id]
+  })
 
   await db.execute({
     sql: `INSERT INTO playback_history (device_id, catalog_id, app, title, started_at, requester) VALUES (?, ?, ?, ?, ?, ?)`,

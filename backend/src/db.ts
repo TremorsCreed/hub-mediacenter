@@ -44,6 +44,7 @@ export async function initDb() {
       device_id TEXT PRIMARY KEY,
       catalog_id TEXT,
       app TEXT,
+      title TEXT,
       status TEXT NOT NULL DEFAULT 'stopped',
       started_at INTEGER
     );
@@ -94,4 +95,5 @@ export async function initDb() {
 
   // Migrations idempotentes (ALTER TABLE échoue silencieusement si la colonne existe)
   try { await db.execute("ALTER TABLE device_config ADD COLUMN xtream_credential_id INTEGER") } catch {}
+  try { await db.execute("ALTER TABLE playback_state ADD COLUMN title TEXT") } catch {}
 }

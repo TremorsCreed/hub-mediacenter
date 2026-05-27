@@ -6,8 +6,12 @@ import { isConnected } from '../ws'
 const router = Router()
 
 router.get('/', async (_req, res) => {
+  // Title : prefer playback_state.title (rempli pour les plays directs Plex/IPTV),
+  // fallback sur catalog.title pour les plays via entrée catalog.
   const { rows } = await db.execute(`
-    SELECT ps.*, d.name as device_name, c.title
+    SELECT ps.device_id, ps.catalog_id, ps.app, ps.status, ps.started_at,
+           d.name as device_name,
+           COALESCE(ps.title, c.title) as title
     FROM playback_state ps
     LEFT JOIN devices d ON d.id = ps.device_id
     LEFT JOIN catalog c ON c.id = ps.catalog_id

@@ -96,4 +96,5 @@ export async function initDb() {
   // Migrations idempotentes (ALTER TABLE échoue silencieusement si la colonne existe)
   try { await db.execute("ALTER TABLE device_config ADD COLUMN xtream_credential_id INTEGER") } catch {}
   try { await db.execute("ALTER TABLE playback_state ADD COLUMN title TEXT") } catch {}
+  try { await db.execute("ALTER TABLE device_config ADD COLUMN tvoverlay_enabled INTEGER NOT NULL DEFAULT 0") } catch {}
 }

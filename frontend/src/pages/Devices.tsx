@@ -4,7 +4,7 @@ import { Wifi, WifiOff, Trash2, ChevronDown, ChevronUp, Save, KeyRound } from 'l
 
 const CONTENT_TYPES = ['movie', 'episode', 'live_channel', 'vod', 'music']
 const APP_NAMES: Record<string, string> = { iptv: 'IPTV (Xtream)', plex: 'Plex', kodi: 'Kodi' }
-const DEFAULT_CONFIG: DeviceConfig = { xtream_server: '', xtream_user: '', xtream_pass: '', xtream_ext: 'ts', plex_server_id: '', app_mappings: {}, xtream_credential_id: null }
+const DEFAULT_CONFIG: DeviceConfig = { xtream_server: '', xtream_user: '', xtream_pass: '', xtream_ext: 'ts', plex_server_id: '', app_mappings: {}, xtream_credential_id: null, tvoverlay_enabled: false }
 
 function ConfigPanel({ deviceId, capabilities, credentials }: { deviceId: string; capabilities: { app: string }[]; credentials: Credential[] }) {
   const [cfg, setCfg] = useState<DeviceConfig>(DEFAULT_CONFIG)
@@ -147,6 +147,20 @@ function ConfigPanel({ deviceId, capabilities, credentials }: { deviceId: string
             ))}
           </div>
         </div>
+
+      <div>
+        <div className="text-xs text-zinc-400 font-medium mb-2 uppercase tracking-wide">Modules</div>
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            className="accent-amber-500"
+            checked={cfg.tvoverlay_enabled}
+            onChange={e => setCfg(prev => ({ ...prev, tvoverlay_enabled: e.target.checked }))}
+          />
+          <span className="text-sm text-zinc-200">TvOverlay</span>
+          <span className="text-xs text-zinc-500">— notifications visuelles sur le device (requiert l'app TvOverlay installée, port 5001)</span>
+        </label>
+      </div>
 
       <button
         onClick={save}

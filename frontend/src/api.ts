@@ -59,6 +59,7 @@ export interface DeviceConfig {
   plex_server_id: string
   app_mappings: Record<string, string>
   xtream_credential_id: number | null
+  tvoverlay_enabled: boolean
 }
 
 export interface Credential {

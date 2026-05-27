@@ -263,7 +263,7 @@ router.post('/', async (req, res) => {
         requester: requester as RequesterType,
       }
       // Notif TvOverlay : préparation
-      notifyOverlay(deviceIp, { title: 'Hub MediaCenter', message: `Préparation : ${entry.title}`, duration: 3 })
+      notifyOverlay(target_device_id, { title: 'Hub MediaCenter', message: `Préparation : ${entry.title}`, duration: 3 })
 
       // Burst de wakes pour contourner les restrictions Android 12+ sur les background
       // activity starts. Si une autre app plein écran est active (YouTube, etc.) un seul
@@ -287,11 +287,11 @@ router.post('/', async (req, res) => {
 
       const ok = await plexRemotePlay(deviceIp, entry.plex_id, plexCfg.auth_token, plexCfg.server_url, plexCfg.server_machine_id)
       if (!ok) {
-        notifyOverlay(deviceIp, { title: '✗ Échec Plex', message: 'Remote Control a échoué', duration: 5 })
+        notifyOverlay(target_device_id, { title: '✗ Échec Plex', message: 'Remote Control a échoué', duration: 5 })
         return res.status(502).json({ error: 'plex remote control failed' })
       }
 
-      notifyOverlay(deviceIp, { title: '▶ Plex', message: entry.title, duration: 5 })
+      notifyOverlay(target_device_id, { title: '▶ Plex', message: entry.title, duration: 5 })
 
       // Update playback_state — sinon le dashboard reste sur "idle" pour les plays
       // qui passent par Remote Control (ils ne déclenchent pas de state_update WS).
@@ -346,10 +346,7 @@ router.post('/', async (req, res) => {
     requester: requester as RequesterType
   }
 
-  // Notif TvOverlay avant lancement
-  const { rows: ipRows } = await db.execute({ sql: 'SELECT ip FROM devices WHERE id = ?', args: [target_device_id] })
-  const targetIp = (ipRows[0] as any)?.ip as string | undefined
-  notifyOverlay(targetIp, { title: `▶ ${(resolved_app as string).toUpperCase()}`, message: entry.title, duration: 4 })
+  notifyOverlay(target_device_id, { title: `▶ ${(resolved_app as string).toUpperCase()}`, message: entry.title, duration: 4 })
 
   if (!sendPlayCommand(target_device_id, cmd)) {
     return res.status(503).json({ error: 'failed to send command to device' })

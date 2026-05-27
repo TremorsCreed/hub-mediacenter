@@ -18,9 +18,6 @@ router.post('/:deviceId/:action', async (req, res) => {
   const ok = sendControl(deviceId, action)
   if (!ok) return res.status(503).json({ error: 'failed to send control to device' })
 
-  // Notif TvOverlay pour les actions visibles utilisateur
-  const { rows: ipRows } = await db.execute({ sql: 'SELECT ip FROM devices WHERE id = ?', args: [deviceId] })
-  const ip = (ipRows[0] as any)?.ip as string | undefined
   const overlayLabels: Record<string, string> = {
     stop: '■ Lecture arrêtée',
     pause: '❚❚ Pause',
@@ -31,7 +28,7 @@ router.post('/:deviceId/:action', async (req, res) => {
     mute: '🔇 Muet',
   }
   if (overlayLabels[action]) {
-    notifyOverlay(ip, { title: 'Hub MediaCenter', message: overlayLabels[action], duration: 2 })
+    notifyOverlay(deviceId, { title: 'Hub MediaCenter', message: overlayLabels[action], duration: 2 })
   }
 
   // Mise à jour optimiste du playback_state pour le feedback dashboard.

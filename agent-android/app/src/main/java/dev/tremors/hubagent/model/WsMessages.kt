@@ -26,6 +26,7 @@ data class PlayCommand(
     val plexWatchUrl: String?,
     val tiviMateChannel: String?,
     val iptvType: String?,  // "live" ou "vod"
+    val streamUrl: String?, // URL stream pré-construite par le hub (prioritaire)
     val requester: String
 ) {
     companion object {
@@ -38,6 +39,7 @@ data class PlayCommand(
             plexWatchUrl = json.optString("plex_watch_url").ifEmpty { null },
             tiviMateChannel = json.optString("tivimate_channel").ifEmpty { null },
             iptvType = json.optString("iptv_type").ifEmpty { null },
+            streamUrl = json.optString("stream_url").ifEmpty { null },
             requester = json.optString("requester", "unknown")
         )
     }

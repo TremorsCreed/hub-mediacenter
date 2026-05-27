@@ -5,6 +5,50 @@ import { sendPlayCommand, sendNotify, isConnected, getConnectedIds } from '../ws
 import { AppId, CatalogEntry, RequesterType, WsPlayCommand } from '../types'
 import { resolvePlexWatchUrl } from './plex'
 
+// Helper pour construire l'URL stream Xtream complète côté backend.
+// On résout l'extension réelle pour les VOD via get_vod_info (container_extension).
+async function buildIptvStreamUrl(deviceId: string, streamId: string, type: 'live' | 'vod'): Promise<string | null> {
+  const { rows: cfgRows } = await db.execute({ sql: 'SELECT * FROM device_config WHERE device_id = ?', args: [deviceId] })
+  const cfg = cfgRows[0] as any | undefined
+  let server = '', user = '', pass = '', ext = 'ts'
+  if (cfg?.xtream_credential_id) {
+    const { rows: cr } = await db.execute({ sql: 'SELECT data FROM credentials WHERE id = ?', args: [cfg.xtream_credential_id] })
+    if (cr.length) {
+      const data = JSON.parse((cr[0] as any).data as string)
+      server = data.server ?? ''; user = data.user ?? ''; pass = data.pass ?? ''; ext = data.ext ?? 'ts'
+    }
+  }
+  if (!server) {
+    server = cfg?.xtream_server ?? ''; user = cfg?.xtream_user ?? ''; pass = cfg?.xtream_pass ?? ''; ext = cfg?.xtream_ext ?? 'ts'
+  }
+  // Fallback : premier profil Xtream si rien sur le device
+  if (!server) {
+    const { rows } = await db.execute("SELECT data FROM credentials WHERE type = 'xtream' ORDER BY id LIMIT 1")
+    if (rows.length) {
+      const data = JSON.parse((rows[0] as any).data as string)
+      server = data.server ?? ''; user = data.user ?? ''; pass = data.pass ?? ''; ext = data.ext ?? 'ts'
+    }
+  }
+  if (!server || !user || !pass) return null
+  const base = server.replace(/\/+$/, '')
+
+  if (type === 'vod') {
+    // Récupérer container_extension via get_vod_info — l'extension réelle varie (mkv/mp4/avi)
+    let containerExt = 'mp4'
+    try {
+      const url = `${base}/player_api.php?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&action=get_vod_info&vod_id=${streamId}`
+      const r = await fetch(url, { signal: AbortSignal.timeout(5000) } as any)
+      if (r.ok) {
+        const data: any = await r.json()
+        containerExt = data?.movie_data?.container_extension || data?.info?.container_extension || 'mp4'
+      }
+    } catch (e) { console.warn('[iptv] get_vod_info failed:', (e as any).message) }
+    return `${base}/movie/${user}/${pass}/${streamId}.${containerExt}`
+  }
+  // Live channel
+  return `${base}/${user}/${pass}/${streamId}.${ext}`
+}
+
 async function waitForPlexClient(deviceIp: string, maxMs: number = 10000): Promise<boolean> {
   const start = Date.now()
   while (Date.now() - start < maxMs) {
@@ -248,6 +292,18 @@ router.post('/', async (req, res) => {
   }
 
   // 5. Autres apps : WebSocket vers l'agent
+  const resolvedIptvType = iptv_type ?? (entry.type === 'vod' ? 'vod' : entry.type === 'live_channel' ? 'live' : undefined)
+  let streamUrl: string | undefined
+  if (resolved_app === 'iptv' && entry.tivimate_id && resolvedIptvType) {
+    const url = await buildIptvStreamUrl(target_device_id, entry.tivimate_id, resolvedIptvType)
+    if (url) {
+      streamUrl = url
+      console.log(`[iptv] resolved ${resolvedIptvType} stream URL: ${url}`)
+    } else {
+      console.warn(`[iptv] failed to build stream URL for ${entry.tivimate_id} — agent will fallback`)
+    }
+  }
+
   const cmd: WsPlayCommand = {
     type: 'play',
     catalog_id: entry.id,
@@ -255,7 +311,8 @@ router.post('/', async (req, res) => {
     title: entry.title,
     plex_id: entry.plex_id ?? undefined,
     tivimate_channel: entry.tivimate_id ?? undefined,
-    iptv_type: iptv_type ?? (entry.type === 'vod' ? 'vod' : entry.type === 'live_channel' ? 'live' : undefined),
+    iptv_type: resolvedIptvType,
+    stream_url: streamUrl,
     requester: requester as RequesterType
   }
 

@@ -1,7 +1,7 @@
 export type DevicePlatform = 'android_tv' | 'fire_tv' | 'shield' | 'apple_tv' | 'roku' | 'kodi' | 'other'
 export type MediaType = 'movie' | 'episode' | 'music' | 'live_channel' | 'vod'
 export type PlaybackStatus = 'playing' | 'paused' | 'stopped' | 'error'
-export type AppId = 'plex' | 'tivimate' | 'kodi' | 'jellyfin' | 'emby' | 'custom'
+export type AppId = 'plex' | 'iptv' | 'tivimate' | 'kodi' | 'jellyfin' | 'emby' | 'custom'
 export type RequesterType = 'zaparoo' | 'llm' | 'n8n' | 'manual' | 'ha'
 
 export interface DeviceCapability {
@@ -75,5 +75,6 @@ export interface WsPlayCommand extends WsMessage {
   plex_watch_url?: string
   tivimate_channel?: string
   iptv_type?: 'live' | 'vod'
+  stream_url?: string  // URL pré-construite par le hub (override la construction côté agent)
   requester: RequesterType
 }

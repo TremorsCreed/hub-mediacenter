@@ -34,16 +34,20 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
         cmd.app == "iptv" && config.isConfigured()
 
     override fun launch(ctx: Context, cmd: PlayCommand): LaunchResult {
-        val streamId = cmd.tiviMateChannel
-        if (streamId.isNullOrEmpty()) {
-            Log.w(TAG, "No tivimate_channel (stream_id) in command")
-            return LaunchResult.Error("No stream_id provided")
+        // Priorité 1 : URL fournie par le hub (contient l'extension résolue via get_vod_info).
+        // Priorité 2 : on construit nous-mêmes (rétrocompat hub plus ancien).
+        val streamUrl: String = cmd.streamUrl ?: run {
+            val streamId = cmd.tiviMateChannel
+            if (streamId.isNullOrEmpty()) {
+                Log.w(TAG, "No tivimate_channel (stream_id) and no stream_url in command")
+                return LaunchResult.Error("No stream URL provided")
+            }
+            val type = cmd.iptvType ?: "live"
+            val url = config.buildStreamUrl(streamId, type)
+            Log.i(TAG, "Built stream URL locally ($type): $url")
+            url
         }
-
-        // Type par défaut = live (rétrocompat) si non précisé par le hub
-        val type = cmd.iptvType ?: "live"
-        val streamUrl = config.buildStreamUrl(streamId, type)
-        Log.i(TAG, "Xtream stream URL ($type): $streamUrl")
+        Log.i(TAG, "Launching stream: $streamUrl")
 
         val pm = ctx.packageManager
         val playerPkg = PREFERRED_PLAYERS.firstOrNull {

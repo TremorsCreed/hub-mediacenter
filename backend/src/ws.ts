@@ -183,6 +183,13 @@ export function sendNotify(device_id: string, text: string): boolean {
   return true
 }
 
+export function sendControl(device_id: string, action: string): boolean {
+  const agent = agents.get(device_id)
+  if (!agent || agent.ws.readyState !== WebSocket.OPEN) return false
+  agent.ws.send(JSON.stringify({ type: 'control', action }))
+  return true
+}
+
 export function isConnected(device_id: string): boolean {
   const a = agents.get(device_id)
   return !!a && a.ws.readyState === WebSocket.OPEN

@@ -7,11 +7,13 @@ import android.app.Service
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
@@ -181,9 +183,37 @@ class HubService : Service() {
                 Log.i(TAG, "Notify: $text")
                 updateNotification(text)
             }
+            "control" -> cmdHandler.post { try { handleControl(json.optString("action")) } catch (e: Exception) { Log.e(TAG, "handleControl", e) } }
             "pong" -> Log.d(TAG, "pong")
             else -> Log.w(TAG, "Unknown: ${json.optString("type")}")
         }
+    }
+
+    private fun handleControl(action: String) {
+        Log.i(TAG, "Control: $action")
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        when (action) {
+            "play_pause" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            "play" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PLAY)
+            "pause" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PAUSE)
+            "stop" -> {
+                sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_STOP)
+                updateNotification("Connected — $deviceName")
+                sendState("stopped")
+            }
+            "next" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_NEXT)
+            "previous" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+            "volume_up" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
+            "volume_down" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+            "mute" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_TOGGLE_MUTE, AudioManager.FLAG_SHOW_UI)
+            else -> Log.w(TAG, "Unknown control action: $action")
+        }
+    }
+
+    private fun sendMediaKey(am: AudioManager, keyCode: Int) {
+        val now = SystemClock.uptimeMillis()
+        am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0))
+        am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0))
     }
 
     private fun stopOtherMediaSessions() {

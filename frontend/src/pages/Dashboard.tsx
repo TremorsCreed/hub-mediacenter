@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, Device, PlaybackState } from '../api'
 import { Wifi, WifiOff, Circle } from 'lucide-react'
+import PlaybackControls from '../components/PlaybackControls'
 
 function statusColor(status: string) {
   if (status === 'playing') return 'text-green-400'
@@ -65,15 +66,21 @@ export default function Dashboard() {
                     <div className="text-xs text-zinc-500">{d.platform} {d.ip ? `· ${d.ip}` : ''}</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 text-sm">
+                <div className="flex items-center gap-3 text-sm">
                   {state && state.status !== 'stopped' ? (
                     <>
-                      <Circle size={7} className={`fill-current ${statusColor(state.status)}`} />
-                      <span className="text-zinc-300">{state.title ?? state.status}</span>
-                      <span className="text-zinc-600">{state.app}</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Circle size={7} className={`fill-current shrink-0 ${statusColor(state.status)}`} />
+                        <span className="text-zinc-300 truncate max-w-[200px]">{state.title ?? state.status}</span>
+                        <span className="text-zinc-600 text-xs shrink-0">{state.app}</span>
+                      </div>
+                      {d.ws_connected && <PlaybackControls deviceId={d.id} compact />}
                     </>
                   ) : (
-                    <span className="text-zinc-600 text-xs">idle</span>
+                    <>
+                      <span className="text-zinc-600 text-xs">idle</span>
+                      {d.ws_connected && <PlaybackControls deviceId={d.id} compact />}
+                    </>
                   )}
                 </div>
               </div>

@@ -183,6 +183,10 @@ export const api = {
     update: (id: number, c: Omit<Credential, 'id' | 'created_at' | 'updated_at'>) => put<{ ok: boolean }>(`/credentials/${id}`, c),
     remove: (id: number) => del<{ ok: boolean }>(`/credentials/${id}`)
   },
+  control: {
+    send: (deviceId: string, action: 'play_pause' | 'play' | 'pause' | 'stop' | 'next' | 'previous' | 'volume_up' | 'volume_down' | 'mute') =>
+      post<{ ok: boolean; action: string }>(`/control/${deviceId}/${action}`, {}),
+  },
   iptv: {
     credentials: () => get<{ id: number; name: string }[]>('/iptv/credentials'),
     categories: (credId: number, type: 'live' | 'vod') => get<IptvCategory[]>(`/iptv/${credId}/categories?type=${type}`),

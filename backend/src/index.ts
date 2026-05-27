@@ -12,6 +12,7 @@ import configRouter from './routes/config'
 import plexRouter from './routes/plex'
 import credentialsRouter from './routes/credentials'
 import iptvRouter from './routes/iptv'
+import controlRouter from './routes/control'
 
 const app = express()
 const PORT = parseInt(process.env.PORT ?? '8020', 10)
@@ -28,6 +29,7 @@ app.use('/api/zaparoo', zaparooRouter)
 app.use('/api/plex', plexRouter)
 app.use('/api/credentials', credentialsRouter)
 app.use('/api/iptv', iptvRouter)
+app.use('/api/control', controlRouter)
 
 app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }))
 

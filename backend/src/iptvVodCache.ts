@@ -1,24 +1,31 @@
-// Cache mémoire des listes VOD Xtream par credential.
-// TTL 1h. Premier fetch ~5-30s (250K films chez Elon IPTV), suivants instantanés.
-// Sert au cross-ref Discover : on signale "ce film est aussi dans ton IPTV".
+// Cache mémoire des listes Xtream (VOD + Live) par credential.
+// TTL 1h. Premier fetch lent (~5-30s pour ~100k VOD), suivants instantanés.
+// Sert au Catalog IPTV (Local) et au cross-ref Discover.
 
 import { db } from './db.js'
 
-export interface VodEntry {
+export interface StreamEntry {
   stream_id: string
   name: string
-  year: string  // peut être "2010" ou "2010-09-14" selon le provider
+  year: string
   logo?: string
+  category_id: string
+  added?: string
+  rating?: string
 }
+
+type Kind = 'vod' | 'live'
 
 interface CacheEntry {
-  items: VodEntry[]
+  items: StreamEntry[]
   loadedAt: number
-  inFlight?: Promise<VodEntry[]>
+  inFlight?: Promise<StreamEntry[]>
 }
 
-const TTL_MS = 60 * 60 * 1000  // 1h
-const cache = new Map<number, CacheEntry>()
+const TTL_MS = 60 * 60 * 1000
+const cache = new Map<string, CacheEntry>()  // key = "vod:credId" ou "live:credId"
+
+function key(kind: Kind, credId: number) { return `${kind}:${credId}` }
 
 async function fetchCred(credId: number) {
   const { rows } = await db.execute({
@@ -35,45 +42,51 @@ async function fetchCred(credId: number) {
   }
 }
 
-async function fetchAllVod(credId: number): Promise<VodEntry[]> {
+async function fetchAll(credId: number, kind: Kind): Promise<StreamEntry[]> {
   const cred = await fetchCred(credId)
   if (!cred) return []
-  const url = `${cred.server}/player_api.php?username=${encodeURIComponent(cred.user)}&password=${encodeURIComponent(cred.pass)}&action=get_vod_streams`
-  console.log(`[iptv-vod] fetching VOD list for credential #${credId}...`)
+  const action = kind === 'vod' ? 'get_vod_streams' : 'get_live_streams'
+  const url = `${cred.server}/player_api.php?username=${encodeURIComponent(cred.user)}&password=${encodeURIComponent(cred.pass)}&action=${action}`
+  console.log(`[iptv-cache] fetching ${kind} list for credential #${credId}...`)
   const t0 = Date.now()
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(45000) } as any)
-    if (!r.ok) { console.warn(`[iptv-vod] fetch ${credId} returned ${r.status}`); return [] }
+    if (!r.ok) { console.warn(`[iptv-cache] fetch ${kind} ${credId} returned ${r.status}`); return [] }
     const data = await r.json() as any[]
-    const items: VodEntry[] = (data ?? []).map(s => ({
+    const items: StreamEntry[] = (data ?? []).map(s => ({
       stream_id: String(s.stream_id),
       name: String(s.name ?? ''),
       year: String(s.releaseDate ?? s.year ?? ''),
       logo: (s.stream_icon || s.cover) as string | undefined,
+      category_id: String(s.category_id ?? ''),
+      added: s.added as string | undefined,
+      rating: s.rating as string | undefined,
     }))
-    console.log(`[iptv-vod] cached ${items.length} VOD items for credential #${credId} in ${Date.now() - t0}ms`)
+    console.log(`[iptv-cache] cached ${items.length} ${kind} items for credential #${credId} in ${Date.now() - t0}ms`)
     return items
   } catch (e) {
-    console.warn(`[iptv-vod] fetch ${credId} failed:`, (e as Error).message)
+    console.warn(`[iptv-cache] fetch ${kind} ${credId} failed:`, (e as Error).message)
     return []
   }
 }
 
-export async function getVodList(credId: number): Promise<VodEntry[]> {
+export async function getList(credId: number, kind: Kind): Promise<StreamEntry[]> {
+  const k = key(kind, credId)
   const now = Date.now()
-  const c = cache.get(credId)
+  const c = cache.get(k)
   if (c && (now - c.loadedAt) < TTL_MS) return c.items
   if (c?.inFlight) return c.inFlight
-  const promise = fetchAllVod(credId).then(items => {
-    cache.set(credId, { items, loadedAt: Date.now() })
+  const promise = fetchAll(credId, kind).then(items => {
+    cache.set(k, { items, loadedAt: Date.now() })
     return items
   })
-  cache.set(credId, { items: c?.items ?? [], loadedAt: c?.loadedAt ?? 0, inFlight: promise })
+  cache.set(k, { items: c?.items ?? [], loadedAt: c?.loadedAt ?? 0, inFlight: promise })
   return promise
 }
 
-// Normalise un titre pour matching : minuscules, sans accents/ponctuation,
-// sans préfixes de langue communs des providers IPTV ("FR|", "VF -", etc.).
+export const getVodList = (credId: number) => getList(credId, 'vod')
+export const getLiveList = (credId: number) => getList(credId, 'live')
+
 export function normalizeTitle(s: string): string {
   return s.toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -83,20 +96,18 @@ export function normalizeTitle(s: string): string {
     .trim()
 }
 
-export async function findIptvVodMatch(credId: number, title: string, year?: number): Promise<VodEntry | null> {
+export async function findIptvVodMatch(credId: number, title: string, year?: number): Promise<StreamEntry | null> {
   const list = await getVodList(credId)
   if (list.length === 0) return null
   const target = normalizeTitle(title)
   if (target.length < 3) return null
 
-  // Pass 1 : matches potentiels par titre normalisé
   const candidates = list.filter(v => {
     const n = normalizeTitle(v.name)
     return n === target || n.startsWith(target + ' ') || n.endsWith(' ' + target) || n.includes(' ' + target + ' ')
   })
   if (candidates.length === 0) return null
 
-  // Pass 2 : disambiguation par année si fournie
   if (year) {
     const exact = candidates.find(v => v.year.startsWith(String(year)))
     if (exact) return exact
@@ -114,12 +125,18 @@ export async function listActiveCredentialIds(): Promise<number[]> {
   return rows.map((r: any) => Number(r.id))
 }
 
-// Précharge tous les VOD en arrière-plan (fire-and-forget).
-// Appelée au démarrage backend — le premier search Discover ne paie pas le coût.
+// Précharge VOD + Live au démarrage backend (fire-and-forget).
 export async function preloadAll() {
   const ids = await listActiveCredentialIds()
   for (const id of ids) {
-    getVodList(id).catch(() => {})  // déclenche le fetch sans attendre
+    getVodList(id).catch(() => {})
+    getLiveList(id).catch(() => {})
   }
-  if (ids.length) console.log(`[iptv-vod] preloading ${ids.length} credential(s)...`)
+  if (ids.length) console.log(`[iptv-cache] preloading ${ids.length} credential(s) (vod + live)...`)
+}
+
+// Invalide les caches d'un credential (à appeler quand on update/delete une credential)
+export function invalidate(credId: number) {
+  cache.delete(key('vod', credId))
+  cache.delete(key('live', credId))
 }

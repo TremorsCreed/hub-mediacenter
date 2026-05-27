@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db'
+import { getVodList, getLiveList, invalidate } from '../iptvVodCache'
 
 const router = Router()
 
@@ -34,7 +35,13 @@ router.post('/', async (req, res) => {
     sql: 'INSERT INTO credentials (name, type, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
     args: [parsed.data.name, parsed.data.type, JSON.stringify(parsed.data.data), now, now]
   })
-  res.json({ ok: true, id: Number(r.lastInsertRowid) })
+  const id = Number(r.lastInsertRowid)
+  // Préchauffe le cache pour le nouveau credential en arrière-plan
+  if (parsed.data.type === 'xtream') {
+    getVodList(id).catch(() => {})
+    getLiveList(id).catch(() => {})
+  }
+  res.json({ ok: true, id })
 })
 
 router.put('/:id', async (req, res) => {
@@ -44,13 +51,20 @@ router.put('/:id', async (req, res) => {
     sql: 'UPDATE credentials SET name = ?, type = ?, data = ?, updated_at = ? WHERE id = ?',
     args: [parsed.data.name, parsed.data.type, JSON.stringify(parsed.data.data), Date.now(), req.params.id]
   })
+  const id = Number(req.params.id)
+  invalidate(id)
+  if (parsed.data.type === 'xtream') {
+    getVodList(id).catch(() => {})
+    getLiveList(id).catch(() => {})
+  }
   res.json({ ok: true })
 })
 
 router.delete('/:id', async (req, res) => {
-  // Détacher des devices qui le référencent
+  const id = Number(req.params.id)
   await db.execute({ sql: 'UPDATE device_config SET xtream_credential_id = NULL WHERE xtream_credential_id = ?', args: [req.params.id] })
   await db.execute({ sql: 'DELETE FROM credentials WHERE id = ?', args: [req.params.id] })
+  invalidate(id)
   res.json({ ok: true })
 })
 

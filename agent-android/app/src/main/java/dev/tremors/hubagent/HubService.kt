@@ -46,11 +46,15 @@ class HubService : Service() {
         fun stop(ctx: Context) = ctx.stopService(Intent(ctx, HubService::class.java))
     }
 
-    private val client = OkHttpClient.Builder()
+    // OkHttpClient recréé à chaque connect() : si l'executor a été shutdown par un
+    // onDestroy précédent (sticky service relancé par Android), l'instance précédente
+    // refuse toute tâche avec "executor rejected" et l'agent boucle sur 60s reconnect.
+    private fun buildClient() = OkHttpClient.Builder()
         .pingInterval(30, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
 
+    private var client: OkHttpClient = buildClient()
     private var webSocket: WebSocket? = null
     private var reconnectAttempts = 0
     private val maxReconnectDelay = 60_000L
@@ -108,6 +112,11 @@ class HubService : Service() {
     }
 
     private fun connect() {
+        // Si le client a été shutdown par onDestroy, recréer une instance fraîche
+        if (client.dispatcher.executorService.isShutdown) {
+            Log.i(TAG, "OkHttpClient executor was shutdown — rebuilding")
+            client = buildClient()
+        }
         val wsUrl = "${hubUrl.trimEnd('/').let {
             if (it.startsWith("http://")) it.replace("http://", "ws://")
             else if (it.startsWith("https://")) it.replace("https://", "wss://")

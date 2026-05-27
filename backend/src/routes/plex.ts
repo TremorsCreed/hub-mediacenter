@@ -161,7 +161,7 @@ router.get('/onDeck', async (req, res) => {
     })
     if (!r.ok) return res.status(502).json({ error: 'plex unreachable' })
     const data = await r.json() as any
-    const items = (data?.MediaContainer?.Metadata ?? []).map((m: any) => ({
+    const rawItems = (data?.MediaContainer?.Metadata ?? []).map((m: any) => ({
       ratingKey: String(m.ratingKey),
       title: m.title as string,
       year: m.year as number | undefined,
@@ -172,12 +172,19 @@ router.get('/onDeck', async (req, res) => {
       duration: m.duration as number | undefined,
       viewOffset: m.viewOffset as number | undefined,
       viewedAt: m.lastViewedAt as number | undefined,
-      // Pour les épisodes : "Show — S01E02 · Episode title"
       grandparentTitle: m.grandparentTitle as string | undefined,
       parentIndex: m.parentIndex as number | undefined,
       index: m.index as number | undefined,
     }))
-    res.json(items)
+    // Dédup par (title|year|grandparent) pour ne pas montrer le même film présent dans
+    // plusieurs bibliothèques. On garde le plus récemment vu.
+    const byKey = new Map<string, typeof rawItems[0]>()
+    for (const it of rawItems) {
+      const key = `${it.grandparentTitle ?? ''}|${it.title}|${it.year ?? ''}`
+      const prev = byKey.get(key)
+      if (!prev || (it.viewedAt ?? 0) > (prev.viewedAt ?? 0)) byKey.set(key, it)
+    }
+    res.json([...byKey.values()].sort((a, b) => (b.viewedAt ?? 0) - (a.viewedAt ?? 0)))
   } catch (e: any) {
     res.status(502).json({ error: e.message })
   }

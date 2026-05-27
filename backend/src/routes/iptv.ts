@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { db } from '../db'
 import { getList, normalizeTitle } from '../iptvVodCache'
+import { warmImages } from '../iptvImageWarmer'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -83,6 +84,12 @@ router.get('/:credId/streams', async (req, res) => {
       size: page.length,
       items: page.map(it => ({ ...it, type })),
     })
+    // Préchauffe en arrière-plan : page courante (au cas où le browser n'a pas encore
+    // tout cached) + page suivante (anticipation du scroll). Le serveur upstream peut
+    // être lent ; le browser ne paiera jamais ce coût car il lira depuis le disque local.
+    warmImages(page.map(it => it.logo))
+    const nextPage = items.slice(start + limit, start + limit * 2)
+    warmImages(nextPage.map(it => it.logo))
   } catch (e: any) {
     res.status(502).json({ error: e.message })
   }
@@ -135,18 +142,19 @@ router.get('/image', async (req, res) => {
   }
 
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(8000) } as any)
+    // Timeout court (5s) : si le serveur upstream rame, fail fast pour pas bloquer
+    // le rendu. Le warmer continuera de tenter en arrière-plan.
+    const r = await fetch(url, { signal: AbortSignal.timeout(5000) } as any)
     if (!r.ok) return res.status(r.status).end()
     const ct = r.headers.get('content-type') ?? 'image/png'
     const buf = Buffer.from(await r.arrayBuffer())
-    // Write cache (fire-and-forget side effect)
     try { writeFileSync(cachePath, buf); writeFileSync(ctPath, ct) } catch {}
     res.set('Content-Type', ct)
     res.set('Cache-Control', 'public, max-age=2592000, immutable')
     res.set('X-Cache', 'miss')
     res.send(buf)
   } catch {
-    res.status(502).end()
+    res.status(504).end()
   }
 })
 

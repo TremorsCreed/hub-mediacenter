@@ -102,6 +102,10 @@ class HubService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         connect()
+        // Démarre le monitor des sessions media actives (toutes les 4s).
+        // postDelayed plutôt que post : laisse le temps à la connexion WS de s'établir.
+        cmdHandler.removeCallbacks(sessionMonitor)
+        cmdHandler.postDelayed(sessionMonitor, 4000L)
         return START_STICKY
     }
 
@@ -197,16 +201,40 @@ class HubService : Service() {
             "play" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PLAY)
             "pause" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PAUSE)
             "stop" -> {
+                // KEYCODE_MEDIA_STOP est ignoré par YouTube/Netflix/etc. On force le stop
+                // sur toutes les sessions actives via transportControls (déjà éprouvé
+                // dans le pré-launcher Plex).
+                stopAllActiveMediaSessions()
                 sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_STOP)
                 updateNotification("Connected — $deviceName")
                 sendState("stopped")
             }
             "next" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_NEXT)
             "previous" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
-            "volume_up" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
-            "volume_down" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
-            "mute" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_TOGGLE_MUTE, AudioManager.FLAG_SHOW_UI)
+            // adjustVolume() sans stream cible le contexte audio actif (ce qui joue),
+            // alors que adjustStreamVolume(MUSIC) est souvent ignoré quand l'app n'utilise
+            // pas ce stream précis. FLAG_SHOW_UI affiche l'overlay volume Android.
+            "volume_up" -> am.adjustVolume(AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
+            "volume_down" -> am.adjustVolume(AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+            "mute" -> am.adjustVolume(AudioManager.ADJUST_TOGGLE_MUTE, AudioManager.FLAG_SHOW_UI)
             else -> Log.w(TAG, "Unknown control action: $action")
+        }
+    }
+
+    private fun stopAllActiveMediaSessions() {
+        try {
+            val mgr = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+            val component = ComponentName(this, HubNotificationListener::class.java)
+            for (ctrl in mgr.getActiveSessions(component)) {
+                if (ctrl.packageName == packageName) continue
+                Log.i(TAG, "Force stop: ${ctrl.packageName}")
+                try { ctrl.transportControls.stop() } catch (_: Exception) {}
+                try { ctrl.transportControls.pause() } catch (_: Exception) {}
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "stop: notification listener permission missing")
+        } catch (e: Exception) {
+            Log.w(TAG, "stopAllActiveMediaSessions: ${e.message}")
         }
     }
 
@@ -267,8 +295,69 @@ class HubService : Service() {
         }
     }
 
-    private fun sendState(status: String, catalogId: String? = null, app: String? = null) {
-        webSocket?.send(buildStateUpdate(status, catalogId, app))
+    private fun sendState(status: String, catalogId: String? = null, app: String? = null, title: String? = null) {
+        webSocket?.send(buildStateUpdate(status, catalogId, app, title))
+    }
+
+    // Monitor périodique des MediaSession actives → permet au dashboard de voir ce qui
+    // joue actuellement même si la lecture n'a pas été lancée depuis le Hub (YouTube,
+    // Netflix, navigation directe dans Plex, etc.). Réutilise la permission Notification
+    // access. Tourne sur cmdHandler pour pas bloquer le thread WS.
+    @Volatile private var lastReportedSessionState: String? = null
+    private val sessionMonitor = object : Runnable {
+        override fun run() {
+            try { reportActiveSession() } catch (e: Exception) { Log.w(TAG, "session monitor", e) }
+            cmdHandler.postDelayed(this, 4000L)
+        }
+    }
+
+    private fun reportActiveSession() {
+        val mgr = getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager ?: return
+        val component = ComponentName(this, HubNotificationListener::class.java)
+        val sessions = try { mgr.getActiveSessions(component) } catch (_: SecurityException) { return }
+        val active = sessions.firstOrNull {
+            val s = it.playbackState?.state
+            s == PlaybackState.STATE_PLAYING || s == PlaybackState.STATE_PAUSED || s == PlaybackState.STATE_BUFFERING
+        }
+        val snapshot = if (active == null) "stopped" else {
+            val pkg = active.packageName
+            val title = active.metadata?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE)
+                ?: active.metadata?.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
+            val state = when (active.playbackState?.state) {
+                PlaybackState.STATE_PAUSED -> "paused"
+                PlaybackState.STATE_BUFFERING -> "playing"
+                else -> "playing"
+            }
+            "$state|$pkg|$title"
+        }
+        // Ne report que si changement, pour pas spammer le serveur ni écraser un title
+        // posé par /api/play avec un title vide vu en route.
+        if (snapshot == lastReportedSessionState) return
+        lastReportedSessionState = snapshot
+        if (active == null) {
+            sendState("stopped")
+        } else {
+            val pkg = active.packageName
+            val title = active.metadata?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE)
+                ?: active.metadata?.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
+            val state = when (active.playbackState?.state) {
+                PlaybackState.STATE_PAUSED -> "paused"
+                else -> "playing"
+            }
+            val appLabel = packageToAppLabel(pkg)
+            Log.i(TAG, "Active session: $appLabel ($pkg) — $title — $state")
+            sendState(state, null, appLabel, title)
+        }
+    }
+
+    private fun packageToAppLabel(pkg: String): String = when {
+        pkg.startsWith("com.plexapp") -> "plex"
+        pkg.startsWith("com.google.android.youtube") -> "youtube"
+        pkg == "com.netflix.ninja" || pkg.startsWith("com.netflix") -> "netflix"
+        pkg.startsWith("ar.tvplayer") -> "tivimate"
+        pkg.startsWith("org.videolan") -> "vlc"
+        pkg.contains("kodi") -> "kodi"
+        else -> pkg
     }
 
     private fun scheduleReconnect() {

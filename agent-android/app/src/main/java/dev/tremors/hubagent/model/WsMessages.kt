@@ -56,12 +56,13 @@ fun buildRegisterMessage(
     put("capabilities", JSONArray(capabilities.map { it.toJson() }))
 }.toString()
 
-fun buildStateUpdate(status: String, catalogId: String? = null, app: String? = null): String =
+fun buildStateUpdate(status: String, catalogId: String? = null, app: String? = null, title: String? = null): String =
     JSONObject().apply {
         put("type", "state_update")
         put("status", status)
         catalogId?.let { put("catalog_id", it) }
         app?.let { put("app", it) }
+        title?.let { put("title", it) }
     }.toString()
 
 data class HubConfig(

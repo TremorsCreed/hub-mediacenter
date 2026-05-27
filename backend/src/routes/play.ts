@@ -51,12 +51,12 @@ async function plexRemotePlay(deviceIp: string, ratingKey: string, plexToken: st
       targetClientId = m?.[1] ?? ''
     } catch {}
 
-    // 3. Stop la lecture en cours
-    await fetch(`${playerBase}/stop?type=video`, {
-      method: 'POST',
-      headers: { ...commonHeaders, 'X-Plex-Token': plexToken },
-    }).catch(() => {})
-    await new Promise(r => setTimeout(r, 1000))
+    // 3. Stop la lecture en cours (double stop + wait long pour fiabilité)
+    const stopHeaders = { ...commonHeaders, 'X-Plex-Token': plexToken }
+    await fetch(`${playerBase}/stop?type=video`, { method: 'POST', headers: stopHeaders }).catch(() => {})
+    await new Promise(r => setTimeout(r, 500))
+    await fetch(`${playerBase}/stop?type=video`, { method: 'POST', headers: stopHeaders }).catch(() => {})
+    await new Promise(r => setTimeout(r, 2000))
 
     // 4. Envoyer playMedia au player avec le containerKey du PlayQueue
     const playParams = new URLSearchParams({
@@ -174,6 +174,20 @@ router.post('/', async (req, res) => {
     const deviceIp = devIpRows[0]?.ip as string | undefined
 
     if (plexCfg?.auth_token && plexCfg?.server_url && deviceIp) {
+      // Pré-condition : Plex doit être ouvert et idle. On le réveille via l'agent
+      // (PlexLauncher.launchHome quand plex_id est vide), puis on attend que l'app
+      // soit au premier plan avant d'envoyer la commande Remote Control.
+      const wakeCmd: WsPlayCommand = {
+        type: 'play',
+        catalog_id: entry.id,
+        app: 'plex',
+        title: entry.title,
+        requester: requester as RequesterType,
+      }
+      const woke = sendPlayCommand(target_device_id, wakeCmd)
+      console.log(`[plex] wake sent to agent: ${woke}`)
+      if (woke) await new Promise(r => setTimeout(r, 3500))
+
       const ok = await plexRemotePlay(deviceIp, entry.plex_id, plexCfg.auth_token, plexCfg.server_url, plexCfg.server_machine_id)
       if (!ok) return res.status(502).json({ error: 'plex remote control failed' })
       sendNotify(target_device_id, `Playing: ${entry.title}`)

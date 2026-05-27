@@ -7,6 +7,7 @@ import PlayPage from './pages/PlayPage'
 import History from './pages/History'
 import Settings from './pages/Settings'
 import Plex from './pages/Plex'
+import Iptv from './pages/Iptv'
 import Credentials from './pages/Credentials'
 
 export default function App() {
@@ -16,7 +17,8 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="devices" element={<Devices />} />
         <Route path="catalog" element={<Catalog />} />
-        <Route path="plex" element={<Plex />} />
+        <Route path="catalog/plex" element={<Plex />} />
+        <Route path="catalog/iptv" element={<Iptv />} />
         <Route path="play" element={<PlayPage />} />
         <Route path="history" element={<History />} />
         <Route path="settings" element={<Settings />} />

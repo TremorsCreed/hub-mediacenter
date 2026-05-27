@@ -93,6 +93,8 @@ const PlaySchema = z.object({
   catalog_id: z.string().optional(),
   ean: z.string().optional(),
   plex_id: z.string().optional(),
+  iptv_stream_id: z.string().optional(),
+  iptv_type: z.enum(['live', 'vod']).optional(),
   title: z.string().optional(),
   device_id: z.string().optional(),
   app: z.string().optional(),
@@ -103,14 +105,20 @@ router.post('/', async (req, res) => {
   const parsed = PlaySchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
 
-  const { query, catalog_id, ean, plex_id, title, device_id, app, requester } = parsed.data
+  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, title, device_id, app, requester } = parsed.data
 
   // 1. Resolve catalog entry
   let entry: CatalogEntry | null = null
 
   if (plex_id) {
-    // Lecture directe depuis le catalogue Plex live, pas besoin d'entrée DB
     entry = { id: `plex:${plex_id}`, title: title ?? 'Plex', type: 'movie', plex_id } as CatalogEntry
+  } else if (iptv_stream_id) {
+    entry = {
+      id: `iptv:${iptv_stream_id}`,
+      title: title ?? 'IPTV',
+      type: (iptv_type === 'vod' ? 'vod' : 'live_channel') as any,
+      tivimate_id: iptv_stream_id,
+    } as CatalogEntry
   } else if (catalog_id) {
     const { rows } = await db.execute({ sql: 'SELECT * FROM catalog WHERE id = ?', args: [catalog_id] })
     entry = (rows[0] as any) ?? null

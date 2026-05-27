@@ -75,10 +75,24 @@ export interface PlayIntent {
   catalog_id?: string
   ean?: string
   plex_id?: string
+  iptv_stream_id?: string
+  iptv_type?: 'live' | 'vod'
   title?: string
   device_id?: string
   app?: string
   requester: string
+}
+
+export interface IptvCategory { id: string; name: string }
+export interface IptvStream {
+  stream_id: string
+  name: string
+  logo?: string
+  category_id: string
+  added?: string
+  rating?: string
+  year?: string
+  type: 'live' | 'vod'
 }
 
 export interface PlexSection {
@@ -158,6 +172,18 @@ export const api = {
     create: (c: Omit<Credential, 'id' | 'created_at' | 'updated_at'>) => post<{ ok: boolean; id: number }>('/credentials', c),
     update: (id: number, c: Omit<Credential, 'id' | 'created_at' | 'updated_at'>) => put<{ ok: boolean }>(`/credentials/${id}`, c),
     remove: (id: number) => del<{ ok: boolean }>(`/credentials/${id}`)
+  },
+  iptv: {
+    credentials: () => get<{ id: number; name: string }[]>('/iptv/credentials'),
+    categories: (credId: number, type: 'live' | 'vod') => get<IptvCategory[]>(`/iptv/${credId}/categories?type=${type}`),
+    streams: (credId: number, opts: { type: 'live' | 'vod'; category?: string; search?: string; limit?: number }) => {
+      const p = new URLSearchParams({ type: opts.type })
+      if (opts.category) p.set('category', opts.category)
+      if (opts.search) p.set('search', opts.search)
+      if (opts.limit) p.set('limit', String(opts.limit))
+      return get<{ total: number; items: IptvStream[] }>(`/iptv/${credId}/streams?${p}`)
+    },
+    imageUrl: (url?: string) => url ? `${BASE}/iptv/image?url=${encodeURIComponent(url)}` : '',
   },
   plex: {
     status: () => get<{ connected: boolean; server_url: string | null; server_machine_id: string | null }>('/plex/status'),

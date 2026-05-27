@@ -35,10 +35,10 @@ export async function notifyOverlay(deviceId: string, payload: OverlayPayload): 
 
 export async function notifyOverlayPlayer(deviceId: string, payload: OverlayPayload): Promise<void> {
   const cfg = await getConfig(deviceId)
-  if (!cfg.enabled) return
-  // duration explicite > config device > 0 (persistant)
+  if (!cfg.enabled) { console.log(`[overlay] disabled for ${deviceId}, skip`); return }
   const duration = payload.duration ?? cfg.playerDuration
-  sendOverlay(deviceId, { style: 'player', duration, ...payload })
+  const ok = sendOverlay(deviceId, { style: 'player', duration, ...payload })
+  console.log(`[overlay] player → ${deviceId}: title="${payload.title}" image=${payload.image ?? '(none)'} duration=${duration} sent=${ok}`)
 }
 
 export async function hideOverlay(deviceId: string): Promise<void> {

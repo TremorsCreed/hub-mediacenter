@@ -181,16 +181,23 @@ const PlaySchema = z.object({
 })
 
 // Construit l'URL absolue d'une image, accessible depuis le device (réseau LAN).
-// req.headers.host contient le hostname:port utilisé par le frontend pour atteindre
-// le hub — fonctionne aussi bien pour le device sur le même réseau.
+// req.headers.host est strip de son port quand le frontend nginx reverse-proxy
+// /api/ vers le backend → on ajoute le port backend manuellement si manquant.
+function getBackendBaseUrl(req: any): string {
+  let host = (process.env.PUBLIC_URL || req.headers.host || 'localhost') as string
+  if (!host.includes(':')) host = `${host}:${process.env.PORT || '8020'}`
+  return `${req.protocol}://${host}`
+}
+
 function buildImageUrl(req: any, thumb: string | undefined, app: string): string | undefined {
   if (!thumb) return undefined
+  const base = getBackendBaseUrl(req)
   if (/^https?:\/\//.test(thumb)) {
     // URL absolue (logo IPTV) → on passe par le proxy /api/iptv/image qui suit le mixed-content
-    return `${req.protocol}://${req.headers.host}/api/iptv/image?url=${encodeURIComponent(thumb)}`
+    return `${base}/api/iptv/image?url=${encodeURIComponent(thumb)}`
   }
   if (thumb.startsWith('/') && app === 'plex') {
-    return `${req.protocol}://${req.headers.host}/api/plex/image?path=${encodeURIComponent(thumb)}`
+    return `${base}/api/plex/image?path=${encodeURIComponent(thumb)}`
   }
   return undefined
 }

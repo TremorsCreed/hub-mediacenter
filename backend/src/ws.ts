@@ -60,10 +60,16 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
         const oldId = (r as any).id as string
         console.log(`[ws] dedup: merging ${oldId} → ${device_id} (same name/platform)`)
 
-        // Transférer la config seulement si le nouveau device n'en a pas encore
+        // Transférer la config seulement si le nouveau device n'en a pas encore.
+        // ⚠ Inclure TOUS les champs ici sinon ils sont perdus au reinstall agent.
         await db.execute({
-          sql: `INSERT OR IGNORE INTO device_config (device_id, xtream_server, xtream_user, xtream_pass, xtream_ext, plex_server_id, app_mappings, xtream_credential_id, updated_at)
-                SELECT ?, xtream_server, xtream_user, xtream_pass, xtream_ext, plex_server_id, app_mappings, xtream_credential_id, updated_at
+          sql: `INSERT OR IGNORE INTO device_config
+                (device_id, xtream_server, xtream_user, xtream_pass, xtream_ext,
+                 plex_server_id, app_mappings, xtream_credential_id,
+                 tvoverlay_enabled, overlay_player_duration, updated_at)
+                SELECT ?, xtream_server, xtream_user, xtream_pass, xtream_ext,
+                       plex_server_id, app_mappings, xtream_credential_id,
+                       tvoverlay_enabled, overlay_player_duration, updated_at
                 FROM device_config WHERE device_id = ?`,
           args: [device_id, oldId]
         })

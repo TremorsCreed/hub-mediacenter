@@ -81,6 +81,7 @@ export interface PlayIntent {
   iptv_type?: 'live' | 'vod'
   title?: string
   thumb?: string
+  resume?: boolean
   device_id?: string
   app?: string
   requester: string
@@ -118,6 +119,14 @@ export interface PlexItem {
   contentRating?: string
   addedAt?: number
   viewCount?: number
+  viewOffset?: number  // ms — si > 0, l'item est en cours de lecture
+}
+
+export interface PlexOnDeckItem extends PlexItem {
+  viewedAt?: number
+  grandparentTitle?: string
+  parentIndex?: number
+  index?: number
 }
 
 async function extractError(r: Response): Promise<Error> {
@@ -208,6 +217,7 @@ export const api = {
     pollPin: (id: number) => get<{ done: boolean; server_url?: string }>(`/plex/pin/${id}`),
     disconnect: () => del<{ ok: boolean }>('/plex/token'),
     sections: () => get<PlexSection[]>('/plex/sections'),
+    onDeck: (limit = 20) => get<PlexOnDeckItem[]>(`/plex/onDeck?limit=${limit}`),
     sectionItems: (id: string, opts: { start?: number; size?: number; sort?: string; search?: string } = {}) => {
       const p = new URLSearchParams()
       if (opts.start !== undefined) p.set('start', String(opts.start))

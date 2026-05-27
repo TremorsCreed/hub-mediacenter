@@ -83,7 +83,7 @@ async function waitForPlexClient(deviceIp: string, maxMs: number = 10000): Promi
   return false
 }
 
-async function plexRemotePlay(deviceIp: string, ratingKey: string, plexToken: string, plexServerUrl: string, machineId: string): Promise<boolean> {
+async function plexRemotePlay(deviceIp: string, ratingKey: string, plexToken: string, plexServerUrl: string, machineId: string, offsetMs: number = 0): Promise<boolean> {
   const playerBase = `http://${deviceIp}:32500/player/playback`
   const serverUrl = new URL(plexServerUrl)
   const serverPort = serverUrl.port || '32400'
@@ -139,7 +139,7 @@ async function plexRemotePlay(deviceIp: string, ratingKey: string, plexToken: st
     // 4. Envoyer playMedia au player avec le containerKey du PlayQueue
     const playParams = new URLSearchParams({
       key: `/library/metadata/${ratingKey}`,
-      offset: '0',
+      offset: String(offsetMs),
       machineIdentifier: machineId,
       address: serverUrl.hostname,
       port: serverPort,
@@ -174,11 +174,24 @@ const PlaySchema = z.object({
   iptv_stream_id: z.string().optional(),
   iptv_type: z.enum(['live', 'vod']).optional(),
   title: z.string().optional(),
-  thumb: z.string().optional(),  // path Plex (/library/...) ou URL absolue (IPTV logo)
+  thumb: z.string().optional(),
+  resume: z.boolean().optional(),  // pour Plex : reprendre depuis viewOffset au lieu de 0
   device_id: z.string().optional(),
   app: z.string().optional(),
   requester: z.enum(['zaparoo', 'llm', 'n8n', 'manual', 'ha']).default('manual')
 })
+
+// Récupère le viewOffset (ms) d'un media Plex via /library/metadata/{ratingKey}
+async function getPlexViewOffset(ratingKey: string, serverUrl: string, token: string): Promise<number> {
+  try {
+    const r = await fetch(`${serverUrl}/library/metadata/${ratingKey}?X-Plex-Token=${token}`, {
+      headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(4000) as any,
+    })
+    if (!r.ok) return 0
+    const data: any = await r.json()
+    return Number(data?.MediaContainer?.Metadata?.[0]?.viewOffset ?? 0)
+  } catch { return 0 }
+}
 
 // Construit l'URL absolue d'une image, accessible depuis le device (réseau LAN).
 // req.headers.host est strip de son port quand le frontend nginx reverse-proxy
@@ -206,7 +219,7 @@ router.post('/', async (req, res) => {
   const parsed = PlaySchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
 
-  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, title, thumb, device_id, app, requester } = parsed.data
+  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, title, thumb, resume, device_id, app, requester } = parsed.data
 
   // 1. Resolve catalog entry
   let entry: CatalogEntry | null = null
@@ -309,7 +322,9 @@ router.post('/', async (req, res) => {
         })
       }
 
-      const ok = await plexRemotePlay(deviceIp, entry.plex_id, plexCfg.auth_token, plexCfg.server_url, plexCfg.server_machine_id)
+      const offsetMs = resume ? await getPlexViewOffset(entry.plex_id, plexCfg.server_url, plexCfg.auth_token) : 0
+      if (resume && offsetMs > 0) console.log(`[plex] resume at ${offsetMs}ms (${Math.floor(offsetMs / 60000)}min)`)
+      const ok = await plexRemotePlay(deviceIp, entry.plex_id, plexCfg.auth_token, plexCfg.server_url, plexCfg.server_machine_id, offsetMs)
       if (!ok) {
         notifyOverlay(target_device_id, { title: '✗ Échec Plex', message: 'Remote Control a échoué', duration: 5 })
         return res.status(502).json({ error: 'plex remote control failed' })

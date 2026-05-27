@@ -150,6 +150,39 @@ router.get('/sections', async (_req, res) => {
   }
 })
 
+// GET /api/plex/onDeck?limit=20 — items en cours de lecture (continue watching)
+router.get('/onDeck', async (req, res) => {
+  const cfg = await getConfig()
+  if (!cfg.auth_token || !cfg.server_url) return res.status(400).json({ error: 'not connected to plex' })
+  const limit = Math.min(parseInt((req.query.limit as string) ?? '20'), 50)
+  try {
+    const r = await fetch(`${cfg.server_url}/library/onDeck?X-Plex-Token=${cfg.auth_token}&X-Plex-Container-Size=${limit}`, {
+      headers: { Accept: 'application/json' }
+    })
+    if (!r.ok) return res.status(502).json({ error: 'plex unreachable' })
+    const data = await r.json() as any
+    const items = (data?.MediaContainer?.Metadata ?? []).map((m: any) => ({
+      ratingKey: String(m.ratingKey),
+      title: m.title as string,
+      year: m.year as number | undefined,
+      type: m.type as string,
+      thumb: (m.thumb || m.grandparentThumb || m.parentThumb) as string | undefined,
+      art: m.art as string | undefined,
+      summary: m.summary as string | undefined,
+      duration: m.duration as number | undefined,
+      viewOffset: m.viewOffset as number | undefined,
+      viewedAt: m.lastViewedAt as number | undefined,
+      // Pour les épisodes : "Show — S01E02 · Episode title"
+      grandparentTitle: m.grandparentTitle as string | undefined,
+      parentIndex: m.parentIndex as number | undefined,
+      index: m.index as number | undefined,
+    }))
+    res.json(items)
+  } catch (e: any) {
+    res.status(502).json({ error: e.message })
+  }
+})
+
 // GET /api/plex/sections/:id/all?start=0&size=50&sort=titleSort
 router.get('/sections/:id/all', async (req, res) => {
   const cfg = await getConfig()
@@ -184,6 +217,7 @@ router.get('/sections/:id/all', async (req, res) => {
       contentRating: m.contentRating as string | undefined,
       addedAt: m.addedAt as number | undefined,
       viewCount: m.viewCount as number | undefined,
+      viewOffset: m.viewOffset as number | undefined,
     }))
     res.json({
       total: data?.MediaContainer?.totalSize ?? items.length,

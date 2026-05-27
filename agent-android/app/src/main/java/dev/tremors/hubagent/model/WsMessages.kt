@@ -23,6 +23,7 @@ data class PlayCommand(
     val title: String,
     val plexId: String?,
     val plexServerId: String?,
+    val plexWatchUrl: String?,
     val tiviMateChannel: String?,
     val requester: String
 ) {
@@ -33,6 +34,7 @@ data class PlayCommand(
             title = json.optString("title"),
             plexId = json.optString("plex_id").ifEmpty { null },
             plexServerId = config?.plexServerId?.ifEmpty { null },
+            plexWatchUrl = json.optString("plex_watch_url").ifEmpty { null },
             tiviMateChannel = json.optString("tivimate_channel").ifEmpty { null },
             requester = json.optString("requester", "unknown")
         )

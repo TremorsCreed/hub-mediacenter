@@ -72,6 +72,7 @@ export interface WsPlayCommand extends WsMessage {
   app: AppId
   title: string
   plex_id?: string
+  plex_watch_url?: string
   tivimate_channel?: string
   requester: RequesterType
 }

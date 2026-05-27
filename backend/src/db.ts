@@ -69,5 +69,16 @@ export async function initDb() {
       app_mappings TEXT NOT NULL DEFAULT '{}',
       updated_at INTEGER NOT NULL DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS plex_config (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      client_id TEXT NOT NULL DEFAULT '',
+      auth_token TEXT NOT NULL DEFAULT '',
+      server_url TEXT NOT NULL DEFAULT '',
+      server_machine_id TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL DEFAULT 0
+    );
+
+    INSERT OR IGNORE INTO plex_config (id) VALUES (1);
   `)
 }

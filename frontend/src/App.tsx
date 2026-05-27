@@ -5,6 +5,7 @@ import Devices from './pages/Devices'
 import Catalog from './pages/Catalog'
 import PlayPage from './pages/PlayPage'
 import History from './pages/History'
+import Settings from './pages/Settings'
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="catalog" element={<Catalog />} />
         <Route path="play" element={<PlayPage />} />
         <Route path="history" element={<History />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>
   )

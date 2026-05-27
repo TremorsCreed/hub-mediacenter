@@ -35,18 +35,21 @@ class PlexLauncher : BaseLauncher {
             return launchHome(ctx)
         }
 
-        return try {
-            val uri = if (cmd.plexServerId.isNullOrEmpty()) {
-                Uri.parse("plex://play?contentKey=/library/metadata/$plexId")
-            } else {
-                Uri.parse("plex://play?contentKey=/library/metadata/$plexId&server=${cmd.plexServerId}")
+        // Priorité : watch URL résolu par le Hub via token Plex
+        val watchUri = cmd.plexWatchUrl?.let { Uri.parse(it) }
+            ?: Uri.parse("plex://play?contentKey=/library/metadata/$plexId").let { fallback ->
+                if (!cmd.plexServerId.isNullOrEmpty())
+                    Uri.parse("plex://play?contentKey=/library/metadata/$plexId&server=${cmd.plexServerId}")
+                else fallback
             }
-            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                setPackage(PKG)
+
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW, watchUri).apply {
+                if (cmd.plexWatchUrl == null) setPackage(PKG)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             ctx.startActivity(intent)
-            Log.i(TAG, "Launched Plex: $uri")
+            Log.i(TAG, "Launched Plex: $watchUri")
             LaunchResult.Success
         } catch (e: ActivityNotFoundException) {
             Log.w(TAG, "Plex deep link failed, falling back to home: ${e.message}")

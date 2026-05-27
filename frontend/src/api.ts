@@ -118,5 +118,11 @@ export const api = {
     all: () => get<PlaybackState[]>('/state'),
     history: () => get<HistoryEntry[]>('/state/history')
   },
-  play: (intent: PlayIntent) => post<{ ok: boolean; title: string; device_id: string; app: string }>('/play', intent)
+  play: (intent: PlayIntent) => post<{ ok: boolean; title: string; device_id: string; app: string }>('/play', intent),
+  plex: {
+    status: () => get<{ connected: boolean; server_url: string | null; server_machine_id: string | null }>('/plex/status'),
+    startPin: () => post<{ id: number; pin: string; auth_url: string }>('/plex/pin', {}),
+    pollPin: (id: number) => get<{ done: boolean; server_url?: string }>(`/plex/pin/${id}`),
+    disconnect: () => del<{ ok: boolean }>('/plex/token'),
+  }
 }

@@ -1,12 +1,13 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { Tv, Library, History, Play, LayoutDashboard } from 'lucide-react'
+import { Tv, Library, History, Play, LayoutDashboard, Settings } from 'lucide-react'
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/devices', label: 'Devices', icon: Tv },
   { to: '/catalog', label: 'Catalog', icon: Library },
   { to: '/play', label: 'Play', icon: Play },
-  { to: '/history', label: 'History', icon: History }
+  { to: '/history', label: 'History', icon: History },
+  { to: '/settings', label: 'Settings', icon: Settings }
 ]
 
 export default function Layout() {

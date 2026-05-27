@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { db } from '../db'
 import { sendPlayCommand, isConnected, getConnectedIds } from '../ws'
 import { AppId, CatalogEntry, RequesterType, WsPlayCommand } from '../types'
+import { resolvePlexWatchUrl } from './plex'
 
 const router = Router()
 
@@ -71,13 +72,20 @@ router.post('/', async (req, res) => {
     resolved_app = cap?.app ?? 'plex'
   }
 
-  // 4. Send to agent
+  // 4. Résolution du watch URL Plex si applicable
+  let plex_watch_url: string | undefined
+  if (resolved_app === 'plex' && entry.plex_id) {
+    plex_watch_url = await resolvePlexWatchUrl(entry.plex_id) ?? undefined
+  }
+
+  // 5. Send to agent
   const cmd: WsPlayCommand = {
     type: 'play',
     catalog_id: entry.id,
     app: resolved_app,
     title: entry.title,
     plex_id: entry.plex_id ?? undefined,
+    plex_watch_url,
     tivimate_channel: entry.tivimate_id ?? undefined,
     requester: requester as RequesterType
   }

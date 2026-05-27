@@ -5,6 +5,36 @@ import { sendPlayCommand, isConnected, getConnectedIds } from '../ws'
 import { AppId, CatalogEntry, RequesterType, WsPlayCommand } from '../types'
 import { resolvePlexWatchUrl } from './plex'
 
+async function plexRemotePlay(deviceIp: string, ratingKey: string, plexToken: string, plexServerUrl: string, machineId: string): Promise<boolean> {
+  const playerBase = `http://${deviceIp}:32500/player/playback`
+  const serverUrl = new URL(plexServerUrl)
+  const headers = {
+    'X-Plex-Token': plexToken,
+    'X-Plex-Product': 'Hub MediaCenter',
+    'X-Plex-Client-Identifier': 'hub-mediacenter',
+    'X-Plex-Platform': 'Android',
+    'X-Plex-Device-Name': 'Shield TV',
+  }
+  try {
+    await fetch(`${playerBase}/stop?type=video`, { method: 'POST', headers }).catch(() => {})
+    await new Promise(r => setTimeout(r, 2000))
+    const params = new URLSearchParams({
+      key: `/library/metadata/${ratingKey}`,
+      offset: '0',
+      protocol: 'http',
+      address: serverUrl.hostname,
+      port: serverUrl.port || '32400',
+      machineIdentifier: machineId,
+      directPlay: '1',
+      directStream: '1',
+    })
+    const r = await fetch(`${playerBase}/playMedia?${params}`, { method: 'POST', headers })
+    return r.ok
+  } catch {
+    return false
+  }
+}
+
 const router = Router()
 
 const PlaySchema = z.object({
@@ -72,20 +102,37 @@ router.post('/', async (req, res) => {
     resolved_app = cap?.app ?? 'plex'
   }
 
-  // 4. Résolution du watch URL Plex si applicable
-  let plex_watch_url: string | undefined
+  // 4. Plex : Remote Control API directe sur le player (port 32500)
   if (resolved_app === 'plex' && entry.plex_id) {
-    plex_watch_url = await resolvePlexWatchUrl(entry.plex_id) ?? undefined
+    const { rows: plexRows } = await db.execute('SELECT auth_token, server_url, server_machine_id FROM plex_config WHERE id = 1')
+    const plexCfg = plexRows[0] as any
+    const { rows: devIpRows } = await db.execute({ sql: 'SELECT ip FROM devices WHERE id = ?', args: [target_device_id] })
+    const deviceIp = devIpRows[0]?.ip as string | undefined
+
+    if (plexCfg?.auth_token && plexCfg?.server_url && deviceIp) {
+      const ok = await plexRemotePlay(deviceIp, entry.plex_id, plexCfg.auth_token, plexCfg.server_url, plexCfg.server_machine_id)
+      if (!ok) return res.status(502).json({ error: 'plex remote control failed' })
+      await db.execute({
+        sql: `INSERT INTO playback_history (device_id, catalog_id, app, title, started_at, requester) VALUES (?, ?, ?, ?, ?, ?)`,
+        args: [target_device_id, entry.id, resolved_app, entry.title, Date.now(), requester]
+      })
+      return res.json({ ok: true, device_id: target_device_id, catalog_id: entry.id, title: entry.title, app: resolved_app })
+    }
+    // Fallback : watch URL via agent si pas de config Plex
+    const plex_watch_url = await resolvePlexWatchUrl(entry.plex_id) ?? undefined
+    const cmd: WsPlayCommand = { type: 'play', catalog_id: entry.id, app: resolved_app, title: entry.title, plex_id: entry.plex_id, plex_watch_url, requester: requester as RequesterType }
+    if (!sendPlayCommand(target_device_id, cmd)) return res.status(503).json({ error: 'failed to send command to device' })
+    await db.execute({ sql: `INSERT INTO playback_history (device_id, catalog_id, app, title, started_at, requester) VALUES (?, ?, ?, ?, ?, ?)`, args: [target_device_id, entry.id, resolved_app, entry.title, Date.now(), requester] })
+    return res.json({ ok: true, device_id: target_device_id, catalog_id: entry.id, title: entry.title, app: resolved_app })
   }
 
-  // 5. Send to agent
+  // 5. Autres apps : WebSocket vers l'agent
   const cmd: WsPlayCommand = {
     type: 'play',
     catalog_id: entry.id,
     app: resolved_app,
     title: entry.title,
     plex_id: entry.plex_id ?? undefined,
-    plex_watch_url,
     tivimate_channel: entry.tivimate_id ?? undefined,
     requester: requester as RequesterType
   }

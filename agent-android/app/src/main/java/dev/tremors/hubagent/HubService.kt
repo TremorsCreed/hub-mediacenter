@@ -226,11 +226,15 @@ class HubService : Service() {
         return caps
     }
 
-    @Suppress("DEPRECATION")
     private fun getLocalIp(): String? = try {
-        val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
-        val ip = wifi.connectionInfo.ipAddress
-        "${ip and 0xff}.${ip shr 8 and 0xff}.${ip shr 16 and 0xff}.${ip shr 24 and 0xff}"
+        val cm = applicationContext.getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val network = cm.activeNetwork ?: return null
+        val props = cm.getLinkProperties(network) ?: return null
+        props.linkAddresses
+            .map { it.address }
+            .filterIsInstance<java.net.Inet4Address>()
+            .firstOrNull { !it.isLoopbackAddress }
+            ?.hostAddress
     } catch (e: Exception) { null }
 
     private fun createNotificationChannel() {

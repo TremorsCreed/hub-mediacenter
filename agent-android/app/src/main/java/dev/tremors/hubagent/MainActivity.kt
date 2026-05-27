@@ -41,6 +41,10 @@ class MainActivity : AppCompatActivity() {
             tvStatus.text = "Agent starting..."
         }
 
+        // Auto-start : on lance le service dès l'ouverture de l'app.
+        // startForegroundService est idempotent — pas de doublon si déjà running.
+        HubService.start(this)
+
         btnStop.setOnClickListener {
             HubService.stop(this)
             tvStatus.text = "Agent arrêté"

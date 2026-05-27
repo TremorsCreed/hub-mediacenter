@@ -117,9 +117,19 @@ export interface PlexItem {
   viewCount?: number
 }
 
+async function extractError(r: Response): Promise<Error> {
+  const text = await r.text()
+  try {
+    const j = JSON.parse(text)
+    return new Error(typeof j.error === 'string' ? j.error : text)
+  } catch {
+    return new Error(text || `HTTP ${r.status}`)
+  }
+}
+
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(`${BASE}${path}`)
-  if (!r.ok) throw new Error(await r.text())
+  if (!r.ok) throw await extractError(r)
   return r.json()
 }
 
@@ -129,7 +139,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   })
-  if (!r.ok) throw new Error(await r.text())
+  if (!r.ok) throw await extractError(r)
   return r.json()
 }
 
@@ -139,13 +149,13 @@ async function put<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   })
-  if (!r.ok) throw new Error(await r.text())
+  if (!r.ok) throw await extractError(r)
   return r.json()
 }
 
 async function del<T>(path: string): Promise<T> {
   const r = await fetch(`${BASE}${path}`, { method: 'DELETE' })
-  if (!r.ok) throw new Error(await r.text())
+  if (!r.ok) throw await extractError(r)
   return r.json()
 }
 

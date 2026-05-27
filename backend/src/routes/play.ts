@@ -5,6 +5,18 @@ import { sendPlayCommand, sendNotify, isConnected, getConnectedIds } from '../ws
 import { AppId, CatalogEntry, RequesterType, WsPlayCommand } from '../types'
 import { resolvePlexWatchUrl } from './plex'
 
+async function waitForPlexClient(deviceIp: string, maxMs: number = 10000): Promise<boolean> {
+  const start = Date.now()
+  while (Date.now() - start < maxMs) {
+    try {
+      const r = await fetch(`http://${deviceIp}:32500/resources`, { signal: AbortSignal.timeout(700) } as any)
+      if (r.ok) return true
+    } catch {}
+    await new Promise(r => setTimeout(r, 400))
+  }
+  return false
+}
+
 async function plexRemotePlay(deviceIp: string, ratingKey: string, plexToken: string, plexServerUrl: string, machineId: string): Promise<boolean> {
   const playerBase = `http://${deviceIp}:32500/player/playback`
   const serverUrl = new URL(plexServerUrl)
@@ -184,12 +196,45 @@ router.post('/', async (req, res) => {
         title: entry.title,
         requester: requester as RequesterType,
       }
-      const woke = sendPlayCommand(target_device_id, wakeCmd)
-      console.log(`[plex] wake sent to agent: ${woke}`)
-      if (woke) await new Promise(r => setTimeout(r, 3500))
+      // Burst de wakes pour contourner les restrictions Android 12+ sur les background
+      // activity starts. Si une autre app plein écran est active (YouTube, etc.) un seul
+      // Intent peut être filtré ; en envoyer 3 espacés améliore les chances.
+      const t0 = Date.now()
+      for (let i = 0; i < 3; i++) {
+        const woke = sendPlayCommand(target_device_id, wakeCmd)
+        console.log(`[plex] wake #${i + 1} sent: ${woke}`)
+        if (i < 2) await new Promise(r => setTimeout(r, 700))
+      }
+      await new Promise(r => setTimeout(r, 1500))
+      const ready = await waitForPlexClient(deviceIp, 15000)
+      console.log(`[plex] client ready=${ready} after ${Date.now() - t0}ms`)
+
+      if (!ready) {
+        return res.status(503).json({
+          error: 'Plex injoignable sur le device. Ferme l\'app en cours sur le Shield (YouTube/autre) et réessaie.',
+          hint: 'android_foreground_blocked',
+        })
+      }
 
       const ok = await plexRemotePlay(deviceIp, entry.plex_id, plexCfg.auth_token, plexCfg.server_url, plexCfg.server_machine_id)
       if (!ok) return res.status(502).json({ error: 'plex remote control failed' })
+
+      // Foreground l'app sur la fiche du film après que la lecture a démarré côté serveur.
+      // Sur Android 12+ les "background activity starts" sont bloqués, donc cet Intent
+      // depuis l'agent (qui est foreground service) est notre seul moyen de focus Plex.
+      const plex_watch_url = await resolvePlexWatchUrl(entry.plex_id) ?? undefined
+      const focusCmd: WsPlayCommand = {
+        type: 'play',
+        catalog_id: entry.id,
+        app: 'plex',
+        title: entry.title,
+        plex_id: entry.plex_id,
+        plex_watch_url,
+        requester: requester as RequesterType,
+      }
+      sendPlayCommand(target_device_id, focusCmd)
+      console.log(`[plex] foreground intent sent`)
+
       sendNotify(target_device_id, `Playing: ${entry.title}`)
       await db.execute({
         sql: `INSERT INTO playback_history (device_id, catalog_id, app, title, started_at, requester) VALUES (?, ?, ?, ?, ?, ?)`,

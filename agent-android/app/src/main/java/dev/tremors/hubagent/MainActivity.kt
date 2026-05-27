@@ -3,6 +3,7 @@ package dev.tremors.hubagent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -52,32 +53,47 @@ class MainActivity : AppCompatActivity() {
         return flat.split(":").any { it == component }
     }
 
+    private fun isOverlayGranted(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
+
     override fun onResume() {
         super.onResume()
         HubService.statusCallback = { status ->
             findViewById<TextView>(R.id.tvStatus).text = status
         }
 
-        // Affiche/cache l'alerte "Accès aux notifications" en bandeau dédié,
-        // séparé du tvStatus (qui est écrasé par les callbacks du service).
-        val warning = findViewById<TextView>(R.id.tvNotifWarning)
-        if (warning != null) {
+        // Bandeau d'alerte : notification listener (stop media autres apps)
+        val warnNotif = findViewById<TextView>(R.id.tvNotifWarning)
+        if (warnNotif != null) {
             if (isNotificationListenerGranted()) {
-                warning.visibility = android.view.View.GONE
+                warnNotif.visibility = android.view.View.GONE
             } else {
-                warning.visibility = android.view.View.VISIBLE
-                warning.text = "⚠ Activer 'Accès aux notifications' pour Hub Agent — touchez ici"
-                warning.setOnClickListener {
+                warnNotif.visibility = android.view.View.VISIBLE
+                warnNotif.text = "⚠ Activer 'Accès aux notifications' — touchez ici"
+                warnNotif.setOnClickListener {
+                    try { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) }
+                    catch (_: Exception) { Toast.makeText(this, "Paramètres → Applications → Accès aux notifications", Toast.LENGTH_LONG).show() }
+                }
+            }
+        }
+
+        // Bandeau d'alerte : overlay permission (bypass background activity blocks)
+        val warnOverlay = findViewById<TextView>(R.id.tvOverlayWarning)
+        if (warnOverlay != null) {
+            if (isOverlayGranted()) {
+                warnOverlay.visibility = android.view.View.GONE
+            } else {
+                warnOverlay.visibility = android.view.View.VISIBLE
+                warnOverlay.text = "⚠ Activer 'Afficher au-dessus d'autres apps' — touchez ici"
+                warnOverlay.setOnClickListener {
                     try {
-                        startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+                        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+                        startActivity(intent)
                     } catch (_: Exception) {
-                        Toast.makeText(this, "Paramètres → Applications → Accès aux notifications", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, "Paramètres → Applications → Hub Agent → Afficher au-dessus", Toast.LENGTH_LONG).show()
                     }
                 }
             }
-        } else if (!isNotificationListenerGranted()) {
-            // Fallback si le TextView n'existe pas encore dans le layout : un Toast persistant
-            Toast.makeText(this, "⚠ Active 'Accès aux notifications' pour Hub Agent dans les paramètres Android", Toast.LENGTH_LONG).show()
         }
     }
 

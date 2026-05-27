@@ -79,5 +79,14 @@
             android:visibility="gone"
             android:text="⚠ Activer 'Accès aux notifications' — touchez ici"/>
 
+        <TextView android:id="@+id/tvOverlayWarning"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="#0d0d14" android:textSize="14sp" android:padding="16dp"
+            android:background="#ffb84d" android:textStyle="bold"
+            android:layout_marginTop="8dp"
+            android:focusable="true" android:clickable="true"
+            android:visibility="gone"
+            android:text="⚠ Activer 'Afficher au-dessus d'autres apps' — touchez ici"/>
+
     </LinearLayout>
 </ScrollView>

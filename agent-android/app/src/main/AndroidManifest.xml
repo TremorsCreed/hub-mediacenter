@@ -16,6 +16,10 @@
     </queries>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Whitelist pour les "Background activity launches" sur Android 10+.
+         Sans ça, ActivityTaskManager abort le startActivity de PlexLauncher depuis
+         le foreground service quand une autre app (YouTube...) est au premier plan. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- Declare as a Leanback app for Android TV / Fire TV -->
     <uses-feature android:name="android.software.leanback" android:required="false" />

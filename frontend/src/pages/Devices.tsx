@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { api, Device, DeviceConfig } from '../api'
-import { Wifi, WifiOff, Trash2, ChevronDown, ChevronUp, Save } from 'lucide-react'
+import { api, Credential, Device, DeviceConfig } from '../api'
+import { Wifi, WifiOff, Trash2, ChevronDown, ChevronUp, Save, KeyRound } from 'lucide-react'
 
 const CONTENT_TYPES = ['movie', 'episode', 'live_channel', 'vod', 'music']
 const APP_NAMES: Record<string, string> = { iptv: 'IPTV (Xtream)', plex: 'Plex', kodi: 'Kodi' }
-const DEFAULT_CONFIG: DeviceConfig = { xtream_server: '', xtream_user: '', xtream_pass: '', xtream_ext: 'ts', plex_server_id: '', app_mappings: {} }
+const DEFAULT_CONFIG: DeviceConfig = { xtream_server: '', xtream_user: '', xtream_pass: '', xtream_ext: 'ts', plex_server_id: '', app_mappings: {}, xtream_credential_id: null }
 
-function ConfigPanel({ deviceId, capabilities }: { deviceId: string; capabilities: { app: string }[] }) {
+function ConfigPanel({ deviceId, capabilities, credentials }: { deviceId: string; capabilities: { app: string }[]; credentials: Credential[] }) {
   const [cfg, setCfg] = useState<DeviceConfig>(DEFAULT_CONFIG)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -18,6 +18,9 @@ function ConfigPanel({ deviceId, capabilities }: { deviceId: string; capabilitie
   const set = (k: keyof DeviceConfig, v: string) => setCfg(prev => ({ ...prev, [k]: v }))
   const setMapping = (type: string, app: string) =>
     setCfg(prev => ({ ...prev, app_mappings: { ...prev.app_mappings, [type]: app } }))
+
+  const xtreamCreds = credentials.filter(c => c.type === 'xtream')
+  const useProfile = cfg.xtream_credential_id !== null
 
   const save = async () => {
     setSaving(true)
@@ -36,10 +39,44 @@ function ConfigPanel({ deviceId, capabilities }: { deviceId: string; capabilitie
     <div className="mt-3 pt-3 border-t border-zinc-800 space-y-4">
 
       <div>
-        <div className="text-xs text-zinc-400 font-medium mb-2 uppercase tracking-wide">Xtream / IPTV</div>
-        <div className="grid grid-cols-1 gap-2">
-          <div className="grid grid-cols-3 gap-2">
-            <div className="col-span-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs text-zinc-400 font-medium uppercase tracking-wide">Xtream / IPTV</div>
+          <div className="flex items-center gap-1.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setCfg(p => ({ ...p, xtream_credential_id: xtreamCreds[0]?.id ?? null }))}
+              className={`px-2 py-0.5 rounded transition-colors ${useProfile ? 'bg-amber-500 text-black' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}
+            >Profil</button>
+            <button
+              type="button"
+              onClick={() => setCfg(p => ({ ...p, xtream_credential_id: null }))}
+              className={`px-2 py-0.5 rounded transition-colors ${!useProfile ? 'bg-amber-500 text-black' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}
+            >Manuel</button>
+          </div>
+        </div>
+
+        {useProfile ? (
+          <div className="space-y-2">
+            {xtreamCreds.length === 0 ? (
+              <div className="text-xs text-zinc-500 py-2">
+                Aucun profil Xtream. <a href="/credentials" className="text-amber-400 hover:underline">En créer un</a>.
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <KeyRound size={13} className="text-amber-400" />
+                <select
+                  className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-zinc-500"
+                  value={cfg.xtream_credential_id ?? ''}
+                  onChange={e => set('xtream_credential_id' as any, e.target.value ? Number(e.target.value) as any : null as any)}
+                >
+                  {xtreamCreds.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-2">
+            <div>
               <label className="text-xs text-zinc-500 block mb-1">Server URL</label>
               <input
                 className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
@@ -48,38 +85,38 @@ function ConfigPanel({ deviceId, capabilities }: { deviceId: string; capabilitie
                 onChange={e => set('xtream_server', e.target.value)}
               />
             </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="text-xs text-zinc-500 block mb-1">Username</label>
+                <input
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
+                  placeholder="user"
+                  value={cfg.xtream_user}
+                  onChange={e => set('xtream_user', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-zinc-500 block mb-1">Password</label>
+                <input
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
+                  type="password"
+                  placeholder="••••••••"
+                  value={cfg.xtream_pass}
+                  onChange={e => set('xtream_pass', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-zinc-500 block mb-1">Extension</label>
+                <input
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
+                  placeholder="ts"
+                  value={cfg.xtream_ext}
+                  onChange={e => set('xtream_ext', e.target.value)}
+                />
+              </div>
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="col-span-1">
-              <label className="text-xs text-zinc-500 block mb-1">Username</label>
-              <input
-                className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
-                placeholder="user"
-                value={cfg.xtream_user}
-                onChange={e => set('xtream_user', e.target.value)}
-              />
-            </div>
-            <div className="col-span-1">
-              <label className="text-xs text-zinc-500 block mb-1">Password</label>
-              <input
-                className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
-                type="password"
-                placeholder="••••••••"
-                value={cfg.xtream_pass}
-                onChange={e => set('xtream_pass', e.target.value)}
-              />
-            </div>
-            <div className="col-span-1">
-              <label className="text-xs text-zinc-500 block mb-1">Extension</label>
-              <input
-                className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
-                placeholder="ts"
-                value={cfg.xtream_ext}
-                onChange={e => set('xtream_ext', e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
+        )}
       </div>
 
       <div>
@@ -125,12 +162,14 @@ function ConfigPanel({ deviceId, capabilities }: { deviceId: string; capabilitie
 
 export default function Devices() {
   const [devices, setDevices] = useState<Device[]>([])
+  const [credentials, setCredentials] = useState<Credential[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const load = async () => setDevices(await api.devices.list())
 
   useEffect(() => {
     load()
+    api.credentials.list().then(setCredentials).catch(() => {})
     const t = setInterval(load, 5000)
     return () => clearInterval(t)
   }, [])
@@ -206,7 +245,7 @@ export default function Devices() {
             )}
 
             {expanded.has(d.id) && (
-              <ConfigPanel deviceId={d.id} capabilities={d.capabilities} />
+              <ConfigPanel deviceId={d.id} capabilities={d.capabilities} credentials={credentials} />
             )}
           </div>
         ))}

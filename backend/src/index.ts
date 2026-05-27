@@ -10,6 +10,7 @@ import stateRouter from './routes/state'
 import zaparooRouter from './routes/zaparoo'
 import configRouter from './routes/config'
 import plexRouter from './routes/plex'
+import credentialsRouter from './routes/credentials'
 
 const app = express()
 const PORT = parseInt(process.env.PORT ?? '8020', 10)
@@ -24,6 +25,7 @@ app.use('/api/play', playRouter)
 app.use('/api/state', stateRouter)
 app.use('/api/zaparoo', zaparooRouter)
 app.use('/api/plex', plexRouter)
+app.use('/api/credentials', credentialsRouter)
 
 app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }))
 

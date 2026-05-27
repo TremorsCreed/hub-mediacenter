@@ -7,6 +7,7 @@ import PlayPage from './pages/PlayPage'
 import History from './pages/History'
 import Settings from './pages/Settings'
 import Plex from './pages/Plex'
+import Credentials from './pages/Credentials'
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="play" element={<PlayPage />} />
         <Route path="history" element={<History />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="credentials" element={<Credentials />} />
       </Route>
     </Routes>
   )

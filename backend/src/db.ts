@@ -67,6 +67,16 @@ export async function initDb() {
       xtream_ext TEXT NOT NULL DEFAULT 'ts',
       plex_server_id TEXT NOT NULL DEFAULT '',
       app_mappings TEXT NOT NULL DEFAULT '{}',
+      xtream_credential_id INTEGER,
+      updated_at INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS credentials (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      data TEXT NOT NULL DEFAULT '{}',
+      created_at INTEGER NOT NULL DEFAULT 0,
       updated_at INTEGER NOT NULL DEFAULT 0
     );
 
@@ -81,4 +91,7 @@ export async function initDb() {
 
     INSERT OR IGNORE INTO plex_config (id) VALUES (1);
   `)
+
+  // Migrations idempotentes (ALTER TABLE échoue silencieusement si la colonne existe)
+  try { await db.execute("ALTER TABLE device_config ADD COLUMN xtream_credential_id INTEGER") } catch {}
 }

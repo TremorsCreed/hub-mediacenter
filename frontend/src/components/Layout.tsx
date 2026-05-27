@@ -1,9 +1,10 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { Tv, Library, History, Play, LayoutDashboard, Settings, Film } from 'lucide-react'
+import { Tv, Library, History, Play, LayoutDashboard, Settings, Film, KeyRound } from 'lucide-react'
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/devices', label: 'Devices', icon: Tv },
+  { to: '/credentials', label: 'Credentials', icon: KeyRound },
   { to: '/plex', label: 'Plex', icon: Film },
   { to: '/catalog', label: 'Catalog', icon: Library },
   { to: '/play', label: 'Play', icon: Play },

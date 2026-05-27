@@ -58,6 +58,16 @@ export interface DeviceConfig {
   xtream_ext: string
   plex_server_id: string
   app_mappings: Record<string, string>
+  xtream_credential_id: number | null
+}
+
+export interface Credential {
+  id: number
+  name: string
+  type: 'xtream'
+  data: Record<string, any>
+  created_at: number
+  updated_at: number
 }
 
 export interface PlayIntent {
@@ -143,6 +153,12 @@ export const api = {
     history: () => get<HistoryEntry[]>('/state/history')
   },
   play: (intent: PlayIntent) => post<{ ok: boolean; title: string; device_id: string; app: string }>('/play', intent),
+  credentials: {
+    list: () => get<Credential[]>('/credentials'),
+    create: (c: Omit<Credential, 'id' | 'created_at' | 'updated_at'>) => post<{ ok: boolean; id: number }>('/credentials', c),
+    update: (id: number, c: Omit<Credential, 'id' | 'created_at' | 'updated_at'>) => put<{ ok: boolean }>(`/credentials/${id}`, c),
+    remove: (id: number) => del<{ ok: boolean }>(`/credentials/${id}`)
+  },
   plex: {
     status: () => get<{ connected: boolean; server_url: string | null; server_machine_id: string | null }>('/plex/status'),
     startPin: () => post<{ id: number; pin: string; auth_url: string }>('/plex/pin', {}),

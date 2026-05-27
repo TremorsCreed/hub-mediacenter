@@ -45,6 +45,20 @@
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
 
+        <!-- Boilerplate empty NotificationListenerService.
+             Sa seule raison d'être : permettre à l'utilisateur d'activer
+             "Accès aux notifications" pour Hub Agent, ce qui débloque
+             MediaSessionManager.getActiveSessions() (utilisé pour stopper
+             un media en cours sur une autre app avant de lancer Plex/IPTV). -->
+        <service
+            android:name=".HubNotificationListener"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".BootReceiver"
             android:exported="true">

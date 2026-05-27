@@ -1,8 +1,11 @@
 package dev.tremors.hubagent
 
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 
@@ -43,10 +46,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun isNotificationListenerGranted(): Boolean {
+        val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: return false
+        val component = ComponentName(this, HubNotificationListener::class.java).flattenToString()
+        return flat.split(":").any { it == component }
+    }
+
     override fun onResume() {
         super.onResume()
         HubService.statusCallback = { status ->
             findViewById<TextView>(R.id.tvStatus).text = status
+        }
+        // Si la permission Notification access n'est pas accordée, signaler et proposer
+        // d'ouvrir les paramètres. Sans elle, on ne peut pas stopper YouTube/etc avant Plex.
+        if (!isNotificationListenerGranted()) {
+            val status = findViewById<TextView>(R.id.tvStatus)
+            status.text = "⚠ Active \"Accès aux notifications\" pour permettre la prise en main des autres apps"
+            status.setOnClickListener {
+                try {
+                    startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+                } catch (_: Exception) {
+                    Toast.makeText(this, "Va dans Paramètres → Applications → Accès aux notifications", Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 

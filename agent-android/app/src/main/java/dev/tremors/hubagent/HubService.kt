@@ -4,13 +4,17 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.util.Log
+import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import dev.tremors.hubagent.launchers.*
 import dev.tremors.hubagent.model.*
@@ -168,10 +172,43 @@ class HubService : Service() {
         }
     }
 
+    private fun stopOtherMediaSessions() {
+        try {
+            val mgr = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+            val component = ComponentName(this, HubNotificationListener::class.java)
+            val sessions = mgr.getActiveSessions(component)
+            val myPkg = packageName
+            for (ctrl in sessions) {
+                if (ctrl.packageName == myPkg) continue
+                val state = ctrl.playbackState?.state
+                val isActive = state == PlaybackState.STATE_PLAYING
+                    || state == PlaybackState.STATE_BUFFERING
+                    || state == PlaybackState.STATE_FAST_FORWARDING
+                    || state == PlaybackState.STATE_REWINDING
+                if (!isActive) continue
+                Log.i(TAG, "Stopping active media session: ${ctrl.packageName}")
+                // stop() ne marche pas sur toutes les apps ; on tente plusieurs approches
+                try { ctrl.transportControls.stop() } catch (_: Exception) {}
+                try { ctrl.transportControls.pause() } catch (_: Exception) {}
+                try {
+                    ctrl.dispatchMediaButtonEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_STOP))
+                    ctrl.dispatchMediaButtonEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_STOP))
+                } catch (_: Exception) {}
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "MediaSessionManager: permission \"Notification access\" not granted — Plex foreground may be blocked by other apps")
+        } catch (e: Exception) {
+            Log.w(TAG, "stopOtherMediaSessions: ${e.message}")
+        }
+    }
+
     private fun handlePlay(json: JSONObject) {
         val cmd = PlayCommand.fromJson(json, hubConfig.get())
         Log.i(TAG, "Play: ${cmd.title} via ${cmd.app}")
         updateNotification("Playing: ${cmd.title}")
+        // Libère le focus media avant de lancer la nouvelle app — contourne le blocage
+        // Android 12+ qui empêche le bring-to-foreground depuis un service en background.
+        stopOtherMediaSessions()
 
         val launcher = buildLaunchers().firstOrNull { it.canHandle(cmd) }
         if (launcher == null) {

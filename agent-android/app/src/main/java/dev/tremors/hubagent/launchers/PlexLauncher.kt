@@ -13,6 +13,12 @@ class PlexLauncher : BaseLauncher {
     companion object {
         const val PKG = "com.plexapp.android"
         private const val TAG = "PlexLauncher"
+        // Flags pour ramener Plex au premier plan même si une autre app est focusée
+        // (contourne le blocage Android 12+ des background activity starts).
+        private const val FOCUS_FLAGS = Intent.FLAG_ACTIVITY_NEW_TASK or
+            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+            Intent.FLAG_ACTIVITY_SINGLE_TOP
     }
 
     override fun canHandle(cmd: PlayCommand) = cmd.app == appId
@@ -46,7 +52,7 @@ class PlexLauncher : BaseLauncher {
         return try {
             val intent = Intent(Intent.ACTION_VIEW, watchUri).apply {
                 if (cmd.plexWatchUrl == null) setPackage(PKG)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(FOCUS_FLAGS)
             }
             ctx.startActivity(intent)
             Log.i(TAG, "Launched Plex: $watchUri")
@@ -62,7 +68,7 @@ class PlexLauncher : BaseLauncher {
             val pm = ctx.packageManager
             val intent = (pm.getLeanbackLaunchIntentForPackage(PKG)
                 ?: pm.getLaunchIntentForPackage(PKG))!!.apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(FOCUS_FLAGS)
             }
             ctx.startActivity(intent)
             LaunchResult.Success
@@ -70,4 +76,5 @@ class PlexLauncher : BaseLauncher {
             LaunchResult.Error("Failed to launch Plex: ${e.message}")
         }
     }
+
 }

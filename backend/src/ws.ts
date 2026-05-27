@@ -43,34 +43,65 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
   switch (msg.type) {
     case 'register': {
       const capabilities = (msg.capabilities as DeviceCapability[]) ?? []
+      const incomingIp = (msg.ip as string) || ''
+      // Ne PAS écraser l'IP avec une valeur vide — préserver la précédente.
+      // (l'app Android pré-fix ConnectivityManager renvoie null sur Android 12+/Shield TV)
       await db.execute({
         sql: `INSERT INTO devices (id, name, platform, ip, last_seen, capabilities)
               VALUES (?, ?, ?, ?, ?, ?)
               ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name, platform = excluded.platform,
-                ip = excluded.ip, last_seen = excluded.last_seen,
+                ip = COALESCE(NULLIF(excluded.ip, ''), devices.ip),
+                last_seen = excluded.last_seen,
                 capabilities = excluded.capabilities`,
-        args: [device_id, msg.name as string, msg.platform as string, (msg.ip as string) ?? null, Date.now(), JSON.stringify(capabilities)]
+        args: [device_id, msg.name as string, msg.platform as string, incomingIp || null, Date.now(), JSON.stringify(capabilities)]
       })
       await db.execute({
         sql: `INSERT INTO playback_state (device_id, status) VALUES (?, 'stopped') ON CONFLICT(device_id) DO NOTHING`,
         args: [device_id]
       })
-      console.log(`[ws] registered: ${device_id} (${msg.name})`)
-      // Push stored config to agent
+      console.log(`[ws] registered: ${device_id} (${msg.name})${incomingIp ? ` ip=${incomingIp}` : ' (no ip, kept previous)'}`)
+
+      // Push stored config to agent — résoudre xtream_credential_id, fallback sur le premier profil si rien
       const { rows } = await db.execute({ sql: 'SELECT * FROM device_config WHERE device_id = ?', args: [device_id] })
-      if (rows.length) {
-        const cfg = rows[0] as any
-        agents.get(device_id)?.ws.send(JSON.stringify({
-          type: 'config',
-          xtream_server: cfg.xtream_server,
-          xtream_user: cfg.xtream_user,
-          xtream_pass: cfg.xtream_pass,
-          xtream_ext: cfg.xtream_ext,
-          plex_server_id: cfg.plex_server_id,
-          app_mappings: JSON.parse(cfg.app_mappings as string)
-        }))
+      const cfg = rows[0] as any | undefined
+      let xtream = {
+        xtream_server: cfg?.xtream_server ?? '',
+        xtream_user: cfg?.xtream_user ?? '',
+        xtream_pass: cfg?.xtream_pass ?? '',
+        xtream_ext: cfg?.xtream_ext ?? 'ts',
       }
+      let source = 'inline'
+      if (cfg?.xtream_credential_id) {
+        const { rows: cRows } = await db.execute({
+          sql: 'SELECT data FROM credentials WHERE id = ? AND type = ?',
+          args: [cfg.xtream_credential_id, 'xtream']
+        })
+        if (cRows.length) {
+          const data = JSON.parse((cRows[0] as any).data as string)
+          xtream = { xtream_server: data.server ?? '', xtream_user: data.user ?? '', xtream_pass: data.pass ?? '', xtream_ext: data.ext ?? 'ts' }
+          source = `credential#${cfg.xtream_credential_id}`
+        }
+      }
+      // Fallback : si aucune config Xtream, utiliser le premier profil disponible
+      if (!xtream.xtream_server) {
+        const { rows: anyCred } = await db.execute("SELECT id, data FROM credentials WHERE type = 'xtream' ORDER BY id LIMIT 1")
+        if (anyCred.length) {
+          const c = anyCred[0] as any
+          const data = JSON.parse(c.data as string)
+          if (data.server) {
+            xtream = { xtream_server: data.server, xtream_user: data.user ?? '', xtream_pass: data.pass ?? '', xtream_ext: data.ext ?? 'ts' }
+            source = `auto credential#${c.id}`
+          }
+        }
+      }
+      agents.get(device_id)?.ws.send(JSON.stringify({
+        type: 'config',
+        ...xtream,
+        plex_server_id: cfg?.plex_server_id ?? '',
+        app_mappings: cfg ? JSON.parse(cfg.app_mappings as string) : {}
+      }))
+      console.log(`[ws] config pushed: xtream=${xtream.xtream_server ? 'set' : 'empty'} (${source})`)
       break
     }
     case 'state_update': {

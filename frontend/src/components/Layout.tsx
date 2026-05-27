@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { Tv, Library, History, Play, LayoutDashboard, Settings, Film, KeyRound, Radio, FolderOpen } from 'lucide-react'
 import { api } from '../api'
 
@@ -17,8 +17,9 @@ const bottomNav = [
 
 export default function Layout() {
   const [modules, setModules] = useState<{ plex: boolean; iptv: boolean }>({ plex: false, iptv: false })
+  const location = useLocation()
 
-  useEffect(() => {
+  const refreshModules = useCallback(() => {
     Promise.all([
       api.plex.status().catch(() => ({ connected: false })),
       api.iptv.credentials().catch(() => []),
@@ -26,6 +27,14 @@ export default function Layout() {
       setModules({ plex: plex.connected, iptv: iptv.length > 0 })
     })
   }, [])
+
+  // Refresh quand on change de route et quand la fenêtre reprend le focus
+  useEffect(() => { refreshModules() }, [location.pathname, refreshModules])
+  useEffect(() => {
+    const onFocus = () => refreshModules()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [refreshModules])
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-3 px-5 py-2.5 text-sm transition-colors ${

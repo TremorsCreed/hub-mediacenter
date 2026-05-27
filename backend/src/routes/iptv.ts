@@ -1,6 +1,9 @@
 import { Router } from 'express'
 import { db } from '../db'
 import { getList, normalizeTitle } from '../iptvVodCache'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
 const router = Router()
 
@@ -45,9 +48,7 @@ router.get('/:credId/categories', async (req, res) => {
   }
 })
 
-// GET /api/iptv/:credId/streams?type=live|vod&category=X&search=Y&limit=200
-// Utilise le cache mémoire (préchargé au démarrage backend) → réponse < 50ms
-// pour des collections de 100K+ items, vs ~5s en hit direct API Xtream.
+// GET /api/iptv/:credId/streams?type=live|vod&category=X&search=Y&languages=fr,en&limit=200
 router.get('/:credId/streams', async (req, res) => {
   const credId = parseInt(req.params.credId)
   if (!credId) return res.status(404).json({ error: 'invalid credential id' })
@@ -55,10 +56,20 @@ router.get('/:credId/streams', async (req, res) => {
   const category = req.query.category as string | undefined
   const searchRaw = ((req.query.search as string) ?? '').trim()
   const limit = Math.min(parseInt((req.query.limit as string) ?? '200'), 1000)
+  const langsRaw = (req.query.languages as string) ?? ''
+  const langs = new Set(langsRaw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean))
+  // Inclure les items sans langue détectée quand "??" est dans la sélection
+  const includeUnknown = langs.has('??') || langs.has('UNKNOWN')
   try {
     const all = await getList(credId, type)
     let items = all
     if (category) items = items.filter(it => it.category_id === category)
+    if (langs.size > 0) {
+      items = items.filter(it => {
+        if (!it.language) return includeUnknown
+        return langs.has(it.language)
+      })
+    }
     if (searchRaw) {
       const needle = normalizeTitle(searchRaw)
       items = items.filter(it => normalizeTitle(it.name).includes(needle))
@@ -72,16 +83,63 @@ router.get('/:credId/streams', async (req, res) => {
   }
 })
 
+// GET /api/iptv/:credId/languages?type=live|vod — langues détectées avec compte
+router.get('/:credId/languages', async (req, res) => {
+  const credId = parseInt(req.params.credId)
+  if (!credId) return res.status(404).json({ error: 'invalid credential id' })
+  const type = ((req.query.type as string) === 'vod' ? 'vod' : 'live') as 'vod' | 'live'
+  try {
+    const all = await getList(credId, type)
+    const counts = new Map<string, number>()
+    for (const it of all) {
+      const code = it.language ?? '??'
+      counts.set(code, (counts.get(code) ?? 0) + 1)
+    }
+    const list = [...counts.entries()]
+      .map(([code, count]) => ({ code, count }))
+      .sort((a, b) => b.count - a.count)
+    res.json(list)
+  } catch (e: any) {
+    res.status(502).json({ error: e.message })
+  }
+})
+
 // GET /api/iptv/image?url=...
+// Cache disque (data/iptv-image-cache/) en plus du Cache-Control browser.
+// Les logos IPTV sont immutables → on les sert pour toujours depuis le disque
+// dès le premier fetch, plus jamais besoin de retoucher au serveur upstream.
+const IMAGE_CACHE_DIR = join(process.env.DB_PATH ? dirname(process.env.DB_PATH) : process.cwd(), 'iptv-image-cache')
+if (!existsSync(IMAGE_CACHE_DIR)) mkdirSync(IMAGE_CACHE_DIR, { recursive: true })
+
 router.get('/image', async (req, res) => {
   const url = req.query.url as string
   if (!url || !/^https?:\/\//.test(url)) return res.status(400).end()
+  const hash = createHash('md5').update(url).digest('hex')
+
+  // Hit cache disque : on récupère bytes + content-type stocké en sidecar
+  const cachePath = join(IMAGE_CACHE_DIR, hash)
+  const ctPath = join(IMAGE_CACHE_DIR, hash + '.ct')
+  if (existsSync(cachePath)) {
+    try {
+      const ct = existsSync(ctPath) ? readFileSync(ctPath, 'utf-8') : 'image/png'
+      res.set('Content-Type', ct)
+      res.set('Cache-Control', 'public, max-age=2592000, immutable')
+      res.set('X-Cache', 'disk')
+      return res.send(readFileSync(cachePath))
+    } catch { /* fallthrough fetch */ }
+  }
+
   try {
-    const r = await fetch(url)
+    const r = await fetch(url, { signal: AbortSignal.timeout(8000) } as any)
     if (!r.ok) return res.status(r.status).end()
-    res.set('Content-Type', r.headers.get('content-type') ?? 'image/png')
+    const ct = r.headers.get('content-type') ?? 'image/png'
+    const buf = Buffer.from(await r.arrayBuffer())
+    // Write cache (fire-and-forget side effect)
+    try { writeFileSync(cachePath, buf); writeFileSync(ctPath, ct) } catch {}
+    res.set('Content-Type', ct)
     res.set('Cache-Control', 'public, max-age=2592000, immutable')
-    res.send(Buffer.from(await r.arrayBuffer()))
+    res.set('X-Cache', 'miss')
+    res.send(buf)
   } catch {
     res.status(502).end()
   }

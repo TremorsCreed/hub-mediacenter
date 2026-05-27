@@ -12,6 +12,22 @@ export interface StreamEntry {
   category_id: string
   added?: string
   rating?: string
+  language?: string  // code ISO simplifié ('FR', 'EN', 'DE', ...) ou undefined
+}
+
+// Détecte la langue à partir des préfixes courants des providers IPTV.
+// "FR | Canal+ HD", "[EN] Netflix VOD", "VF - Titanic (1997)", etc.
+export function detectLanguage(name: string): string | undefined {
+  if (!name) return undefined
+  const m = name.match(/^\s*[\[\(]?\s*(VF|VFF|VFQ|VOSTFR|VO|FR|EN|US|UK|DE|ES|IT|NL|PT|BR|RU|TR|AR|PL|JP|KO|CN|TW|GR|RO|HU|CZ|MULTI)\s*[\]\)]?\s*[|:\-—–·]/i)
+  if (!m) return undefined
+  const code = m[1].toUpperCase()
+  if (code === 'VF' || code === 'VFF' || code === 'VFQ') return 'FR'
+  if (code === 'VOSTFR') return 'FR'  // sous-titres FR
+  if (code === 'VO' || code === 'US' || code === 'UK') return 'EN'
+  if (code === 'BR') return 'PT'
+  if (code === 'TW') return 'CN'
+  return code
 }
 
 type Kind = 'vod' | 'live'
@@ -53,15 +69,19 @@ async function fetchAll(credId: number, kind: Kind): Promise<StreamEntry[]> {
     const r = await fetch(url, { signal: AbortSignal.timeout(45000) } as any)
     if (!r.ok) { console.warn(`[iptv-cache] fetch ${kind} ${credId} returned ${r.status}`); return [] }
     const data = await r.json() as any[]
-    const items: StreamEntry[] = (data ?? []).map(s => ({
-      stream_id: String(s.stream_id),
-      name: String(s.name ?? ''),
-      year: String(s.releaseDate ?? s.year ?? ''),
-      logo: (s.stream_icon || s.cover) as string | undefined,
-      category_id: String(s.category_id ?? ''),
-      added: s.added as string | undefined,
-      rating: s.rating as string | undefined,
-    }))
+    const items: StreamEntry[] = (data ?? []).map(s => {
+      const name = String(s.name ?? '')
+      return {
+        stream_id: String(s.stream_id),
+        name,
+        year: String(s.releaseDate ?? s.year ?? ''),
+        logo: (s.stream_icon || s.cover) as string | undefined,
+        category_id: String(s.category_id ?? ''),
+        added: s.added as string | undefined,
+        rating: s.rating as string | undefined,
+        language: detectLanguage(name),
+      }
+    })
     console.log(`[iptv-cache] cached ${items.length} ${kind} items for credential #${credId} in ${Date.now() - t0}ms`)
     return items
   } catch (e) {

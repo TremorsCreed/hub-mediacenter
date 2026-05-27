@@ -124,6 +124,7 @@ export interface IptvStream {
   added?: string
   rating?: string
   year?: string
+  language?: string  // "FR", "EN", ... (undefined si non détecté)
   type: 'live' | 'vod'
 }
 
@@ -230,10 +231,12 @@ export const api = {
   iptv: {
     credentials: () => get<{ id: number; name: string }[]>('/iptv/credentials'),
     categories: (credId: number, type: 'live' | 'vod') => get<IptvCategory[]>(`/iptv/${credId}/categories?type=${type}`),
-    streams: (credId: number, opts: { type: 'live' | 'vod'; category?: string; search?: string; limit?: number }) => {
+    languages: (credId: number, type: 'live' | 'vod') => get<{ code: string; count: number }[]>(`/iptv/${credId}/languages?type=${type}`),
+    streams: (credId: number, opts: { type: 'live' | 'vod'; category?: string; search?: string; languages?: string[]; limit?: number }) => {
       const p = new URLSearchParams({ type: opts.type })
       if (opts.category) p.set('category', opts.category)
       if (opts.search) p.set('search', opts.search)
+      if (opts.languages && opts.languages.length) p.set('languages', opts.languages.join(','))
       if (opts.limit) p.set('limit', String(opts.limit))
       return get<{ total: number; items: IptvStream[] }>(`/iptv/${credId}/streams?${p}`)
     },

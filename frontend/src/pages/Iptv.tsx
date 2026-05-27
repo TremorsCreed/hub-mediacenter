@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api, Device, IptvCategory, IptvStream } from '../api'
-import { Search, Play, Loader2, AlertCircle, Tv, Film } from 'lucide-react'
+import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages } from 'lucide-react'
+
+const LANG_PREFS_KEY = 'iptv.languages.selected'
+const COMMON_LANG_LABELS: Record<string, string> = {
+  FR: 'Français', EN: 'English', DE: 'Deutsch', ES: 'Español', IT: 'Italiano',
+  NL: 'Nederlands', PT: 'Português', RU: 'Русский', TR: 'Türkçe', AR: 'العربية',
+  PL: 'Polski', GR: 'Ελληνικά', RO: 'Română', HU: 'Magyar', CZ: 'Čeština',
+  JP: '日本語', KO: '한국어', CN: '中文', MULTI: 'Multi',
+  '??': 'Inconnu',
+}
 
 export default function Iptv() {
   const [creds, setCreds] = useState<{ id: number; name: string }[]>([])
@@ -17,6 +26,11 @@ export default function Iptv() {
   const [deviceId, setDeviceId] = useState<string>('')
   const [launching, setLaunching] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [availableLangs, setAvailableLangs] = useState<{ code: string; count: number }[]>([])
+  const [selectedLangs, setSelectedLangs] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(LANG_PREFS_KEY) ?? '["FR","EN"]') } catch { return ['FR', 'EN'] }
+  })
+  const [langPanelOpen, setLangPanelOpen] = useState(false)
 
   useEffect(() => {
     api.iptv.credentials().then(c => {
@@ -34,7 +48,16 @@ export default function Iptv() {
     if (!credId) return
     setCategoryId('')
     api.iptv.categories(credId, type).then(setCategories).catch(() => setCategories([]))
+    api.iptv.languages(credId, type).then(setAvailableLangs).catch(() => setAvailableLangs([]))
   }, [credId, type])
+
+  useEffect(() => {
+    localStorage.setItem(LANG_PREFS_KEY, JSON.stringify(selectedLangs))
+  }, [selectedLangs])
+
+  const toggleLang = (code: string) => {
+    setSelectedLangs(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code])
+  }
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 350)
@@ -48,12 +71,13 @@ export default function Iptv() {
       type,
       category: categoryId || undefined,
       search: debouncedSearch || undefined,
+      languages: selectedLangs.length > 0 ? selectedLangs : undefined,
       limit: 300,
     })
       .then(r => { setStreams(r.items); setTotal(r.total) })
       .catch(() => { setStreams([]); setTotal(0) })
       .finally(() => setLoading(false))
-  }, [credId, type, categoryId, debouncedSearch])
+  }, [credId, type, categoryId, debouncedSearch, selectedLangs])
 
   const play = async (s: IptvStream) => {
     if (!deviceId) {
@@ -143,6 +167,45 @@ export default function Iptv() {
           <option value="">Toutes les catégories ({categories.length})</option>
           {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
+
+        <div className="relative">
+          <button
+            onClick={() => setLangPanelOpen(v => !v)}
+            className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-300 hover:border-zinc-600"
+          >
+            <Languages size={13} />
+            {selectedLangs.length === 0
+              ? 'Toutes les langues'
+              : selectedLangs.length <= 3
+                ? selectedLangs.map(c => COMMON_LANG_LABELS[c]?.slice(0, 2) ?? c).join(' · ')
+                : `${selectedLangs.length} langues`}
+          </button>
+          {langPanelOpen && (
+            <div className="absolute z-20 top-full mt-1 right-0 w-72 max-h-96 overflow-y-auto bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl p-2">
+              <div className="flex items-center justify-between px-2 py-1 mb-1">
+                <span className="text-xs text-zinc-500 uppercase tracking-widest">Langues</span>
+                <button onClick={() => setSelectedLangs([])} className="text-xs text-zinc-500 hover:text-amber-400">Tout</button>
+              </div>
+              {availableLangs.length === 0 && <div className="text-xs text-zinc-600 p-2">Aucune langue détectée</div>}
+              {availableLangs.map(({ code, count }) => {
+                const checked = selectedLangs.includes(code)
+                const label = COMMON_LANG_LABELS[code] ?? code
+                return (
+                  <label key={code} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-zinc-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="accent-amber-500"
+                      checked={checked}
+                      onChange={() => toggleLang(code)}
+                    />
+                    <span className="text-sm text-zinc-200 flex-1">{label}</span>
+                    <span className="text-xs text-zinc-500">{count.toLocaleString()}</span>
+                  </label>
+                )
+              })}
+            </div>
+          )}
+        </div>
 
         <div className="relative flex-1 min-w-[200px]">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />

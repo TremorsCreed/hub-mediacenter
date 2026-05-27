@@ -226,21 +226,10 @@ router.post('/', async (req, res) => {
         args: [entry.id, entry.title, Date.now(), target_device_id]
       })
 
-      // Foreground l'app sur la fiche du film après que la lecture a démarré côté serveur.
-      // Sur Android 12+ les "background activity starts" sont bloqués, donc cet Intent
-      // depuis l'agent (qui est foreground service) est notre seul moyen de focus Plex.
-      const plex_watch_url = await resolvePlexWatchUrl(entry.plex_id) ?? undefined
-      const focusCmd: WsPlayCommand = {
-        type: 'play',
-        catalog_id: entry.id,
-        app: 'plex',
-        title: entry.title,
-        plex_id: entry.plex_id,
-        plex_watch_url,
-        requester: requester as RequesterType,
-      }
-      sendPlayCommand(target_device_id, focusCmd)
-      console.log(`[plex] foreground intent sent`)
+      // PAS de focus intent post Remote Control : la permission SYSTEM_ALERT_WINDOW
+      // permet désormais au wake initial d'amener Plex au foreground, et un deep
+      // link envoyé après le playMedia ferait switcher Plex sur la page détail au
+      // lieu du player → lecture annulée.
 
       sendNotify(target_device_id, `Playing: ${entry.title}`)
       await db.execute({

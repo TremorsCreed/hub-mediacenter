@@ -47,20 +47,34 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
       const name = msg.name as string
       const platform = msg.platform as string
 
-      // Dédup : un device qui se ré-enregistre après un uninstall/reinstall obtient
-      // un nouveau device_id (UUID random dans SharedPreferences). On supprime tout
-      // device existant qui partage le couple (name, platform) — même hardware logique.
-      // Conséquence bonus : l'historique reste cohérent et les playback_state orphelins
-      // sont nettoyés automatiquement par la cascade plus bas.
+      // Dédup avec MERGE : un device qui se ré-enregistre après un uninstall/reinstall
+      // obtient un nouveau device_id (UUID random dans SharedPreferences). On transfère
+      // la config et l'historique de l'ancien vers le nouveau, puis on supprime l'ancien.
+      // Critère de match : (name, platform) — même hardware logique. L'utilisateur peut
+      // renommer un device pour éviter le merge si nécessaire.
       const { rows: dupes } = await db.execute({
         sql: 'SELECT id FROM devices WHERE name = ? AND platform = ? AND id != ?',
         args: [name, platform, device_id]
       })
       for (const r of dupes) {
         const oldId = (r as any).id as string
-        console.log(`[ws] dedup: removing old device ${oldId} (same name/platform as ${device_id})`)
-        await db.execute({ sql: 'DELETE FROM playback_state WHERE device_id = ?', args: [oldId] })
+        console.log(`[ws] dedup: merging ${oldId} → ${device_id} (same name/platform)`)
+
+        // Transférer la config seulement si le nouveau device n'en a pas encore
+        await db.execute({
+          sql: `INSERT OR IGNORE INTO device_config (device_id, xtream_server, xtream_user, xtream_pass, xtream_ext, plex_server_id, app_mappings, xtream_credential_id, updated_at)
+                SELECT ?, xtream_server, xtream_user, xtream_pass, xtream_ext, plex_server_id, app_mappings, xtream_credential_id, updated_at
+                FROM device_config WHERE device_id = ?`,
+          args: [device_id, oldId]
+        })
+        // Réécrire l'historique sur le nouveau device_id pour garder une vue cohérente
+        await db.execute({
+          sql: 'UPDATE playback_history SET device_id = ? WHERE device_id = ?',
+          args: [device_id, oldId]
+        })
+        // Cleanup de l'ancien
         await db.execute({ sql: 'DELETE FROM device_config WHERE device_id = ?', args: [oldId] })
+        await db.execute({ sql: 'DELETE FROM playback_state WHERE device_id = ?', args: [oldId] })
         await db.execute({ sql: 'DELETE FROM devices WHERE id = ?', args: [oldId] })
       }
 
@@ -126,13 +140,21 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
       break
     }
     case 'state_update': {
+      // L'agent n'envoie pas le title dans ses state_update — utiliser COALESCE pour
+      // préserver celui posé par /api/play (sinon le dashboard l'oublie après l'ack agent).
       await db.execute({
-        sql: `UPDATE playback_state SET status = ?, catalog_id = ?, app = ?, title = ?, started_at = ? WHERE device_id = ?`,
+        sql: `UPDATE playback_state SET
+                status = ?,
+                catalog_id = COALESCE(?, catalog_id),
+                app = COALESCE(?, app),
+                title = COALESCE(?, title),
+                started_at = ?
+              WHERE device_id = ?`,
         args: [
           msg.status as string,
-          (msg.catalog_id as string) ?? null,
-          (msg.app as string) ?? null,
-          (msg.title as string) ?? null,
+          (msg.catalog_id as string) || null,
+          (msg.app as string) || null,
+          (msg.title as string) || null,
           msg.status === 'playing' ? Date.now() : null,
           device_id,
         ]

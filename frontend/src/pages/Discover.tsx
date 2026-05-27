@@ -88,7 +88,7 @@ export default function Discover() {
       return
     }
 
-    setLaunching(av.platform)
+    setLaunching(`${av.platform}-${av.iptv_language ?? ''}`)
     try {
       // IPTV VOD ou autre plateforme externe
       const intent = av.platform === 'iptv' && av.iptv_stream_id
@@ -243,17 +243,23 @@ export default function Discover() {
               <div className="flex flex-wrap gap-2">
                 {availabilities?.map(av => {
                   const st = platformStyle(av.platform)
-                  const busy = launching === av.platform
+                  // Pour IPTV on a plusieurs entries possibles (FR + EN…) → label unique
+                  const label = av.platform === 'iptv'
+                    ? `${st.label.replace(' (VOD)', '')} ${av.iptv_kind === 'series' ? 'Série' : 'VOD'}${av.iptv_language ? ` · ${av.iptv_language}` : ''}`
+                    : st.label
+                  // key unique : pour iptv on a plusieurs urls similaires sans le param ; on combine
+                  const key = `${av.platform}-${av.iptv_kind ?? ''}-${av.iptv_language ?? ''}-${av.url}`
+                  const busy = launching === `${av.platform}-${av.iptv_language ?? ''}`
                   return (
                     <button
-                      key={av.url}
+                      key={key}
                       onClick={() => playOn(av)}
                       disabled={launching !== null}
                       className="flex items-center gap-2 px-3 py-2 rounded font-medium text-sm transition-opacity hover:opacity-90 disabled:opacity-40"
                       style={{ background: st.bg, color: st.fg }}
                     >
                       {busy ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} fill="currentColor" />}
-                      {st.label}
+                      {label}
                       {av.offerType && av.offerType !== 'subscription' && (
                         <span className="text-[10px] opacity-80 ml-1">({av.offerType})</span>
                       )}

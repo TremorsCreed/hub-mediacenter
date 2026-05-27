@@ -121,25 +121,41 @@ export function normalizeTitle(s: string): string {
     .trim()
 }
 
-function findInList(list: StreamEntry[], title: string, year?: number): StreamEntry | null {
-  if (list.length === 0) return null
+function findAllInList(list: StreamEntry[], title: string, year?: number): StreamEntry[] {
+  if (list.length === 0) return []
   const target = normalizeTitle(title)
-  if (target.length < 3) return null
+  if (target.length < 3) return []
   const candidates = list.filter(v => {
     const n = normalizeTitle(v.name)
     return n === target || n.startsWith(target + ' ') || n.endsWith(' ' + target) || n.includes(' ' + target + ' ')
   })
-  if (candidates.length === 0) return null
-  if (year) {
-    const exact = candidates.find(v => v.year.startsWith(String(year)))
-    if (exact) return exact
-    const close = candidates.find(v => {
-      const y = parseInt(v.year)
-      return y && Math.abs(y - year) <= 1
-    })
-    if (close) return close
+  if (!year) return candidates
+  // Filtrer par année quand fournie (films surtout — pas applicable aux séries)
+  const yearMatch = candidates.filter(v => {
+    if (!v.year) return true
+    if (v.year.startsWith(String(year))) return true
+    const y = parseInt(v.year)
+    return y && Math.abs(y - year) <= 1
+  })
+  return yearMatch.length > 0 ? yearMatch : candidates
+}
+
+function findInList(list: StreamEntry[], title: string, year?: number): StreamEntry | null {
+  return findAllInList(list, title, year)[0] ?? null
+}
+
+// Dédup par langue : 1 résultat par langue détectée (les items sans langue
+// taggée "??" sont gardés tous mais limités).
+function dedupByLanguage<T extends { entry: StreamEntry }>(matches: T[]): T[] {
+  const seen = new Set<string>()
+  const out: T[] = []
+  for (const m of matches) {
+    const lang = m.entry.language ?? '??'
+    if (seen.has(lang)) continue
+    seen.add(lang)
+    out.push(m)
   }
-  return candidates[0]
+  return out
 }
 
 // VOD uniquement (compatibilité, mais préférer findIptvMatch pour le cross-ref Discover)
@@ -155,12 +171,20 @@ export interface IptvMatch {
 }
 
 export async function findIptvMatch(credId: number, title: string, year?: number): Promise<IptvMatch | null> {
-  // Series d'abord (plus de chances de match correct sur un nom de série connue)
   const seriesMatch = findInList(await getSeriesList(credId), title)
   if (seriesMatch) return { kind: 'series', entry: seriesMatch }
   const vodMatch = findInList(await getVodList(credId), title, year)
   if (vodMatch) return { kind: 'vod', entry: vodMatch }
   return null
+}
+
+// Variante qui retourne plusieurs matches : 1 par langue détectée.
+// Utilisé par Discover pour afficher "IPTV (Série) FR" + "IPTV (Série) EN" côte à côte.
+export async function findIptvMatchesByLang(credId: number, title: string, year?: number): Promise<IptvMatch[]> {
+  const seriesMatches = findAllInList(await getSeriesList(credId), title).map(entry => ({ kind: 'series' as const, entry }))
+  if (seriesMatches.length > 0) return dedupByLanguage(seriesMatches)
+  const vodMatches = findAllInList(await getVodList(credId), title, year).map(entry => ({ kind: 'vod' as const, entry }))
+  return dedupByLanguage(vodMatches)
 }
 
 export async function listActiveCredentialIds(): Promise<number[]> {

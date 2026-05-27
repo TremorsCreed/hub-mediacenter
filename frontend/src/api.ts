@@ -115,6 +115,7 @@ export interface DiscoverAvailability {
   iptv_credential_id?: number
   iptv_stream_id?: string          // stream_id pour vod, series_id pour series
   iptv_kind?: 'vod' | 'series'
+  iptv_language?: string           // "FR", "EN", ... — undefined si non détectée
 }
 
 export interface IptvCategory { id: string; name: string }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { api, Device, IptvCategory, IptvSeriesInfo, IptvStream } from '../api'
 import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight } from 'lucide-react'
 
@@ -402,8 +403,9 @@ export default function Iptv() {
         </div>
       )}
 
-      {/* Modale détail série : saisons accordéon + épisodes */}
-      {selectedSeries && (
+      {/* Modale détail série : saisons accordéon + épisodes — portal-isée vers
+          document.body pour couvrir aussi le layout chrome (sidebar + barre du haut) */}
+      {selectedSeries && createPortal(
         <div
           className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-start justify-center p-4 overflow-y-auto"
           onClick={() => setSelectedSeries(null)}
@@ -485,15 +487,17 @@ export default function Iptv() {
               })}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {toast && (
+      {toast && createPortal(
         <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded shadow-lg text-sm font-medium z-[110] ${
           toast.ok ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
         }`}>
           {toast.msg}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

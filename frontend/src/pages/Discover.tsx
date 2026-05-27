@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { api, Device, DiscoverAvailability, DiscoverItem } from '../api'
 import { Search, Loader2, AlertCircle, Play, X } from 'lucide-react'
 
@@ -178,7 +179,7 @@ export default function Discover() {
       </div>
 
       {/* Modale détail / availabilities */}
-      {selected && (
+      {selected && createPortal(
         <div
           className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-center justify-center p-4"
           onClick={() => setSelected(null)}
@@ -247,15 +248,17 @@ export default function Discover() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {toast && (
+      {toast && createPortal(
         <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded shadow-lg text-sm font-medium z-[110] ${
           toast.ok ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
         }`}>
           {toast.msg}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

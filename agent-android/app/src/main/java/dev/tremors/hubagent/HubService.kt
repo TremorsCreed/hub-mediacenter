@@ -190,10 +190,20 @@ class HubService : Service() {
             }
             "control" -> cmdHandler.post { try { handleControl(json.optString("action")) } catch (e: Exception) { Log.e(TAG, "handleControl", e) } }
             "overlay" -> {
+                val action = json.optString("action")
+                if (action == "hide") { overlay.hideAll(); return }
+                val style = json.optString("style", "small")
                 val title = json.optString("title").ifEmpty { "Hub MediaCenter" }
                 val message = json.optString("message")
-                val duration = json.optInt("duration", 4)
-                if (message.isNotEmpty()) overlay.show(title, message, duration)
+                val duration = json.optInt("duration", if (style == "player") 0 else 4)
+                if (message.isEmpty()) return
+                if (style == "player") {
+                    val image = json.optString("image").ifEmpty { null }
+                    val appLabel = json.optString("app_label").ifEmpty { null }
+                    overlay.showPlayer(title, message, appLabel, image, duration)
+                } else {
+                    overlay.show(title, message, duration)
+                }
             }
             "pong" -> Log.d(TAG, "pong")
             else -> Log.w(TAG, "Unknown: ${json.optString("type")}")
@@ -214,6 +224,7 @@ class HubService : Service() {
                 stopAllActiveMediaSessions()
                 sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_STOP)
                 updateNotification("Connected — $deviceName")
+                overlay.hideAll()
                 sendState("stopped")
             }
             "next" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_NEXT)
@@ -342,6 +353,8 @@ class HubService : Service() {
         if (snapshot == lastReportedSessionState) return
         lastReportedSessionState = snapshot
         if (active == null) {
+            // Plus aucune session active → on retire le player overlay
+            overlay.hidePlayer()
             sendState("stopped")
         } else {
             val pkg = active.packageName

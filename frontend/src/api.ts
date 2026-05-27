@@ -79,6 +79,7 @@ export interface PlayIntent {
   iptv_stream_id?: string
   iptv_type?: 'live' | 'vod'
   title?: string
+  thumb?: string
   device_id?: string
   app?: string
   requester: string

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:background="@drawable/overlay_player_bg"
+    android:paddingStart="20dp"
+    android:paddingEnd="32dp"
+    android:paddingTop="14dp"
+    android:paddingBottom="14dp"
+    android:gravity="center_vertical"
+    android:elevation="16dp">
+
+    <ImageView
+        android:id="@+id/overlayPlayerImage"
+        android:layout_width="68dp"
+        android:layout_height="102dp"
+        android:scaleType="centerCrop"
+        android:background="@drawable/overlay_poster_bg"
+        android:contentDescription="poster" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginStart="18dp"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/overlayPlayerApp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#f59e0b"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.15"
+            android:text="HUB MEDIACENTER" />
+
+        <TextView
+            android:id="@+id/overlayPlayerTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#ffffff"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:fontFamily="sans-serif-medium"
+            android:layout_marginTop="2dp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="Titre du film" />
+
+        <TextView
+            android:id="@+id/overlayPlayerMessage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#cbd5e1"
+            android:textSize="13sp"
+            android:layout_marginTop="4dp"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:text="En lecture" />
+
+    </LinearLayout>
+
+</LinearLayout>

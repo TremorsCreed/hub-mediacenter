@@ -190,7 +190,15 @@ export function sendControl(device_id: string, action: string): boolean {
   return true
 }
 
-export function sendOverlay(device_id: string, payload: { title?: string; message: string; duration?: number }): boolean {
+export function sendOverlay(device_id: string, payload: {
+  title?: string
+  message: string
+  duration?: number
+  style?: 'small' | 'player'
+  image?: string       // URL absolue (chargée par l'agent)
+  app_label?: string   // label en haut de la card player (ex "PLEX", "IPTV")
+  action?: 'hide'      // si fourni, retire l'overlay au lieu d'afficher
+}): boolean {
   const agent = agents.get(device_id)
   if (!agent || agent.ws.readyState !== WebSocket.OPEN) return false
   agent.ws.send(JSON.stringify({ type: 'overlay', ...payload }))

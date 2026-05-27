@@ -66,6 +66,7 @@ export default function Iptv() {
         iptv_stream_id: s.stream_id,
         iptv_type: s.type,
         title: s.name,
+        thumb: s.logo,
         app: 'iptv',
         device_id: deviceId,
         requester: 'manual',

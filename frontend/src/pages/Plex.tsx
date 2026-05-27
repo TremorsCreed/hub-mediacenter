@@ -64,6 +64,7 @@ export default function Plex() {
       const r = await api.play({
         plex_id: item.ratingKey,
         title: item.title,
+        thumb: item.thumb,
         app: 'plex',
         device_id: deviceId,
         requester: 'manual',

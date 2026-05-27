@@ -4,7 +4,7 @@ import { db } from '../db'
 import { sendPlayCommand, sendNotify, isConnected, getConnectedIds } from '../ws'
 import { AppId, CatalogEntry, RequesterType, WsPlayCommand } from '../types'
 import { resolvePlexWatchUrl } from './plex'
-import { notifyOverlay } from '../notify'
+import { notifyOverlay, notifyOverlayPlayer, hideOverlay } from '../notify'
 
 // Helper pour construire l'URL stream Xtream complète côté backend.
 // On résout l'extension réelle pour les VOD via get_vod_info (container_extension).
@@ -174,16 +174,32 @@ const PlaySchema = z.object({
   iptv_stream_id: z.string().optional(),
   iptv_type: z.enum(['live', 'vod']).optional(),
   title: z.string().optional(),
+  thumb: z.string().optional(),  // path Plex (/library/...) ou URL absolue (IPTV logo)
   device_id: z.string().optional(),
   app: z.string().optional(),
   requester: z.enum(['zaparoo', 'llm', 'n8n', 'manual', 'ha']).default('manual')
 })
 
+// Construit l'URL absolue d'une image, accessible depuis le device (réseau LAN).
+// req.headers.host contient le hostname:port utilisé par le frontend pour atteindre
+// le hub — fonctionne aussi bien pour le device sur le même réseau.
+function buildImageUrl(req: any, thumb: string | undefined, app: string): string | undefined {
+  if (!thumb) return undefined
+  if (/^https?:\/\//.test(thumb)) {
+    // URL absolue (logo IPTV) → on passe par le proxy /api/iptv/image qui suit le mixed-content
+    return `${req.protocol}://${req.headers.host}/api/iptv/image?url=${encodeURIComponent(thumb)}`
+  }
+  if (thumb.startsWith('/') && app === 'plex') {
+    return `${req.protocol}://${req.headers.host}/api/plex/image?path=${encodeURIComponent(thumb)}`
+  }
+  return undefined
+}
+
 router.post('/', async (req, res) => {
   const parsed = PlaySchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
 
-  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, title, device_id, app, requester } = parsed.data
+  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, title, thumb, device_id, app, requester } = parsed.data
 
   // 1. Resolve catalog entry
   let entry: CatalogEntry | null = null
@@ -264,6 +280,7 @@ router.post('/', async (req, res) => {
       }
       // Notif TvOverlay : préparation
       notifyOverlay(target_device_id, { title: 'Hub MediaCenter', message: `Préparation : ${entry.title}`, duration: 3 })
+      const plexImageUrl = buildImageUrl(req, thumb, 'plex')
 
       // Burst de wakes pour contourner les restrictions Android 12+ sur les background
       // activity starts. Si une autre app plein écran est active (YouTube, etc.) un seul
@@ -291,7 +308,12 @@ router.post('/', async (req, res) => {
         return res.status(502).json({ error: 'plex remote control failed' })
       }
 
-      notifyOverlay(target_device_id, { title: '▶ Plex', message: entry.title, duration: 5 })
+      notifyOverlayPlayer(target_device_id, {
+        title: entry.title,
+        message: 'En lecture sur Plex',
+        app_label: 'PLEX',
+        image: plexImageUrl,
+      })
 
       // Update playback_state — sinon le dashboard reste sur "idle" pour les plays
       // qui passent par Remote Control (ils ne déclenchent pas de state_update WS).
@@ -346,11 +368,15 @@ router.post('/', async (req, res) => {
     requester: requester as RequesterType
   }
 
-  notifyOverlay(target_device_id, { title: `▶ ${(resolved_app as string).toUpperCase()}`, message: entry.title, duration: 4 })
-
   if (!sendPlayCommand(target_device_id, cmd)) {
     return res.status(503).json({ error: 'failed to send command to device' })
   }
+  notifyOverlayPlayer(target_device_id, {
+    title: entry.title,
+    message: resolvedIptvType === 'live' ? 'Live en cours' : 'En lecture',
+    app_label: (resolved_app as string).toUpperCase(),
+    image: buildImageUrl(req, thumb, resolved_app as string),
+  })
 
   await db.execute({
     sql: `UPDATE playback_state SET status='playing', catalog_id=?, title=?, app=?, started_at=? WHERE device_id=?`,

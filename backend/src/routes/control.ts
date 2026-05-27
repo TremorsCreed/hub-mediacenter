@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { sendControl, isConnected } from '../ws'
 import { db } from '../db'
-import { notifyOverlay } from '../notify'
+import { notifyOverlay, hideOverlay } from '../notify'
 
 const router = Router()
 
@@ -30,6 +30,7 @@ router.post('/:deviceId/:action', async (req, res) => {
   if (overlayLabels[action]) {
     notifyOverlay(deviceId, { title: 'Hub MediaCenter', message: overlayLabels[action], duration: 2 })
   }
+  if (action === 'stop') hideOverlay(deviceId)
 
   // Mise à jour optimiste du playback_state pour le feedback dashboard.
   // L'agent enverra un state_update qui réconciliera si besoin.

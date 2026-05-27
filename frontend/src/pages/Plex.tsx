@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { api, Device, PlexItem, PlexOnDeckItem, PlexSection } from '../api'
-import { Search, Play, Loader2, AlertCircle, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { api, Device, PlexItem, PlexOnDeckItem, PlexSection, PlexShowDetail } from '../api'
+import { Search, Play, Loader2, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, X, ChevronDown, Check } from 'lucide-react'
 
 const PAGE_SIZE = 60
 
@@ -134,6 +135,10 @@ export default function Plex() {
   const [deviceId, setDeviceId] = useState<string>('')
   const [launching, setLaunching] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [selectedShow, setSelectedShow] = useState<PlexItem | null>(null)
+  const [showDetail, setShowDetail] = useState<PlexShowDetail | null>(null)
+  const [loadingShow, setLoadingShow] = useState(false)
+  const [openSeasons, setOpenSeasons] = useState<Set<number>>(new Set([1]))
 
   useEffect(() => {
     api.plex.status().then(s => {
@@ -174,6 +179,11 @@ export default function Plex() {
   }, [sectionId, page, debouncedSearch])
 
   const play = async (item: PlexItem, opts: { resume?: boolean } = {}) => {
+    // Series : ouvre la modale pour choisir l'épisode
+    if (item.type === 'show') {
+      openShow(item)
+      return
+    }
     if (!deviceId) {
       setToast({ msg: 'Sélectionne un device', ok: false })
       return
@@ -197,6 +207,51 @@ export default function Plex() {
       setTimeout(() => setToast(null), 3500)
     }
   }
+
+  const openShow = async (item: PlexItem) => {
+    setSelectedShow(item)
+    setShowDetail(null)
+    setLoadingShow(true)
+    try {
+      const detail = await api.plex.show(item.ratingKey)
+      setShowDetail(detail)
+      // Ouvre par défaut la 1ère saison qui a un épisode non terminé, sinon S1
+      const nextSeason = detail.seasons.find(s => s.viewed_count < s.episode_count)
+      setOpenSeasons(new Set([nextSeason?.season_number ?? detail.seasons[0]?.season_number ?? 1]))
+    } catch (e: any) {
+      setToast({ msg: `Erreur : ${e.message}`, ok: false })
+      setTimeout(() => setToast(null), 4000)
+    } finally {
+      setLoadingShow(false)
+    }
+  }
+
+  const playEpisode = async (ep: { ratingKey: string; title: string; thumb?: string; viewOffset?: number }, season: number, epNum: number) => {
+    if (!deviceId) { setToast({ msg: 'Sélectionne un device', ok: false }); return }
+    setLaunching(`ep-${ep.ratingKey}`)
+    const resume = (ep.viewOffset ?? 0) > 0
+    try {
+      const r = await api.play({
+        plex_id: ep.ratingKey,
+        title: `${selectedShow?.title} — S${season}E${epNum} ${ep.title}`,
+        thumb: ep.thumb || selectedShow?.thumb,
+        resume,
+        app: 'plex',
+        device_id: deviceId,
+        requester: 'manual',
+      })
+      setToast({ msg: `${resume ? '⟲' : '▶'} ${r.title}`, ok: true })
+      setSelectedShow(null)
+    } catch (e: any) {
+      setToast({ msg: `Échec : ${e.message}`, ok: false })
+    } finally {
+      setLaunching(null)
+      setTimeout(() => setToast(null), 3500)
+    }
+  }
+
+  const toggleSeason = (n: number) =>
+    setOpenSeasons(prev => { const s = new Set(prev); s.has(n) ? s.delete(n) : s.add(n); return s })
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total])
 
@@ -335,12 +390,131 @@ export default function Plex() {
         </div>
       )}
 
-      {toast && (
-        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded shadow-lg text-sm font-medium ${
+      {/* Modale détail série Plex */}
+      {selectedShow && createPortal(
+        <div
+          className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-start justify-center p-4 overflow-y-auto"
+          onClick={() => setSelectedShow(null)}
+        >
+          <div className="bg-zinc-900/95 border border-zinc-700 rounded-lg max-w-3xl w-full my-8 relative shadow-2xl" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setSelectedShow(null)} className="absolute top-3 right-3 text-zinc-500 hover:text-white z-10">
+              <X size={18} />
+            </button>
+
+            <div className="p-5 border-b border-zinc-800">
+              <div className="flex gap-4">
+                {(showDetail?.info.thumb || selectedShow.thumb) && (
+                  <img
+                    src={api.plex.imageUrl(showDetail?.info.thumb || selectedShow.thumb)}
+                    alt={selectedShow.title}
+                    className="w-28 h-40 object-cover rounded shrink-0 bg-zinc-800"
+                    onError={e => { e.currentTarget.style.display = 'none' }}
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-lg font-semibold leading-tight">{showDetail?.info.title ?? selectedShow.title}</h2>
+                  <div className="text-xs text-zinc-500 mt-1 flex gap-3 flex-wrap items-center">
+                    {showDetail?.info.year && <span>{showDetail.info.year}</span>}
+                    {showDetail?.info.rating && <span>★ {showDetail.info.rating.toFixed(1)}</span>}
+                    {showDetail && showDetail.info.leafCount > 0 && (
+                      <span>{showDetail.info.viewedLeafCount}/{showDetail.info.leafCount} épisodes vus</span>
+                    )}
+                  </div>
+                  {showDetail?.info.summary && (
+                    <p className="text-sm text-zinc-300 mt-3 line-clamp-4">{showDetail.info.summary}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5">
+              {loadingShow && (
+                <div className="flex items-center justify-center py-8 text-zinc-500 gap-2 text-sm">
+                  <Loader2 size={14} className="animate-spin" /> Chargement des épisodes…
+                </div>
+              )}
+              {!loadingShow && showDetail && showDetail.seasons.length === 0 && (
+                <div className="text-sm text-zinc-600 py-6 text-center">Aucune saison trouvée.</div>
+              )}
+              {!loadingShow && showDetail?.seasons.map(season => {
+                const isOpen = openSeasons.has(season.season_number)
+                const allViewed = season.viewed_count >= season.episode_count
+                return (
+                  <div key={season.ratingKey} className="border-t border-zinc-800 first:border-t-0">
+                    <button
+                      onClick={() => toggleSeason(season.season_number)}
+                      className="w-full flex items-center gap-2 py-3 text-left hover:text-amber-400 transition-colors"
+                    >
+                      <ChevronDown size={16} className={`transition-transform ${isOpen ? '' : '-rotate-90'}`} />
+                      <span className="font-medium">{season.title}</span>
+                      <span className="text-xs text-zinc-500">
+                        · {season.viewed_count}/{season.episode_count}
+                      </span>
+                      {allViewed && <Check size={12} className="text-green-500 ml-1" />}
+                    </button>
+                    {isOpen && (
+                      <div className="space-y-1 pb-3">
+                        {season.episodes.map(ep => {
+                          const busy = launching === `ep-${ep.ratingKey}`
+                          const inProgress = (ep.viewOffset ?? 0) > 0
+                          const seen = (ep.viewCount ?? 0) > 0
+                          const pct = inProgress && ep.duration
+                            ? Math.min(100, Math.max(0, (ep.viewOffset! / ep.duration) * 100))
+                            : 0
+                          return (
+                            <button
+                              key={ep.ratingKey}
+                              onClick={() => playEpisode(ep, season.season_number, ep.episode_number)}
+                              disabled={busy}
+                              className="w-full flex items-center gap-3 px-2 py-2 rounded hover:bg-zinc-800 text-left disabled:opacity-50 transition-colors group"
+                            >
+                              <div className="text-xs text-zinc-500 w-12 shrink-0">
+                                S{season.season_number}E{ep.episode_number}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm truncate flex items-center gap-1.5">
+                                  {ep.title}
+                                  {seen && !inProgress && <Check size={10} className="text-green-500" />}
+                                </div>
+                                {(ep.air_date || inProgress) && (
+                                  <div className="text-[11px] text-zinc-600 flex items-center gap-2">
+                                    {ep.air_date && <span>{ep.air_date.slice(0, 10)}</span>}
+                                    {inProgress && <span className="text-amber-400">En cours · {Math.round(pct)}%</span>}
+                                  </div>
+                                )}
+                                {inProgress && pct > 0 && (
+                                  <div className="h-0.5 bg-zinc-800 mt-1 rounded">
+                                    <div className="h-full bg-amber-400 rounded" style={{ width: `${pct}%` }} />
+                                  </div>
+                                )}
+                              </div>
+                              {busy
+                                ? <Loader2 size={14} className="animate-spin text-amber-400" />
+                                : inProgress
+                                  ? <RotateCcw size={12} className="text-amber-400" />
+                                  : <Play size={12} className="text-zinc-600 group-hover:text-amber-400" fill="currentColor" />
+                              }
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {toast && createPortal(
+        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded shadow-lg text-sm font-medium z-[110] ${
           toast.ok ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
         }`}>
           {toast.msg}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

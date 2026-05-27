@@ -254,6 +254,80 @@ router.get('/discover/image', async (req, res) => {
   }
 })
 
+// GET /api/plex/show/:ratingKey — info série + saisons + tous les épisodes regroupés.
+// Une seule requête Plex pour les épisodes (allLeaves), groupés par saison côté hub.
+router.get('/show/:ratingKey', async (req, res) => {
+  const cfg = await getConfig()
+  if (!cfg.auth_token || !cfg.server_url) return res.status(400).json({ error: 'not connected to plex' })
+  try {
+    const [showRes, seasonsRes, episodesRes] = await Promise.all([
+      fetch(`${cfg.server_url}/library/metadata/${req.params.ratingKey}?X-Plex-Token=${cfg.auth_token}`, { headers: { Accept: 'application/json' } }),
+      fetch(`${cfg.server_url}/library/metadata/${req.params.ratingKey}/children?X-Plex-Token=${cfg.auth_token}`, { headers: { Accept: 'application/json' } }),
+      fetch(`${cfg.server_url}/library/metadata/${req.params.ratingKey}/allLeaves?X-Plex-Token=${cfg.auth_token}`, { headers: { Accept: 'application/json' } }),
+    ])
+    if (!showRes.ok) return res.status(502).json({ error: 'plex show fetch failed' })
+    const showData: any = await showRes.json()
+    const seasonsData: any = seasonsRes.ok ? await seasonsRes.json() : { MediaContainer: { Metadata: [] } }
+    const episodesData: any = episodesRes.ok ? await episodesRes.json() : { MediaContainer: { Metadata: [] } }
+
+    const show = showData?.MediaContainer?.Metadata?.[0] ?? {}
+    const seasons: any[] = seasonsData?.MediaContainer?.Metadata ?? []
+    const episodes: any[] = episodesData?.MediaContainer?.Metadata ?? []
+
+    // Group episodes by parentRatingKey (= season ratingKey)
+    const bySeason = new Map<string, any[]>()
+    for (const ep of episodes) {
+      const k = String(ep.parentRatingKey ?? '')
+      if (!bySeason.has(k)) bySeason.set(k, [])
+      bySeason.get(k)!.push(ep)
+    }
+
+    const seasonsOut = seasons
+      .filter(s => s.type === 'season')  // pas "specials" parfois étrange
+      .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+      .map(season => ({
+        ratingKey: String(season.ratingKey),
+        season_number: Number(season.index ?? 0),
+        title: season.title as string,
+        thumb: season.thumb as string | undefined,
+        episode_count: Number(season.leafCount ?? bySeason.get(String(season.ratingKey))?.length ?? 0),
+        viewed_count: Number(season.viewedLeafCount ?? 0),
+        episodes: (bySeason.get(String(season.ratingKey)) ?? [])
+          .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+          .map(ep => ({
+            ratingKey: String(ep.ratingKey),
+            episode_number: Number(ep.index ?? 0),
+            title: ep.title as string,
+            summary: ep.summary as string | undefined,
+            duration: ep.duration as number | undefined,
+            viewOffset: ep.viewOffset as number | undefined,
+            viewCount: ep.viewCount as number | undefined,
+            thumb: ep.thumb as string | undefined,
+            air_date: ep.originallyAvailableAt as string | undefined,
+            rating: ep.rating as number | undefined,
+          })),
+      }))
+
+    res.json({
+      info: {
+        ratingKey: String(show.ratingKey),
+        title: show.title as string,
+        year: show.year as number | undefined,
+        thumb: show.thumb as string | undefined,
+        art: show.art as string | undefined,
+        summary: show.summary as string | undefined,
+        rating: show.rating as number | undefined,
+        contentRating: show.contentRating as string | undefined,
+        leafCount: Number(show.leafCount ?? 0),
+        viewedLeafCount: Number(show.viewedLeafCount ?? 0),
+      },
+      seasons: seasonsOut,
+    })
+  } catch (e: any) {
+    res.status(502).json({ error: e.message })
+  }
+})
+
 // GET /api/plex/onDeck?limit=20 — items en cours de lecture (continue watching)
 router.get('/onDeck', async (req, res) => {
   const cfg = await getConfig()

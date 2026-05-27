@@ -194,6 +194,45 @@ export interface PlexOnDeckItem extends PlexItem {
   index?: number
 }
 
+export interface PlexEpisode {
+  ratingKey: string
+  episode_number: number
+  title: string
+  summary?: string
+  duration?: number
+  viewOffset?: number
+  viewCount?: number
+  thumb?: string
+  air_date?: string
+  rating?: number
+}
+
+export interface PlexSeasonDetail {
+  ratingKey: string
+  season_number: number
+  title: string
+  thumb?: string
+  episode_count: number
+  viewed_count: number
+  episodes: PlexEpisode[]
+}
+
+export interface PlexShowDetail {
+  info: {
+    ratingKey: string
+    title: string
+    year?: number
+    thumb?: string
+    art?: string
+    summary?: string
+    rating?: number
+    contentRating?: string
+    leafCount: number
+    viewedLeafCount: number
+  }
+  seasons: PlexSeasonDetail[]
+}
+
 async function extractError(r: Response): Promise<Error> {
   const text = await r.text()
   try {
@@ -287,6 +326,7 @@ export const api = {
     disconnect: () => del<{ ok: boolean }>('/plex/token'),
     sections: () => get<PlexSection[]>('/plex/sections'),
     onDeck: (limit = 20) => get<PlexOnDeckItem[]>(`/plex/onDeck?limit=${limit}`),
+    show: (ratingKey: string) => get<PlexShowDetail>(`/plex/show/${ratingKey}`),
     discoverSearch: (q: string) => get<DiscoverItem[]>(`/plex/discover/search?q=${encodeURIComponent(q)}`),
     discoverAvailabilities: (ratingKey: string, title?: string, year?: number) => {
       const p = new URLSearchParams()

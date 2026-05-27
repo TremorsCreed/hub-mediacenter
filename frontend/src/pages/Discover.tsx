@@ -1,8 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, Device, DiscoverAvailability, DiscoverItem } from '../api'
-import { Search, Loader2, AlertCircle, Play, X } from 'lucide-react'
+import { Search, Loader2, AlertCircle, Play, X, Languages } from 'lucide-react'
 import IptvSeriesModal from '../components/IptvSeriesModal'
+
+const LANG_PREFS_KEY = 'iptv.languages.selected'  // partagé avec la page IPTV
+const COMMON_LANG_LABELS: Record<string, string> = {
+  FR: 'Français', EN: 'English', DE: 'Deutsch', ES: 'Español', IT: 'Italiano',
+  NL: 'Nederlands', PT: 'Português', RU: 'Русский', TR: 'Türkçe', AR: 'العربية',
+  PL: 'Polski', GR: 'Ελληνικά', RO: 'Română', HU: 'Magyar', CZ: 'Čeština',
+  JP: '日本語', KO: '한국어', CN: '中文', MULTI: 'Multi',
+}
 
 // Couleurs et libellés par plateforme
 const PLATFORM_STYLE: Record<string, { label: string; bg: string; fg: string }> = {
@@ -38,6 +46,38 @@ export default function Discover() {
   const [launching, setLaunching] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [iptvSeriesOpen, setIptvSeriesOpen] = useState<{ credId: number; seriesId: string; title: string; cover?: string } | null>(null)
+  const [selectedLangs, setSelectedLangs] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(LANG_PREFS_KEY) ?? '["FR","EN"]') } catch { return ['FR', 'EN'] }
+  })
+  const [langPanelOpen, setLangPanelOpen] = useState(false)
+
+  useEffect(() => {
+    localStorage.setItem(LANG_PREFS_KEY, JSON.stringify(selectedLangs))
+  }, [selectedLangs])
+
+  const toggleLang = (code: string) =>
+    setSelectedLangs(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code])
+
+  // Filtre : on garde toutes les availabilities sauf IPTV qui ne match pas la langue.
+  // Les IPTV sans langue détectée sont toujours gardés.
+  const visibleAvailabilities = useMemo(() => {
+    if (!availabilities) return null
+    if (selectedLangs.length === 0) return availabilities  // pas de filtre actif
+    return availabilities.filter(av => {
+      if (av.platform !== 'iptv') return true       // Netflix/Plex/Disney+/etc. toujours visibles
+      if (!av.iptv_language) return true            // IPTV sans tag langue → on garde
+      return selectedLangs.includes(av.iptv_language)
+    })
+  }, [availabilities, selectedLangs])
+
+  // Liste des langues IPTV disponibles dans le set actuel (pour le popover)
+  const availableIptvLangs = useMemo(() => {
+    const set = new Set<string>()
+    for (const av of availabilities ?? []) if (av.iptv_language) set.add(av.iptv_language)
+    // Toujours proposer FR/EN même si pas dans le résultat courant
+    set.add('FR'); set.add('EN')
+    return [...set].sort()
+  }, [availabilities])
 
   useEffect(() => {
     api.devices.list().then(ds => {
@@ -115,6 +155,49 @@ export default function Discover() {
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-xl font-semibold mr-auto">Discover</h1>
+
+        <div className="relative">
+          <button
+            onClick={() => setLangPanelOpen(v => !v)}
+            className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-300 hover:border-zinc-600"
+            title="Filtrer les sources IPTV par langue (les autres plateformes restent visibles)"
+          >
+            <Languages size={13} />
+            {selectedLangs.length === 0
+              ? 'Toutes IPTV'
+              : selectedLangs.length <= 3
+                ? `IPTV : ${selectedLangs.join(' · ')}`
+                : `IPTV : ${selectedLangs.length} langues`}
+          </button>
+          {langPanelOpen && (
+            <div className="absolute z-20 top-full mt-1 right-0 w-72 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl p-2">
+              <div className="flex items-center justify-between px-2 py-1 mb-1">
+                <span className="text-xs text-zinc-500 uppercase tracking-widest">Langues IPTV</span>
+                <button onClick={() => setSelectedLangs([])} className="text-xs text-zinc-500 hover:text-amber-400">Tout</button>
+              </div>
+              <div className="text-[11px] text-zinc-600 px-2 mb-2">
+                Filtre les boutons IPTV (FR, EN…). Plex / Netflix / Disney+ / Prime restent toujours visibles.
+              </div>
+              {availableIptvLangs.map(code => {
+                const checked = selectedLangs.includes(code)
+                const label = COMMON_LANG_LABELS[code] ?? code
+                return (
+                  <label key={code} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-zinc-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="accent-amber-500"
+                      checked={checked}
+                      onChange={() => toggleLang(code)}
+                    />
+                    <span className="text-sm text-zinc-200">{label}</span>
+                    <span className="text-xs text-zinc-600 ml-auto">{code}</span>
+                  </label>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
         <select
           className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
           value={deviceId}
@@ -237,11 +320,17 @@ export default function Discover() {
                   <Loader2 size={14} className="animate-spin" /> Recherche des plateformes…
                 </div>
               )}
+              {!loadingAv && visibleAvailabilities && visibleAvailabilities.length === 0 && availabilities && availabilities.length > 0 && (
+                <div className="text-sm text-zinc-600">
+                  Aucune source ne correspond au filtre langue.
+                  <button onClick={() => setSelectedLangs([])} className="ml-2 text-amber-400 hover:underline">Réinitialiser</button>
+                </div>
+              )}
               {!loadingAv && availabilities && availabilities.length === 0 && (
                 <div className="text-sm text-zinc-600">Aucune plateforme dispo pour ce titre.</div>
               )}
               <div className="flex flex-wrap gap-2">
-                {availabilities?.map(av => {
+                {visibleAvailabilities?.map(av => {
                   const st = platformStyle(av.platform)
                   // Pour IPTV on a plusieurs entries possibles (FR + EN…) → label unique
                   const label = av.platform === 'iptv'

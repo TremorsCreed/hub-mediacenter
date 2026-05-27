@@ -8,6 +8,17 @@ const CredentialSchema = z.object({
   name: z.string().min(1),
   type: z.enum(['xtream']),
   data: z.record(z.unknown()).default({})
+}).transform(c => {
+  // Trim les champs string du data — les credentials copiés-collés ont souvent des
+  // espaces parasites qui cassent les URLs stream (vu en prod sur Elon IPTV).
+  if (c.type === 'xtream' && c.data) {
+    const trimmed: Record<string, unknown> = { ...c.data }
+    for (const k of ['server', 'user', 'pass', 'ext']) {
+      if (typeof trimmed[k] === 'string') trimmed[k] = (trimmed[k] as string).trim()
+    }
+    c.data = trimmed
+  }
+  return c
 })
 
 router.get('/', async (_req, res) => {

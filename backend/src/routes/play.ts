@@ -29,6 +29,8 @@ async function buildIptvStreamUrl(deviceId: string, streamId: string, type: 'liv
       server = data.server ?? ''; user = data.user ?? ''; pass = data.pass ?? ''; ext = data.ext ?? 'ts'
     }
   }
+  // Sanitize : protège contre les espaces parasites dans les credentials saisis
+  server = server.trim(); user = user.trim(); pass = pass.trim(); ext = ext.trim()
   if (!server || !user || !pass) return null
   const base = server.replace(/\/+$/, '')
 

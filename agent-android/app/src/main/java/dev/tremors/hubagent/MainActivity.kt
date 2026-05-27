@@ -57,18 +57,27 @@ class MainActivity : AppCompatActivity() {
         HubService.statusCallback = { status ->
             findViewById<TextView>(R.id.tvStatus).text = status
         }
-        // Si la permission Notification access n'est pas accordée, signaler et proposer
-        // d'ouvrir les paramètres. Sans elle, on ne peut pas stopper YouTube/etc avant Plex.
-        if (!isNotificationListenerGranted()) {
-            val status = findViewById<TextView>(R.id.tvStatus)
-            status.text = "⚠ Active \"Accès aux notifications\" pour permettre la prise en main des autres apps"
-            status.setOnClickListener {
-                try {
-                    startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
-                } catch (_: Exception) {
-                    Toast.makeText(this, "Va dans Paramètres → Applications → Accès aux notifications", Toast.LENGTH_LONG).show()
+
+        // Affiche/cache l'alerte "Accès aux notifications" en bandeau dédié,
+        // séparé du tvStatus (qui est écrasé par les callbacks du service).
+        val warning = findViewById<TextView>(R.id.tvNotifWarning)
+        if (warning != null) {
+            if (isNotificationListenerGranted()) {
+                warning.visibility = android.view.View.GONE
+            } else {
+                warning.visibility = android.view.View.VISIBLE
+                warning.text = "⚠ Activer 'Accès aux notifications' pour Hub Agent — touchez ici"
+                warning.setOnClickListener {
+                    try {
+                        startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+                    } catch (_: Exception) {
+                        Toast.makeText(this, "Paramètres → Applications → Accès aux notifications", Toast.LENGTH_LONG).show()
+                    }
                 }
             }
+        } else if (!isNotificationListenerGranted()) {
+            // Fallback si le TextView n'existe pas encore dans le layout : un Toast persistant
+            Toast.makeText(this, "⚠ Active 'Accès aux notifications' pour Hub Agent dans les paramètres Android", Toast.LENGTH_LONG).show()
         }
     }
 

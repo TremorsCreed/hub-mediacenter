@@ -70,5 +70,14 @@
             android:textColor="#dddddd" android:textSize="14sp" android:padding="16dp"
             android:background="#1e1e30" android:text="Agent arrêté"/>
 
+        <TextView android:id="@+id/tvNotifWarning"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="#0d0d14" android:textSize="14sp" android:padding="16dp"
+            android:background="#ffb84d" android:textStyle="bold"
+            android:layout_marginTop="12dp"
+            android:focusable="true" android:clickable="true"
+            android:visibility="gone"
+            android:text="⚠ Activer 'Accès aux notifications' — touchez ici"/>
+
     </LinearLayout>
 </ScrollView>

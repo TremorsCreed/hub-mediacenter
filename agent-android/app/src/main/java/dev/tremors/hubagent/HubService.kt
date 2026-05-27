@@ -158,9 +158,14 @@ class HubService : Service() {
         })
     }
 
+    private val handlerThread = android.os.HandlerThread("hub-cmd").apply { start() }
+    private val cmdHandler = android.os.Handler(handlerThread.looper)
+
     private fun handleMessage(json: JSONObject) {
         when (json.optString("type")) {
-            "play" -> handlePlay(json)
+            // handlePlay déclenche Intent + MediaSessionManager — peut bloquer plusieurs
+            // centaines de ms. On l'exécute hors du thread WebSocket pour pas rater de PING.
+            "play" -> cmdHandler.post { try { handlePlay(json) } catch (e: Exception) { Log.e(TAG, "handlePlay", e) } }
             "stop" -> { updateNotification("Connected — $deviceName"); sendState("stopped") }
             "notify" -> {
                 val text = json.optString("text").ifEmpty { "Activité Hub" }

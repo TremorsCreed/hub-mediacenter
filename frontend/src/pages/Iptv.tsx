@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, Device, IptvCategory, IptvStream } from '../api'
 import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages } from 'lucide-react'
+
+const PAGE_SIZE = 300
 
 const LANG_PREFS_KEY = 'iptv.languages.selected'
 const COMMON_LANG_LABELS: Record<string, string> = {
@@ -22,6 +24,9 @@ export default function Iptv() {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+  const fetchedRef = useRef(0)  // # items déjà chargés (sync avec streams.length, mais utilisable dans observer callback sans rerun)
   const [devices, setDevices] = useState<Device[]>([])
   const [deviceId, setDeviceId] = useState<string>('')
   const [launching, setLaunching] = useState<string | null>(null)
@@ -64,20 +69,61 @@ export default function Iptv() {
     return () => clearTimeout(t)
   }, [search])
 
+  // Reset + 1ère page quand un filtre change
   useEffect(() => {
     if (!credId) return
     setLoading(true)
+    fetchedRef.current = 0
     api.iptv.streams(credId, {
       type,
       category: categoryId || undefined,
       search: debouncedSearch || undefined,
       languages: selectedLangs.length > 0 ? selectedLangs : undefined,
-      limit: 300,
+      start: 0,
+      limit: PAGE_SIZE,
     })
-      .then(r => { setStreams(r.items); setTotal(r.total) })
-      .catch(() => { setStreams([]); setTotal(0) })
+      .then(r => {
+        setStreams(r.items)
+        setTotal(r.total)
+        fetchedRef.current = r.items.length
+      })
+      .catch(() => { setStreams([]); setTotal(0); fetchedRef.current = 0 })
       .finally(() => setLoading(false))
   }, [credId, type, categoryId, debouncedSearch, selectedLangs])
+
+  // Charge la page suivante (append). Mémoisé sur les filtres pour éviter de prendre
+  // le risque d'envoyer une page avec d'anciens filtres si le user a tappé entre temps.
+  const loadMore = async () => {
+    if (!credId || loadingMore || loading) return
+    if (fetchedRef.current >= total) return
+    setLoadingMore(true)
+    try {
+      const r = await api.iptv.streams(credId, {
+        type,
+        category: categoryId || undefined,
+        search: debouncedSearch || undefined,
+        languages: selectedLangs.length > 0 ? selectedLangs : undefined,
+        start: fetchedRef.current,
+        limit: PAGE_SIZE,
+      })
+      setStreams(prev => [...prev, ...r.items])
+      fetchedRef.current += r.items.length
+      setTotal(r.total)
+    } catch { /* silent */ }
+    finally { setLoadingMore(false) }
+  }
+
+  // IntersectionObserver : déclenche loadMore quand le sentinel devient visible (~200px
+  // avant le bas de la grille pour pré-charger).
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el) return
+    const obs = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) loadMore()
+    }, { rootMargin: '200px' })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [credId, type, categoryId, debouncedSearch, selectedLangs, total, loadingMore, loading])
 
   const play = async (s: IptvStream) => {
     if (!deviceId) {
@@ -103,8 +149,6 @@ export default function Iptv() {
       setTimeout(() => setToast(null), 3500)
     }
   }
-
-  const shownCount = useMemo(() => streams.length, [streams])
 
   if (creds.length === 0) {
     return (
@@ -286,9 +330,17 @@ export default function Iptv() {
         </div>
       )}
 
-      {shownCount > 0 && (
-        <div className="text-xs text-zinc-600 text-center pt-2">
-          {shownCount} affichés{shownCount < total ? ` sur ${total} — affine la recherche pour voir plus` : ''}
+      {/* Sentinel pour scroll infini + indicateur de chargement */}
+      {streams.length < total && (
+        <div ref={sentinelRef} className="flex items-center justify-center py-6 text-xs text-zinc-500 gap-2">
+          {loadingMore
+            ? <><Loader2 size={14} className="animate-spin" /> Chargement…</>
+            : `${streams.length.toLocaleString()} / ${total.toLocaleString()}`}
+        </div>
+      )}
+      {streams.length > 0 && streams.length >= total && (
+        <div className="text-xs text-zinc-600 text-center pt-3 pb-1">
+          {total.toLocaleString()} résultat{total > 1 ? 's' : ''} — fin de liste
         </div>
       )}
 

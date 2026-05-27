@@ -232,13 +232,14 @@ export const api = {
     credentials: () => get<{ id: number; name: string }[]>('/iptv/credentials'),
     categories: (credId: number, type: 'live' | 'vod') => get<IptvCategory[]>(`/iptv/${credId}/categories?type=${type}`),
     languages: (credId: number, type: 'live' | 'vod') => get<{ code: string; count: number }[]>(`/iptv/${credId}/languages?type=${type}`),
-    streams: (credId: number, opts: { type: 'live' | 'vod'; category?: string; search?: string; languages?: string[]; limit?: number }) => {
+    streams: (credId: number, opts: { type: 'live' | 'vod'; category?: string; search?: string; languages?: string[]; start?: number; limit?: number }) => {
       const p = new URLSearchParams({ type: opts.type })
       if (opts.category) p.set('category', opts.category)
       if (opts.search) p.set('search', opts.search)
       if (opts.languages && opts.languages.length) p.set('languages', opts.languages.join(','))
+      if (opts.start !== undefined) p.set('start', String(opts.start))
       if (opts.limit) p.set('limit', String(opts.limit))
-      return get<{ total: number; items: IptvStream[] }>(`/iptv/${credId}/streams?${p}`)
+      return get<{ total: number; start: number; size: number; items: IptvStream[] }>(`/iptv/${credId}/streams?${p}`)
     },
     imageUrl: (url?: string) => url ? `${BASE}/iptv/image?url=${encodeURIComponent(url)}` : '',
   },

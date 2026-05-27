@@ -55,7 +55,8 @@ router.get('/:credId/streams', async (req, res) => {
   const type = ((req.query.type as string) === 'vod' ? 'vod' : 'live') as 'vod' | 'live'
   const category = req.query.category as string | undefined
   const searchRaw = ((req.query.search as string) ?? '').trim()
-  const limit = Math.min(parseInt((req.query.limit as string) ?? '200'), 1000)
+  const start = Math.max(0, parseInt((req.query.start as string) ?? '0'))
+  const limit = Math.min(Math.max(1, parseInt((req.query.limit as string) ?? '300')), 500)
   const langsRaw = (req.query.languages as string) ?? ''
   const langs = new Set(langsRaw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean))
   // Inclure les items sans langue détectée quand "??" est dans la sélection
@@ -74,9 +75,13 @@ router.get('/:credId/streams', async (req, res) => {
       const needle = normalizeTitle(searchRaw)
       items = items.filter(it => normalizeTitle(it.name).includes(needle))
     }
+    const total = items.length
+    const page = items.slice(start, start + limit)
     res.json({
-      total: items.length,
-      items: items.slice(0, limit).map(it => ({ ...it, type })),
+      total,
+      start,
+      size: page.length,
+      items: page.map(it => ({ ...it, type })),
     })
   } catch (e: any) {
     res.status(502).json({ error: e.message })

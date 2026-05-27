@@ -82,7 +82,8 @@ router.get('/image', async (req, res) => {
     const r = await fetch(url)
     if (!r.ok) return res.status(r.status).end()
     res.set('Content-Type', r.headers.get('content-type') ?? 'image/png')
-    res.set('Cache-Control', 'public, max-age=86400')
+    // Les logos IPTV sont stables par stream_id — on cache 30 jours, immutable.
+    res.set('Cache-Control', 'public, max-age=2592000, immutable')
     res.send(Buffer.from(await r.arrayBuffer()))
   } catch {
     res.status(502).end()

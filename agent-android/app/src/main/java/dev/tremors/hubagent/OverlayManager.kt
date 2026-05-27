@@ -1,6 +1,7 @@
 package dev.tremors.hubagent
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Outline
 import android.graphics.PixelFormat
@@ -9,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
+import android.util.LruCache
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -19,6 +21,9 @@ import android.widget.ImageView
 import android.widget.TextView
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.File
+import java.io.FileOutputStream
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 /**
@@ -43,6 +48,38 @@ class OverlayManager(private val ctx: Context) {
             .connectTimeout(4, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
             .build()
+    }
+
+    // Cache mémoire LRU (~8 Mio par défaut) + cache disque (cacheDir/overlay_images).
+    // Permet de ne pas re-télécharger les miniatures à chaque play du même film.
+    private val memCache = object : LruCache<String, Bitmap>(8 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
+    private val diskCacheDir: File by lazy {
+        File(ctx.cacheDir, "overlay_images").apply { mkdirs() }
+    }
+
+    private fun cacheKey(url: String): String {
+        val md = MessageDigest.getInstance("MD5").digest(url.toByteArray())
+        return md.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun loadFromCache(url: String): Bitmap? {
+        memCache.get(url)?.let { return it }
+        val f = File(diskCacheDir, cacheKey(url))
+        if (!f.exists()) return null
+        return try {
+            BitmapFactory.decodeFile(f.absolutePath)?.also { memCache.put(url, it) }
+        } catch (e: Exception) { Log.w(TAG, "decode disk: ${e.message}"); null }
+    }
+
+    private fun saveToCache(url: String, bmp: Bitmap) {
+        memCache.put(url, bmp)
+        try {
+            FileOutputStream(File(diskCacheDir, cacheKey(url))).use { out ->
+                bmp.compress(Bitmap.CompressFormat.JPEG, 88, out)
+            }
+        } catch (e: Exception) { Log.w(TAG, "write disk cache: ${e.message}") }
     }
 
     fun show(title: String, message: String, durationSec: Int = 4) = handler.post {
@@ -93,15 +130,22 @@ class OverlayManager(private val ctx: Context) {
 
         // Lancer le download d'image APRÈS l'addView pour éviter une race avec playerView=view.
         // setImageBitmap sur une view détachée est silent no-op donc safe même si on a hide
-        // entre temps.
+        // entre temps. Hit cache → set synchrone, sinon download async.
         if (!imageUrl.isNullOrEmpty()) {
-            Log.i(TAG, "loading image: $imageUrl")
-            loadImageAsync(imageUrl) { bmp ->
-                if (bmp != null) {
-                    Log.i(TAG, "image loaded ${bmp.width}x${bmp.height}, applying")
-                    img.setImageBitmap(bmp)
-                } else {
-                    Log.w(TAG, "image load returned null for $imageUrl")
+            val cached = loadFromCache(imageUrl)
+            if (cached != null) {
+                Log.i(TAG, "image cache hit: $imageUrl")
+                img.setImageBitmap(cached)
+            } else {
+                Log.i(TAG, "image cache miss, downloading: $imageUrl")
+                loadImageAsync(imageUrl) { bmp ->
+                    if (bmp != null) {
+                        Log.i(TAG, "image loaded ${bmp.width}x${bmp.height}, applying + caching")
+                        saveToCache(imageUrl, bmp)
+                        img.setImageBitmap(bmp)
+                    } else {
+                        Log.w(TAG, "image load returned null for $imageUrl")
+                    }
                 }
             }
         }

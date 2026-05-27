@@ -204,7 +204,8 @@ router.get('/image', async (req, res) => {
     const r = await fetch(`${cfg.server_url}${path}?X-Plex-Token=${cfg.auth_token}`)
     if (!r.ok) return res.status(r.status).end()
     res.set('Content-Type', r.headers.get('content-type') ?? 'image/jpeg')
-    res.set('Cache-Control', 'public, max-age=86400')
+    // Les thumbs Plex sont immuables par ratingKey — on cache 30 jours, immutable.
+    res.set('Cache-Control', 'public, max-age=2592000, immutable')
     res.send(Buffer.from(await r.arrayBuffer()))
   } catch {
     res.status(502).end()

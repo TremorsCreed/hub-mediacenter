@@ -106,14 +106,15 @@ export interface DiscoverItem {
 
 export interface DiscoverAvailability {
   platform: string  // "netflix" | "disney+" | "primevideo" | "iptv" | ...
-  title: string     // libellé affiché ("Netflix")
+  title: string     // libellé affiché ("Netflix", "IPTV (VOD)", "IPTV (Série)")
   url: string
   offerType?: 'subscription' | 'buy' | 'rent' | 'free' | string
   price?: number | null
   quality?: string
-  // Présent uniquement pour platform="iptv" — pointe sur le VOD du credential Xtream
+  // Présent uniquement pour platform="iptv"
   iptv_credential_id?: number
-  iptv_stream_id?: string
+  iptv_stream_id?: string          // stream_id pour vod, series_id pour series
+  iptv_kind?: 'vod' | 'series'
 }
 
 export interface IptvCategory { id: string; name: string }

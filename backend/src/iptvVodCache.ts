@@ -121,18 +121,15 @@ export function normalizeTitle(s: string): string {
     .trim()
 }
 
-export async function findIptvVodMatch(credId: number, title: string, year?: number): Promise<StreamEntry | null> {
-  const list = await getVodList(credId)
+function findInList(list: StreamEntry[], title: string, year?: number): StreamEntry | null {
   if (list.length === 0) return null
   const target = normalizeTitle(title)
   if (target.length < 3) return null
-
   const candidates = list.filter(v => {
     const n = normalizeTitle(v.name)
     return n === target || n.startsWith(target + ' ') || n.endsWith(' ' + target) || n.includes(' ' + target + ' ')
   })
   if (candidates.length === 0) return null
-
   if (year) {
     const exact = candidates.find(v => v.year.startsWith(String(year)))
     if (exact) return exact
@@ -143,6 +140,27 @@ export async function findIptvVodMatch(credId: number, title: string, year?: num
     if (close) return close
   }
   return candidates[0]
+}
+
+// VOD uniquement (compatibilité, mais préférer findIptvMatch pour le cross-ref Discover)
+export async function findIptvVodMatch(credId: number, title: string, year?: number): Promise<StreamEntry | null> {
+  return findInList(await getVodList(credId), title, year)
+}
+
+// Cherche dans VOD ET series. Pour les séries on ignore l'année (une série dure
+// plusieurs années, ce qui ferait échouer le matching).
+export interface IptvMatch {
+  kind: 'vod' | 'series'
+  entry: StreamEntry
+}
+
+export async function findIptvMatch(credId: number, title: string, year?: number): Promise<IptvMatch | null> {
+  // Series d'abord (plus de chances de match correct sur un nom de série connue)
+  const seriesMatch = findInList(await getSeriesList(credId), title)
+  if (seriesMatch) return { kind: 'series', entry: seriesMatch }
+  const vodMatch = findInList(await getVodList(credId), title, year)
+  if (vodMatch) return { kind: 'vod', entry: vodMatch }
+  return null
 }
 
 export async function listActiveCredentialIds(): Promise<number[]> {

@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { db } from '../db'
 import crypto from 'crypto'
-import { findIptvVodMatch, listActiveCredentialIds } from '../iptvVodCache'
+import { findIptvMatch, listActiveCredentialIds } from '../iptvVodCache'
 
 const router = Router()
 
@@ -211,22 +211,24 @@ router.get('/discover/:ratingKey/availabilities', async (req, res) => {
       quality: a.quality as string | undefined,
       iptv_credential_id: undefined as number | undefined,
       iptv_stream_id: undefined as string | undefined,
+      iptv_kind: undefined as 'vod' | 'series' | undefined,
     }))
 
-    // Cross-ref VOD IPTV (si title fourni)
+    // Cross-ref VOD + Series IPTV (si title fourni)
     if (title) {
       for (const credId of await listActiveCredentialIds()) {
-        const match = await findIptvVodMatch(credId, title, year)
+        const match = await findIptvMatch(credId, title, year)
         if (match) {
           list.push({
             platform: 'iptv',
-            title: 'IPTV',
-            url: `internal://iptv/${credId}/${match.stream_id}`,
+            title: match.kind === 'series' ? 'IPTV (Série)' : 'IPTV (VOD)',
+            url: `internal://iptv/${credId}/${match.kind}/${match.entry.stream_id}`,
             offerType: 'subscription',
             price: null,
             quality: undefined,
             iptv_credential_id: credId,
-            iptv_stream_id: match.stream_id,
+            iptv_stream_id: match.entry.stream_id,
+            iptv_kind: match.kind,
           })
         }
       }

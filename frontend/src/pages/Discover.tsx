@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, Device, DiscoverAvailability, DiscoverItem } from '../api'
 import { Search, Loader2, AlertCircle, Play, X } from 'lucide-react'
+import IptvSeriesModal from '../components/IptvSeriesModal'
 
 // Couleurs et libellés par plateforme
 const PLATFORM_STYLE: Record<string, { label: string; bg: string; fg: string }> = {
@@ -36,6 +37,7 @@ export default function Discover() {
   const [loadingAv, setLoadingAv] = useState(false)
   const [launching, setLaunching] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [iptvSeriesOpen, setIptvSeriesOpen] = useState<{ credId: number; seriesId: string; title: string; cover?: string } | null>(null)
 
   useEffect(() => {
     api.devices.list().then(ds => {
@@ -73,9 +75,22 @@ export default function Discover() {
   const playOn = async (av: DiscoverAvailability) => {
     if (!deviceId) { setToast({ msg: 'Sélectionne un device', ok: false }); return }
     if (!selected) return
+
+    // Cas spécial : IPTV série → on ouvre la modale série pour choisir l'épisode
+    if (av.platform === 'iptv' && av.iptv_kind === 'series' && av.iptv_credential_id && av.iptv_stream_id) {
+      setIptvSeriesOpen({
+        credId: av.iptv_credential_id,
+        seriesId: av.iptv_stream_id,
+        title: selected.title,
+        cover: selected.thumb,
+      })
+      setSelected(null)
+      return
+    }
+
     setLaunching(av.platform)
     try {
-      // Plateforme IPTV (cross-ref VOD Xtream) : on lance comme un play IPTV classique
+      // IPTV VOD ou autre plateforme externe
       const intent = av.platform === 'iptv' && av.iptv_stream_id
         ? { iptv_stream_id: av.iptv_stream_id, iptv_type: 'vod' as const, app: 'iptv' }
         : { external_url: av.url, external_platform: av.platform }
@@ -250,6 +265,19 @@ export default function Discover() {
           </div>
         </div>,
         document.body
+      )}
+
+      {iptvSeriesOpen && (
+        <IptvSeriesModal
+          credId={iptvSeriesOpen.credId}
+          seriesId={iptvSeriesOpen.seriesId}
+          titleFallback={iptvSeriesOpen.title}
+          coverFallback={iptvSeriesOpen.cover}
+          deviceId={deviceId}
+          onClose={() => setIptvSeriesOpen(null)}
+          onPlayed={(msg) => { setToast({ msg, ok: true }); setTimeout(() => setToast(null), 4000) }}
+          onError={(msg) => { setToast({ msg: `Échec : ${msg}`, ok: false }); setTimeout(() => setToast(null), 4000) }}
+        />
       )}
 
       {toast && createPortal(

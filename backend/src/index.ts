@@ -13,6 +13,7 @@ import plexRouter from './routes/plex'
 import credentialsRouter from './routes/credentials'
 import iptvRouter from './routes/iptv'
 import controlRouter from './routes/control'
+import launchboxRouter from './routes/launchbox'
 import { preloadAll as preloadIptvVod } from './iptvVodCache'
 
 const app = express()
@@ -31,6 +32,7 @@ app.use('/api/plex', plexRouter)
 app.use('/api/credentials', credentialsRouter)
 app.use('/api/iptv', iptvRouter)
 app.use('/api/control', controlRouter)
+app.use('/api/launchbox', launchboxRouter)
 
 app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }))
 

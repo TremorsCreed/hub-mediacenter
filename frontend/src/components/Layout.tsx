@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Tv, Library, History, Play, LayoutDashboard, Settings, Film, KeyRound, Radio, FolderOpen, Compass } from 'lucide-react'
+import { Tv, Library, History, Play, LayoutDashboard, Settings, Film, KeyRound, Radio, FolderOpen, Compass, Gamepad2 } from 'lucide-react'
 import { api } from '../api'
 
 const topNav = [
@@ -16,15 +16,16 @@ const bottomNav = [
 ]
 
 export default function Layout() {
-  const [modules, setModules] = useState<{ plex: boolean; iptv: boolean; discover: boolean }>({ plex: false, iptv: false, discover: false })
+  const [modules, setModules] = useState<{ plex: boolean; iptv: boolean; discover: boolean; launchbox: boolean }>({ plex: false, iptv: false, discover: false, launchbox: false })
   const location = useLocation()
 
   const refreshModules = useCallback(() => {
     Promise.all([
       api.plex.status().catch(() => ({ connected: false })),
       api.iptv.credentials().catch(() => []),
-    ]).then(([plex, iptv]) => {
-      setModules({ plex: plex.connected, iptv: iptv.length > 0, discover: plex.connected })
+      fetch('/api/launchbox/platforms').then(r => r.json()).catch(() => []),
+    ]).then(([plex, iptv, lbPlatforms]) => {
+      setModules({ plex: plex.connected, iptv: iptv.length > 0, discover: plex.connected, launchbox: lbPlatforms.length > 0 })
     })
   }, [])
 
@@ -69,10 +70,10 @@ export default function Layout() {
             <FolderOpen size={12} strokeWidth={1.8} />
             Local
           </NavLink>
-          {modules.plex && (
-            <NavLink to="/catalog/plex" className={subLinkClass}>
-              <Film size={12} strokeWidth={1.8} />
-              Plex
+          {modules.discover && (
+            <NavLink to="/catalog/discover" className={subLinkClass}>
+              <Compass size={12} strokeWidth={1.8} />
+              Discover
             </NavLink>
           )}
           {modules.iptv && (
@@ -81,10 +82,16 @@ export default function Layout() {
               IPTV
             </NavLink>
           )}
-          {modules.discover && (
-            <NavLink to="/catalog/discover" className={subLinkClass}>
-              <Compass size={12} strokeWidth={1.8} />
-              Discover
+          {modules.plex && (
+            <NavLink to="/catalog/plex" className={subLinkClass}>
+              <Film size={12} strokeWidth={1.8} />
+              Plex
+            </NavLink>
+          )}
+          {modules.launchbox && (
+            <NavLink to="/catalog/launchbox" className={subLinkClass}>
+              <Gamepad2 size={12} strokeWidth={1.8} />
+              LaunchBox
             </NavLink>
           )}
           <div className="h-3" />

@@ -8,7 +8,9 @@ services:
     restart: unless-stopped
     environment:
       - DB_PATH=/data/hub.db
+      - DATA_DIR=/data
       - PORT=8020
+      - MARQUESAS_URL=${MARQUESAS_URL:-http://192.168.1.223:8090}
     volumes:
       - hub_data:/data
     ports:

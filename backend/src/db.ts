@@ -91,6 +91,16 @@ export async function initDb() {
     );
 
     INSERT OR IGNORE INTO plex_config (id) VALUES (1);
+
+    CREATE TABLE IF NOT EXISTS lb_games (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      platform TEXT NOT NULL DEFAULT '',
+      publisher TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lb_games_platform ON lb_games(platform);
+    CREATE INDEX IF NOT EXISTS idx_lb_games_title ON lb_games(title);
   `)
 
   // Migrations idempotentes (ALTER TABLE échoue silencieusement si la colonne existe)

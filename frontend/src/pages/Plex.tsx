@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, Device, PlexItem, PlexOnDeckItem, PlexSection, PlexShowDetail } from '../api'
 import { Search, Play, Loader2, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, X, ChevronDown, Check } from 'lucide-react'
@@ -127,10 +127,12 @@ export default function Plex() {
   const [items, setItems] = useState<PlexItem[]>([])
   const [onDeck, setOnDeck] = useState<PlexOnDeckItem[]>([])
   const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(0)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  const fetchedRef = useRef(0)
   const [devices, setDevices] = useState<Device[]>([])
   const [deviceId, setDeviceId] = useState<string>('')
   const [launching, setLaunching] = useState<string | null>(null)
@@ -164,19 +166,41 @@ export default function Plex() {
     return () => clearTimeout(t)
   }, [search])
 
-  useEffect(() => { setPage(0) }, [sectionId, debouncedSearch])
-
+  // Chargement initial + reset quand les filtres changent
   useEffect(() => {
     if (!sectionId) return
     setLoading(true)
-    api.plex.sectionItems(sectionId, {
-      start: page * PAGE_SIZE,
-      size: PAGE_SIZE,
-      search: debouncedSearch || undefined,
-    })
-      .then(r => { setItems(r.items); setTotal(r.total) })
+    setItems([])
+    setTotal(0)
+    fetchedRef.current = 0
+    api.plex.sectionItems(sectionId, { start: 0, size: PAGE_SIZE, search: debouncedSearch || undefined })
+      .then(r => { setItems(r.items); setTotal(r.total); fetchedRef.current = r.items.length })
       .finally(() => setLoading(false))
-  }, [sectionId, page, debouncedSearch])
+  }, [sectionId, debouncedSearch])
+
+  // Charger la page suivante
+  const hasMore = items.length < total
+  const loadMore = useCallback(() => {
+    if (loadingMore || loading || !hasMore || !sectionId) return
+    const offset = fetchedRef.current
+    setLoadingMore(true)
+    api.plex.sectionItems(sectionId, { start: offset, size: PAGE_SIZE, search: debouncedSearch || undefined })
+      .then(r => { setItems(prev => [...prev, ...r.items]); fetchedRef.current = offset + r.items.length })
+      .catch(console.error)
+      .finally(() => setLoadingMore(false))
+  }, [loadingMore, loading, hasMore, sectionId, debouncedSearch])
+
+  // IntersectionObserver sur le sentinel
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el) return
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) loadMore() },
+      { rootMargin: '200px' }
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [loadMore])
 
   const play = async (item: PlexItem, opts: { resume?: boolean } = {}) => {
     // Series : ouvre la modale pour choisir l'épisode
@@ -253,8 +277,6 @@ export default function Plex() {
   const toggleSeason = (n: number) =>
     setOpenSeasons(prev => { const s = new Set(prev); s.has(n) ? s.delete(n) : s.add(n); return s })
 
-  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total])
-
   if (connected === false) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-zinc-500 gap-3">
@@ -313,7 +335,7 @@ export default function Plex() {
       )}
 
       {/* En cours (onDeck) : visible quand on est sur la section courante */}
-      {onDeck.length > 0 && page === 0 && !debouncedSearch && (
+      {onDeck.length > 0 && !debouncedSearch && (
         <OnDeckRow items={onDeck} play={play} launching={launching} />
       )}
 
@@ -372,21 +394,11 @@ export default function Plex() {
         })}
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between pt-3 text-sm">
-          <button
-            disabled={page === 0}
-            onClick={() => setPage(p => Math.max(0, p - 1))}
-            className="px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded disabled:opacity-30 hover:bg-zinc-800 transition-colors"
-          >Précédent</button>
-          <span className="text-zinc-500 text-xs">
-            Page {page + 1} / {totalPages} — {total} items
-          </span>
-          <button
-            disabled={page >= totalPages - 1}
-            onClick={() => setPage(p => p + 1)}
-            className="px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded disabled:opacity-30 hover:bg-zinc-800 transition-colors"
-          >Suivant</button>
+      {/* Sentinel scroll infini */}
+      <div ref={sentinelRef} className="h-4" />
+      {loadingMore && (
+        <div className="flex justify-center py-4 text-zinc-600 gap-2 text-sm">
+          <Loader2 size={16} className="animate-spin" />
         </div>
       )}
 

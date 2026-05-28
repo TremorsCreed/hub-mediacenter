@@ -4,6 +4,7 @@ services:
   backend:
     build: ./backend
     image: hub-mediacenter-backend:latest
+    pull_policy: build
     container_name: hub-mediacenter-backend
     restart: unless-stopped
     environment:
@@ -19,6 +20,7 @@ services:
   frontend:
     build: ./frontend
     image: hub-mediacenter-frontend:latest
+    pull_policy: build
     container_name: hub-mediacenter-frontend
     restart: unless-stopped
     ports:

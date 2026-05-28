@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import fs from 'fs'
 import path from 'path'
+import net from 'net'
+import { URL } from 'url'
 import { db } from '../db'
 
 // MarquesasServer tourne sur le PC Windows (LaunchBox plugin HTTP)
@@ -52,6 +54,71 @@ async function loadFromDb(): Promise<LbGame[]> {
 
 function buildPlatformsCache(games: LbGame[]) {
   return [...new Set(games.map(g => g.platform))].sort()
+}
+
+/**
+ * Fetch binaire via TCP brut + parsing HTTP manuel.
+ * MarquesasServer renvoie le contenu (PNG/JPG) parfois sans headers HTTP valides
+ * (réponse qui commence direct par les octets `\x89PNG…`), ce qui fait planter
+ * undici (HPE_INVALID_CONSTANT). On lit tout le buffer puis on détecte si la
+ * réponse commence par "HTTP/" : si oui on skip les headers, sinon on prend tout.
+ */
+function fetchBinaryRaw(rawUrl: string, timeoutMs = 8000): Promise<{ body: Buffer; contentType: string } | null> {
+  return new Promise((resolve) => {
+    let url: URL
+    try { url = new URL(rawUrl) } catch { return resolve(null) }
+    const port = url.port ? parseInt(url.port, 10) : (url.protocol === 'https:' ? 443 : 80)
+    const host = url.hostname
+    const path = url.pathname + url.search
+
+    const socket = net.connect({ host, port })
+    const chunks: Buffer[] = []
+    let done = false
+    const finish = (result: { body: Buffer; contentType: string } | null) => {
+      if (done) return
+      done = true
+      try { socket.destroy() } catch {}
+      resolve(result)
+    }
+
+    socket.setTimeout(timeoutMs)
+    socket.on('timeout', () => finish(null))
+    socket.on('error', () => finish(null))
+    socket.on('connect', () => {
+      socket.write(
+        `GET ${path} HTTP/1.0\r\n` +
+        `Host: ${host}\r\n` +
+        `User-Agent: hub-mediacenter/1.0\r\n` +
+        `Accept: */*\r\n` +
+        `Connection: close\r\n\r\n`
+      )
+    })
+    socket.on('data', (chunk) => { chunks.push(chunk) })
+    socket.on('end', () => {
+      const raw = Buffer.concat(chunks)
+      if (raw.length === 0) return finish(null)
+      // Si ça commence par "HTTP/", parser les headers et trouver \r\n\r\n
+      if (raw.slice(0, 5).toString('ascii') === 'HTTP/') {
+        const sep = raw.indexOf('\r\n\r\n')
+        if (sep === -1) return finish(null)
+        const headersStr = raw.slice(0, sep).toString('latin1')
+        const body = raw.slice(sep + 4)
+        const statusMatch = headersStr.match(/^HTTP\/\d\.\d (\d+)/)
+        const status = statusMatch ? parseInt(statusMatch[1], 10) : 0
+        if (status < 200 || status >= 300) return finish(null)
+        const ctMatch = headersStr.match(/^content-type:\s*(.+)$/im)
+        return finish({ body, contentType: ctMatch ? ctMatch[1].trim() : 'image/jpeg' })
+      }
+      // Pas de header HTTP : tout le buffer est le binaire
+      // Détecter le mime par les magic bytes
+      const head4 = raw.slice(0, 4)
+      let ct = 'image/jpeg'
+      if (head4[0] === 0x89 && head4[1] === 0x50 && head4[2] === 0x4E && head4[3] === 0x47) ct = 'image/png'
+      else if (head4[0] === 0xFF && head4[1] === 0xD8) ct = 'image/jpeg'
+      else if (head4.toString('ascii') === 'GIF8') ct = 'image/gif'
+      finish({ body: raw, contentType: ct })
+    })
+  })
 }
 
 async function ensureCache() {
@@ -108,37 +175,35 @@ router.get('/games', async (req, res) => {
   res.json({ total: items.length, start, size: limit, items: items.slice(start, start + limit) })
 })
 
-// Proxy pochette : GET /game/id/{id}?binary=front côté MarquesasServer
-// Le paramètre binary=front mappe sur la propriété IGame.FrontImagePath
+// Proxy pochette : GET /game/id/{id}?binary=front côté MarquesasServer.
+// Le paramètre binary=front mappe sur la propriété IGame.FrontImagePath.
+// MarquesasServer renvoie parfois les octets binaires SANS headers HTTP valides
+// (réponse qui démarre direct par \x89PNG…), donc on utilise un fetch TCP brut.
 router.get('/image/:id', async (req, res) => {
   const safeId = req.params.id.replace(/[^a-zA-Z0-9\-_]/g, '_')
   const cacheFile = path.join(IMAGE_CACHE_DIR, safeId)
+  const cacheMetaFile = cacheFile + '.ct'
 
   // Servir depuis le cache disque si disponible
   if (fs.existsSync(cacheFile)) {
-    res.setHeader('Content-Type', 'image/jpeg')
+    let ct = 'image/jpeg'
+    try { if (fs.existsSync(cacheMetaFile)) ct = fs.readFileSync(cacheMetaFile, 'utf-8').trim() || ct } catch {}
+    res.setHeader('Content-Type', ct)
     res.setHeader('Cache-Control', 'public, max-age=86400')
     return res.send(fs.readFileSync(cacheFile))
   }
 
-  try {
-    const r = await fetch(
-      `${MARQUESAS}/game/id/${encodeURIComponent(req.params.id)}?binary=front`,
-      { signal: AbortSignal.timeout(5_000) }
-    )
-    if (!r.ok) return res.status(404).end()
-    const buf = await r.arrayBuffer()
-    const contentType = r.headers.get('content-type') ?? 'image/jpeg'
+  const url = `${MARQUESAS}/game/id/${encodeURIComponent(req.params.id)}?binary=front`
+  const result = await fetchBinaryRaw(url, 8000)
+  if (!result || result.body.length === 0) return res.status(404).end()
 
-    // Sauvegarder en cache disque (en arrière-plan, pas de await bloquant)
-    fs.promises.writeFile(cacheFile, Buffer.from(buf)).catch(() => {})
+  // Sauvegarder en cache disque + content-type sidecar (en arrière-plan)
+  fs.promises.writeFile(cacheFile, result.body).catch(() => {})
+  fs.promises.writeFile(cacheMetaFile, result.contentType).catch(() => {})
 
-    res.setHeader('Content-Type', contentType)
-    res.setHeader('Cache-Control', 'public, max-age=86400')
-    res.send(Buffer.from(buf))
-  } catch {
-    res.status(503).end()
-  }
+  res.setHeader('Content-Type', result.contentType)
+  res.setHeader('Cache-Control', 'public, max-age=86400')
+  res.send(result.body)
 })
 
 router.post('/launch', async (req, res) => {

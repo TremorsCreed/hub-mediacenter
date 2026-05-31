@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Gamepad2, Search, RefreshCw, Play, Loader2, AlertCircle, ChevronDown } from 'lucide-react'
+import { Gamepad2, Search, RefreshCw, Play, Loader2, AlertCircle, ChevronDown, RotateCcw } from 'lucide-react'
 
 const BASE = '/api/launchbox'
 
@@ -54,6 +54,15 @@ async function launchGame(gameId: string): Promise<{ ok: boolean; title: string 
 
 async function reloadCache(): Promise<void> {
   await fetch(`${BASE}/reload`, { method: 'POST' })
+}
+
+async function resetLaunchBox(): Promise<{ ok: boolean; sent_to?: string; note?: string; error?: string }> {
+  const r = await fetch(`${BASE}/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ relaunch: true })
+  })
+  return r.json()
 }
 
 const PAGE_SIZE = 60
@@ -119,6 +128,7 @@ export default function Launchbox() {
   const [launching, setLaunching] = useState<string | null>(null)
   const [launchMsg, setLaunchMsg] = useState<string | null>(null)
   const [reloading, setReloading] = useState(false)
+  const [resetting, setResetting] = useState(false)
   const [platformOpen, setPlatformOpen] = useState(false)
   const platformRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -210,6 +220,28 @@ export default function Launchbox() {
     }
   }
 
+  const handleReset = async () => {
+    if (resetting) return
+    if (!confirm('Tuer et relancer LaunchBox sur le PC ?\n\nUtile si MarquesasServer est coincé sur "A game is currently being played". Nécessite que hub-agent.exe tourne sur le PC LaunchBox.')) return
+    setResetting(true)
+    setLaunchMsg(null)
+    try {
+      const r = await resetLaunchBox()
+      if (r.ok) {
+        setLaunchMsg(`LaunchBox relancé sur ${r.sent_to}. Attendre ~5s avant de relancer un jeu.`)
+        setTimeout(() => setLaunchMsg(null), 6000)
+      } else {
+        setLaunchMsg(`Erreur : ${r.error ?? 'inconnue'}`)
+        setTimeout(() => setLaunchMsg(null), 6000)
+      }
+    } catch (e: any) {
+      setLaunchMsg(`Erreur : ${e.message}`)
+      setTimeout(() => setLaunchMsg(null), 6000)
+    } finally {
+      setResetting(false)
+    }
+  }
+
   const handleReload = async () => {
     setReloading(true)
     try {
@@ -235,15 +267,26 @@ export default function Launchbox() {
             <span className="text-xs text-zinc-500">{total} jeu{total !== 1 ? 'x' : ''}</span>
           )}
         </div>
-        <button
-          onClick={handleReload}
-          disabled={reloading}
-          className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-50 transition-colors"
-          title="Recharger le cache"
-        >
-          <RefreshCw size={13} className={reloading ? 'animate-spin' : ''} />
-          Recharger
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleReset}
+            disabled={resetting}
+            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-amber-400 disabled:opacity-50 transition-colors"
+            title="Tuer + relancer LaunchBox sur le PC (débloque MarquesasServer si coincé)"
+          >
+            <RotateCcw size={13} className={resetting ? 'animate-spin' : ''} />
+            Reset LaunchBox
+          </button>
+          <button
+            onClick={handleReload}
+            disabled={reloading}
+            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-50 transition-colors"
+            title="Recharger le cache"
+          >
+            <RefreshCw size={13} className={reloading ? 'animate-spin' : ''} />
+            Recharger
+          </button>
+        </div>
       </div>
 
       {/* Filtres */}

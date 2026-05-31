@@ -9,8 +9,8 @@ import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
-import open from 'open'
 import type { LaunchResult } from '../types.js'
+import { launchBrowser } from './browser.js'
 
 function findPlexDesktop(): string | null {
   switch (platform()) {
@@ -47,10 +47,5 @@ export async function launchPlex(opts: { plexId?: string; watchUrl?: string }): 
   // Web fallback : ouvre app.plex.tv/desktop, optionnellement sur le bon titre
   const url = opts.watchUrl
     ?? (opts.plexId ? `https://app.plex.tv/desktop#!/server/details/${opts.plexId}` : 'https://app.plex.tv/desktop')
-  try {
-    await open(url)
-    return { kind: 'success' }
-  } catch (e) {
-    return { kind: 'error', reason: `plex launch failed: ${(e as Error).message}` }
-  }
+  return launchBrowser(url)
 }

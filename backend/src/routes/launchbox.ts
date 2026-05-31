@@ -4,6 +4,7 @@ import path from 'path'
 import net from 'net'
 import { URL } from 'url'
 import { db } from '../db'
+import { agents } from '../ws'
 
 // MarquesasServer tourne sur le PC Windows (LaunchBox plugin HTTP)
 // Dev local : http://localhost:80 (ou 8090 après restart LaunchBox)
@@ -224,6 +225,57 @@ router.post('/launch', async (req, res) => {
   } catch (e: any) {
     res.status(503).json({ error: `MarquesasServer inaccessible (${MARQUESAS}) : ${e.message}` })
   }
+})
+
+// Lit l'état "isInGame" depuis MarquesasServer (via fetch TCP brut au cas où la
+// réponse soit malformée, comme pour les images).
+router.get('/state', async (_req, res) => {
+  try {
+    const r = await fetch(`${MARQUESAS}/statemanager/isingame`, { signal: AbortSignal.timeout(5_000) })
+    const txt = await r.text()
+    res.json({ in_game: txt.trim() === 'true', raw: txt.trim() })
+  } catch (e: any) {
+    res.status(503).json({ error: e.message, in_game: null })
+  }
+})
+
+// Force le reset de MarquesasServer en demandant au PC Windows de tuer
+// LaunchBox.exe (et de le relancer). Nécessite qu'un agent-pc Windows soit
+// connecté en WebSocket. Renvoie 503 si aucun agent disponible.
+router.post('/reset', async (req, res) => {
+  // Cherche un agent Windows connecté
+  const { rows } = await db.execute({
+    sql: "SELECT id FROM devices WHERE platform = ? ORDER BY last_seen DESC",
+    args: ['pc_windows']
+  })
+
+  let targetAgent: { ws: any; device_id: string } | undefined
+  for (const r of rows) {
+    const id = (r as any).id as string
+    const a = agents.get(id)
+    if (a && a.ws.readyState === 1) { targetAgent = a; break }
+  }
+
+  if (!targetAgent) {
+    return res.status(503).json({
+      error: 'Aucun agent PC Windows connecté. Lance hub-agent.exe sur le PC LaunchBox.'
+    })
+  }
+
+  const relaunch = req.body?.relaunch !== false
+  const requestId = `reset-${Date.now()}`
+  targetAgent.ws.send(JSON.stringify({
+    type: 'launchbox_reset',
+    relaunch,
+    request_id: requestId,
+  }))
+  console.log(`[launchbox] sent reset to ${targetAgent.device_id} (relaunch=${relaunch})`)
+  res.json({
+    ok: true,
+    sent_to: targetAgent.device_id,
+    relaunch,
+    note: 'LaunchBox sera tué et relancé sur le PC. Attendre ~5s avant de retenter un launch.'
+  })
 })
 
 router.post('/reload', async (_req, res) => {

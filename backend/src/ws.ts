@@ -172,6 +172,10 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
       await db.execute({ sql: 'UPDATE devices SET last_seen = ? WHERE id = ?', args: [Date.now(), device_id] })
       break
     }
+    case 'launchbox_reset_result': {
+      console.log(`[launchbox] reset result from ${device_id}: killed=${msg.killed} relaunched=${msg.relaunched} — ${msg.detail}`)
+      break
+    }
   }
 }
 

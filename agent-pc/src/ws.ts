@@ -7,15 +7,18 @@ import { platformLabel } from './config.js'
 import { localIp } from './ip.js'
 import { handlePlay } from './handler.js'
 import { notify } from './notify.js'
+import { resetLaunchBox } from './launchers/launchbox.js'
 import type { DeviceCapability, WsMessage, WsPlayCommand } from './types.js'
 
 const CAPABILITIES: DeviceCapability[] = [
   // Plex via Plex Desktop ou web app — le hub backend gère Remote Control HTTP
-  { app: 'plex',     can_receive: ['movie', 'episode', 'music'], launch_method: 'plex_desktop_or_web' },
+  { app: 'plex',      can_receive: ['movie', 'episode', 'music'], launch_method: 'plex_desktop_or_web' },
   // IPTV via VLC (stream_url pré-construite par le hub)
-  { app: 'iptv',     can_receive: ['live_channel', 'vod'],       launch_method: 'vlc' },
+  { app: 'iptv',      can_receive: ['live_channel', 'vod'],       launch_method: 'vlc' },
   // Netflix / Disney+ / Prime / etc. → deep link navigateur
-  { app: 'external', can_receive: ['movie', 'episode'],          launch_method: 'browser' },
+  { app: 'external',  can_receive: ['movie', 'episode'],          launch_method: 'browser' },
+  // Reset LaunchBox (taskkill + relance) — débloque MarquesasServer
+  { app: 'launchbox', can_receive: ['reset'],                     launch_method: 'taskkill_relaunch' },
 ]
 
 let ws: WebSocket | null = null
@@ -121,6 +124,26 @@ function handleMessage(msg: WsMessage) {
       Object.assign(config, updated)
       save(config)
       console.log('[ws] config updated')
+      break
+    }
+    case 'launchbox_reset': {
+      // Le hub nous demande de débloquer MarquesasServer en tuant LaunchBox.
+      const relaunch = msg.relaunch !== false
+      console.log(`[launchbox] reset request (relaunch=${relaunch})`)
+      notify('Hub MediaCenter', `Reset LaunchBox${relaunch ? ' + relance' : ''}…`)
+      resetLaunchBox({ relaunch })
+        .then(r => {
+          console.log(`[launchbox] reset done: ${r.detail}`)
+          notify('LaunchBox', r.detail)
+          if (ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: 'launchbox_reset_result',
+              ok: r.ok, killed: r.killed, relaunched: r.relaunched, detail: r.detail,
+              request_id: (msg.request_id as string) ?? null,
+            }))
+          }
+        })
+        .catch(e => console.error('[launchbox] reset error:', e))
       break
     }
     case 'control': {

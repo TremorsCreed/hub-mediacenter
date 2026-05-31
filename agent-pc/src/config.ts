@@ -20,7 +20,17 @@ export interface AgentConfig {
   plex_server_id?: string
 }
 
-const CONFIG_FILE = process.env.HUB_AGENT_CONFIG || join(process.cwd(), 'config.json')
+// Quand l'agent tourne packagé en .exe, process.cwd() peut être C:\Windows\system32
+// (lancé via startup folder) ou un dossier non-writable. On force l'usage de
+// %APPDATA%\hub-mediacenter\config.json sur Windows par défaut.
+function defaultConfigPath(): string {
+  if (platform() === 'win32') {
+    const appData = process.env.APPDATA || join(process.env.USERPROFILE || '.', 'AppData', 'Roaming')
+    return join(appData, 'hub-mediacenter', 'config.json')
+  }
+  return join(process.cwd(), 'config.json')
+}
+const CONFIG_FILE = process.env.HUB_AGENT_CONFIG || defaultConfigPath()
 
 function loadOrInit(): AgentConfig {
   if (existsSync(CONFIG_FILE)) {

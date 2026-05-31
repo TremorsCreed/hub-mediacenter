@@ -60,6 +60,8 @@ export type WsMessageType =
   | 'play'
   | 'stop'
   | 'error'
+  | 'launchbox_reset'
+  | 'launchbox_reset_result'
 
 export interface WsMessage {
   type: WsMessageType

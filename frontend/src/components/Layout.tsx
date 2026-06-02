@@ -129,7 +129,7 @@ export default function Layout() {
         </nav>
 
         {/* Footer avec bouton toggle */}
-        <div className="shrink-0 border-t border-zinc-800 flex items-center px-3 py-3">
+        <div className="h-[45px] shrink-0 border-t border-zinc-800 flex items-center px-3">
           {!collapsed && <span className="text-xs text-zinc-600 mr-auto">v0.1.0</span>}
           <button
             onClick={() => setCollapsed(v => !v)}

@@ -226,7 +226,7 @@ export default function Iptv() {
 
       {/* ── Sidebar type de média (collapsible) ───────────────────── */}
       <aside className={`${mediaCollapsed ? 'w-14' : 'w-36'} shrink-0 bg-zinc-950/60 border-r border-zinc-800 flex flex-col transition-[width] duration-200 overflow-hidden`}>
-        <div className="h-[45px] shrink-0 border-b border-zinc-800 flex items-center px-3">
+        <div className="h-[53px] shrink-0 border-b border-zinc-800 flex items-center px-3">
           {mediaCollapsed
             ? <Tv size={16} strokeWidth={1.8} className="mx-auto text-zinc-500" />
             : <span className="text-sm font-semibold text-white truncate">IPTV</span>
@@ -251,7 +251,7 @@ export default function Iptv() {
             </button>
           ))}
         </nav>
-        <div className="shrink-0 border-t border-zinc-800 flex items-center px-3 py-2.5">
+        <div className="h-[45px] shrink-0 border-t border-zinc-800 flex items-center px-3">
           <button
             onClick={() => setMediaCollapsed(v => !v)}
             title={mediaCollapsed ? 'Agrandir' : 'Réduire'}
@@ -264,7 +264,7 @@ export default function Iptv() {
 
       {/* ── Sidebar catégories (TV / Films / Séries) ──────────────── */}
       <aside className="w-48 shrink-0 bg-zinc-950/40 border-r border-zinc-800 flex flex-col">
-        <div className="px-3 py-3 border-b border-zinc-800 text-[10px] uppercase tracking-widest text-zinc-600 font-medium shrink-0">
+        <div className="h-[53px] shrink-0 flex items-center px-3 border-b border-zinc-800 text-[10px] uppercase tracking-widest text-zinc-600 font-medium">
           Catégories
         </div>
         <div className="flex-1 overflow-y-auto py-1">
@@ -298,7 +298,7 @@ export default function Iptv() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* Barre de contrôles */}
-        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-zinc-800 shrink-0 flex-wrap">
+        <div className="flex items-center gap-2 px-4 min-h-[53px] border-b border-zinc-800 shrink-0 flex-wrap">
           <select
             className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
             value={credId ?? ''}

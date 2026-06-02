@@ -242,39 +242,37 @@ export default function Iptv() {
         </nav>
       </aside>
 
-      {/* ── Sidebar catégories (TV uniquement) ────────────────────── */}
-      {type === 'live' && (
-        <aside className="w-48 shrink-0 bg-zinc-950/40 border-r border-zinc-800 flex flex-col">
-          <div className="px-3 py-3 border-b border-zinc-800 text-[10px] uppercase tracking-widest text-zinc-600 font-medium shrink-0">
-            Catégories
-          </div>
-          <div className="flex-1 overflow-y-auto py-1">
+      {/* ── Sidebar catégories (TV / Films / Séries) ──────────────── */}
+      <aside className="w-48 shrink-0 bg-zinc-950/40 border-r border-zinc-800 flex flex-col">
+        <div className="px-3 py-3 border-b border-zinc-800 text-[10px] uppercase tracking-widest text-zinc-600 font-medium shrink-0">
+          Catégories
+        </div>
+        <div className="flex-1 overflow-y-auto py-1">
+          <button
+            onClick={() => setCategoryId('')}
+            className={`w-full px-3 py-2 text-xs text-left transition-colors truncate ${
+              categoryId === ''
+                ? 'bg-zinc-800 text-white'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
+            }`}
+          >
+            Toutes les catégories
+          </button>
+          {categories.map(c => (
             <button
-              onClick={() => setCategoryId('')}
+              key={c.id}
+              onClick={() => setCategoryId(c.id)}
               className={`w-full px-3 py-2 text-xs text-left transition-colors truncate ${
-                categoryId === ''
+                categoryId === c.id
                   ? 'bg-zinc-800 text-white'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
               }`}
             >
-              Toutes les catégories
+              {c.name}
             </button>
-            {categories.map(c => (
-              <button
-                key={c.id}
-                onClick={() => setCategoryId(c.id)}
-                className={`w-full px-3 py-2 text-xs text-left transition-colors truncate ${
-                  categoryId === c.id
-                    ? 'bg-zinc-800 text-white'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
-                }`}
-              >
-                {c.name}
-              </button>
-            ))}
-          </div>
-        </aside>
-      )}
+          ))}
+        </div>
+      </aside>
 
       {/* ── Zone de contenu ───────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -301,18 +299,6 @@ export default function Iptv() {
               </option>
             ))}
           </select>
-
-          {/* Filtre catégorie pour VOD / Séries (pas en mode TV qui a sa sidebar) */}
-          {type !== 'live' && (
-            <select
-              className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600 max-w-[180px]"
-              value={categoryId}
-              onChange={e => setCategoryId(e.target.value)}
-            >
-              <option value="">Toutes les catégories</option>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          )}
 
           {/* Filtre langues */}
           <div className="relative">

@@ -14,6 +14,12 @@ const COMMON_LANG_LABELS: Record<string, string> = {
   '??': 'Inconnu',
 }
 
+const MEDIA_TYPES = [
+  { key: 'live' as const, label: 'TV', icon: Tv },
+  { key: 'vod' as const, label: 'Films', icon: Film },
+  { key: 'series' as const, label: 'Séries', icon: MonitorPlay },
+]
+
 export default function Iptv() {
   const [creds, setCreds] = useState<{ id: number; name: string }[]>([])
   const [credId, setCredId] = useState<number | null>(null)
@@ -31,7 +37,8 @@ export default function Iptv() {
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
-  const fetchedRef = useRef(0)  // # items déjà chargés (sync avec streams.length, mais utilisable dans observer callback sans rerun)
+  const contentRef = useRef<HTMLDivElement | null>(null)
+  const fetchedRef = useRef(0)
   const [devices, setDevices] = useState<Device[]>([])
   const [deviceId, setDeviceId] = useState<string>('')
   const [launching, setLaunching] = useState<string | null>(null)
@@ -74,7 +81,6 @@ export default function Iptv() {
     return () => clearTimeout(t)
   }, [search])
 
-  // Reset + 1ère page quand un filtre change
   useEffect(() => {
     if (!credId) return
     setLoading(true)
@@ -96,8 +102,6 @@ export default function Iptv() {
       .finally(() => setLoading(false))
   }, [credId, type, categoryId, debouncedSearch, selectedLangs])
 
-  // Charge la page suivante (append). Mémoisé sur les filtres pour éviter de prendre
-  // le risque d'envoyer une page avec d'anciens filtres si le user a tappé entre temps.
   const loadMore = async () => {
     if (!credId || loadingMore || loading) return
     if (fetchedRef.current >= total) return
@@ -118,20 +122,17 @@ export default function Iptv() {
     finally { setLoadingMore(false) }
   }
 
-  // IntersectionObserver : déclenche loadMore quand le sentinel devient visible (~200px
-  // avant le bas de la grille pour pré-charger).
   useEffect(() => {
     const el = sentinelRef.current
     if (!el) return
     const obs = new IntersectionObserver(entries => {
       if (entries[0].isIntersecting) loadMore()
-    }, { rootMargin: '200px' })
+    }, { root: contentRef.current, rootMargin: '200px' })
     obs.observe(el)
     return () => obs.disconnect()
   }, [credId, type, categoryId, debouncedSearch, selectedLangs, total, loadingMore, loading])
 
   const play = async (s: IptvStream) => {
-    // Series : on n'envoie pas directement, on ouvre la modale détail
     if (s.type === 'series') {
       openSeries(s)
       return
@@ -205,206 +206,256 @@ export default function Iptv() {
 
   if (creds.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-zinc-500 gap-3">
-        <AlertCircle size={32} />
-        <div className="text-sm">Aucun profil IPTV.</div>
-        <a href="/credentials" className="text-amber-400 hover:text-amber-300 text-sm underline">Créer un profil Xtream</a>
+      <div className="h-full flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-zinc-500">
+          <AlertCircle size={32} />
+          <div className="text-sm">Aucun profil IPTV.</div>
+          <a href="/credentials" className="text-amber-400 hover:text-amber-300 text-sm underline">Créer un profil Xtream</a>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3 flex-wrap">
-        <h1 className="text-xl font-semibold mr-auto">IPTV</h1>
+    <div className="flex h-full">
 
-        <select
-          className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
-          value={credId ?? ''}
-          onChange={e => setCredId(Number(e.target.value))}
-        >
-          {creds.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-
-        <div className="flex bg-zinc-900 border border-zinc-800 rounded overflow-hidden">
-          <button
-            onClick={() => setType('live')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors ${type === 'live' ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:text-zinc-200'}`}
-          >
-            <Tv size={13} /> Live
-          </button>
-          <button
-            onClick={() => setType('vod')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors ${type === 'vod' ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:text-zinc-200'}`}
-          >
-            <Film size={13} /> VOD
-          </button>
-          <button
-            onClick={() => setType('series')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors ${type === 'series' ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:text-zinc-200'}`}
-          >
-            <MonitorPlay size={13} /> Séries
-          </button>
+      {/* ── Sidebar type de média ─────────────────────────────────── */}
+      <aside className="w-36 shrink-0 bg-zinc-950/60 border-r border-zinc-800 flex flex-col">
+        <div className="px-4 py-3 border-b border-zinc-800 shrink-0">
+          <span className="text-sm font-semibold text-white">IPTV</span>
         </div>
-
-        <select
-          className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
-          value={deviceId}
-          onChange={e => setDeviceId(e.target.value)}
-        >
-          <option value="">— device —</option>
-          {devices.map(d => (
-            <option key={d.id} value={d.id} disabled={!d.ws_connected}>
-              {d.name} {d.ws_connected ? '' : '(offline)'}
-            </option>
+        <nav className="py-1">
+          {MEDIA_TYPES.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => { setType(key); setCategoryId('') }}
+              className={`w-full flex items-center gap-2.5 px-4 py-3 text-sm transition-colors text-left border-l-2 ${
+                type === key
+                  ? 'bg-zinc-800 text-white border-amber-500'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 border-transparent'
+              }`}
+            >
+              <Icon size={15} strokeWidth={1.8} />
+              {label}
+            </button>
           ))}
-        </select>
-      </div>
+        </nav>
+      </aside>
 
-      <div className="flex gap-2 flex-wrap">
-        <select
-          className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600 max-w-xs"
-          value={categoryId}
-          onChange={e => setCategoryId(e.target.value)}
-        >
-          <option value="">Toutes les catégories ({categories.length})</option>
-          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+      {/* ── Sidebar catégories (TV uniquement) ────────────────────── */}
+      {type === 'live' && (
+        <aside className="w-48 shrink-0 bg-zinc-950/40 border-r border-zinc-800 flex flex-col">
+          <div className="px-3 py-3 border-b border-zinc-800 text-[10px] uppercase tracking-widest text-zinc-600 font-medium shrink-0">
+            Catégories
+          </div>
+          <div className="flex-1 overflow-y-auto py-1">
+            <button
+              onClick={() => setCategoryId('')}
+              className={`w-full px-3 py-2 text-xs text-left transition-colors truncate ${
+                categoryId === ''
+                  ? 'bg-zinc-800 text-white'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
+              }`}
+            >
+              Toutes les catégories
+            </button>
+            {categories.map(c => (
+              <button
+                key={c.id}
+                onClick={() => setCategoryId(c.id)}
+                className={`w-full px-3 py-2 text-xs text-left transition-colors truncate ${
+                  categoryId === c.id
+                    ? 'bg-zinc-800 text-white'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
+                }`}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        </aside>
+      )}
 
-        <div className="relative">
-          <button
-            onClick={() => setLangPanelOpen(v => !v)}
-            className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-300 hover:border-zinc-600"
+      {/* ── Zone de contenu ───────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+        {/* Barre de contrôles */}
+        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-zinc-800 shrink-0 flex-wrap">
+          <select
+            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
+            value={credId ?? ''}
+            onChange={e => setCredId(Number(e.target.value))}
           >
-            <Languages size={13} />
-            {selectedLangs.length === 0
-              ? 'Toutes les langues'
-              : selectedLangs.length <= 3
-                ? selectedLangs.map(c => COMMON_LANG_LABELS[c]?.slice(0, 2) ?? c).join(' · ')
-                : `${selectedLangs.length} langues`}
-          </button>
-          {langPanelOpen && (
-            <div className="absolute z-20 top-full mt-1 right-0 w-72 max-h-96 overflow-y-auto bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl p-2">
-              <div className="flex items-center justify-between px-2 py-1 mb-1">
-                <span className="text-xs text-zinc-500 uppercase tracking-widest">Langues</span>
-                <button onClick={() => setSelectedLangs([])} className="text-xs text-zinc-500 hover:text-amber-400">Tout</button>
+            {creds.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+
+          <select
+            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
+            value={deviceId}
+            onChange={e => setDeviceId(e.target.value)}
+          >
+            <option value="">— device —</option>
+            {devices.map(d => (
+              <option key={d.id} value={d.id} disabled={!d.ws_connected}>
+                {d.name} {d.ws_connected ? '' : '(offline)'}
+              </option>
+            ))}
+          </select>
+
+          {/* Filtre catégorie pour VOD / Séries (pas en mode TV qui a sa sidebar) */}
+          {type !== 'live' && (
+            <select
+              className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600 max-w-[180px]"
+              value={categoryId}
+              onChange={e => setCategoryId(e.target.value)}
+            >
+              <option value="">Toutes les catégories</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
+
+          {/* Filtre langues */}
+          <div className="relative">
+            <button
+              onClick={() => setLangPanelOpen(v => !v)}
+              className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-300 hover:border-zinc-600"
+            >
+              <Languages size={13} />
+              {selectedLangs.length === 0
+                ? 'Toutes les langues'
+                : selectedLangs.length <= 3
+                  ? selectedLangs.map(c => COMMON_LANG_LABELS[c]?.slice(0, 2) ?? c).join(' · ')
+                  : `${selectedLangs.length} langues`}
+            </button>
+            {langPanelOpen && (
+              <div className="absolute z-20 top-full mt-1 left-0 w-72 max-h-96 overflow-y-auto bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl p-2">
+                <div className="flex items-center justify-between px-2 py-1 mb-1">
+                  <span className="text-xs text-zinc-500 uppercase tracking-widest">Langues</span>
+                  <button onClick={() => setSelectedLangs([])} className="text-xs text-zinc-500 hover:text-amber-400">Tout</button>
+                </div>
+                {availableLangs.length === 0 && <div className="text-xs text-zinc-600 p-2">Aucune langue détectée</div>}
+                {availableLangs.map(({ code, count }) => {
+                  const checked = selectedLangs.includes(code)
+                  const label = COMMON_LANG_LABELS[code] ?? code
+                  return (
+                    <label key={code} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-zinc-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="accent-amber-500"
+                        checked={checked}
+                        onChange={() => toggleLang(code)}
+                      />
+                      <span className="text-sm text-zinc-200 flex-1">{label}</span>
+                      <span className="text-xs text-zinc-500">{count.toLocaleString()}</span>
+                    </label>
+                  )
+                })}
               </div>
-              {availableLangs.length === 0 && <div className="text-xs text-zinc-600 p-2">Aucune langue détectée</div>}
-              {availableLangs.map(({ code, count }) => {
-                const checked = selectedLangs.includes(code)
-                const label = COMMON_LANG_LABELS[code] ?? code
-                return (
-                  <label key={code} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-zinc-800 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="accent-amber-500"
-                      checked={checked}
-                      onChange={() => toggleLang(code)}
-                    />
-                    <span className="text-sm text-zinc-200 flex-1">{label}</span>
-                    <span className="text-xs text-zinc-500">{count.toLocaleString()}</span>
-                  </label>
-                )
-              })}
-            </div>
+            )}
+          </div>
+
+          {/* Recherche */}
+          <div className="relative flex-1 min-w-[180px]">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+            <input
+              className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 pl-8 text-sm focus:outline-none focus:border-zinc-600"
+              placeholder={type === 'live' ? 'Rechercher une chaîne…' : type === 'series' ? 'Rechercher une série…' : 'Rechercher un film…'}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          {!loading && total > 0 && (
+            <span className="text-xs text-zinc-500 shrink-0">{total.toLocaleString()} résultats</span>
           )}
         </div>
 
-        <div className="relative flex-1 min-w-[200px]">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-          <input
-            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 pl-8 text-sm focus:outline-none focus:border-zinc-600"
-            placeholder={type === 'live' ? 'Rechercher une chaîne…' : type === 'series' ? 'Rechercher une série…' : 'Rechercher un film…'}
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+        {/* Grille de streams */}
+        <div ref={contentRef} className="flex-1 overflow-y-auto p-4">
+          {loading && streams.length === 0 && (
+            <div className="flex items-center justify-center py-16 text-zinc-600 gap-2 text-sm">
+              <Loader2 size={16} className="animate-spin" /> Chargement…
+            </div>
+          )}
+
+          {!loading && streams.length === 0 && (
+            <div className="text-sm text-zinc-600 py-16 text-center">Aucun résultat.</div>
+          )}
+
+          {type === 'live' ? (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+              {streams.map(s => (
+                <button
+                  key={s.stream_id}
+                  onClick={() => play(s)}
+                  disabled={launching === s.stream_id}
+                  className="group flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded p-2 hover:border-amber-500/60 transition-colors text-left disabled:opacity-50"
+                >
+                  <div className="w-12 h-12 shrink-0 bg-zinc-800 rounded overflow-hidden flex items-center justify-center">
+                    {s.logo ? (
+                      <img src={api.iptv.imageUrl(s.logo)} alt="" loading="lazy" className="w-full h-full object-contain" onError={e => { e.currentTarget.style.display = 'none' }} />
+                    ) : (
+                      <Tv size={18} className="text-zinc-600" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium truncate">{s.name}</div>
+                    <div className="text-[10px] text-zinc-500 mt-0.5">Live · #{s.stream_id}</div>
+                  </div>
+                  {launching === s.stream_id
+                    ? <Loader2 size={14} className="animate-spin text-amber-400" />
+                    : <Play size={12} className="text-zinc-600 group-hover:text-amber-400 transition-colors" fill="currentColor" />
+                  }
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
+              {streams.map(s => (
+                <button
+                  key={s.stream_id}
+                  onClick={() => play(s)}
+                  disabled={launching === s.stream_id}
+                  className="group relative aspect-[2/3] bg-zinc-900 border border-zinc-800 rounded overflow-hidden hover:border-amber-500/60 transition-colors text-left disabled:opacity-50"
+                >
+                  {s.logo ? (
+                    <img src={api.iptv.imageUrl(s.logo)} alt={s.name} loading="lazy" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-zinc-700 text-xs p-2 text-center">{s.name}</div>
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-2">
+                    <div className="text-xs font-medium line-clamp-2">{s.name}</div>
+                    {s.year && <div className="text-[10px] text-zinc-400 mt-0.5">{s.year}</div>}
+                    <div className="flex items-center gap-1 mt-1.5 text-amber-400 text-xs">
+                      <Play size={11} fill="currentColor" /> Lancer
+                    </div>
+                  </div>
+                  {launching === s.stream_id && (
+                    <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+                      <Loader2 size={20} className="animate-spin text-amber-400" />
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {streams.length < total && (
+            <div ref={sentinelRef} className="flex items-center justify-center py-6 text-xs text-zinc-500 gap-2">
+              {loadingMore
+                ? <><Loader2 size={14} className="animate-spin" /> Chargement…</>
+                : `${streams.length.toLocaleString()} / ${total.toLocaleString()}`}
+            </div>
+          )}
+          {streams.length > 0 && streams.length >= total && (
+            <div className="text-xs text-zinc-600 text-center pt-3 pb-1">
+              {total.toLocaleString()} résultat{total > 1 ? 's' : ''} — fin de liste
+            </div>
+          )}
         </div>
       </div>
 
-      {loading && streams.length === 0 && (
-        <div className="flex items-center justify-center py-16 text-zinc-600 gap-2 text-sm">
-          <Loader2 size={16} className="animate-spin" /> Chargement…
-        </div>
-      )}
-
-      {!loading && streams.length === 0 && (
-        <div className="text-sm text-zinc-600 py-16 text-center">Aucun résultat.</div>
-      )}
-
-      {type === 'live' ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
-          {streams.map(s => (
-            <button
-              key={s.stream_id}
-              onClick={() => play(s)}
-              disabled={launching === s.stream_id}
-              className="group flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded p-2 hover:border-amber-500/60 transition-colors text-left disabled:opacity-50"
-            >
-              <div className="w-12 h-12 shrink-0 bg-zinc-800 rounded overflow-hidden flex items-center justify-center">
-                {s.logo ? (
-                  <img src={api.iptv.imageUrl(s.logo)} alt="" loading="lazy" className="w-full h-full object-contain" onError={e => { e.currentTarget.style.display = 'none' }} />
-                ) : (
-                  <Tv size={18} className="text-zinc-600" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium truncate">{s.name}</div>
-                <div className="text-[10px] text-zinc-500 mt-0.5">Live · #{s.stream_id}</div>
-              </div>
-              {launching === s.stream_id
-                ? <Loader2 size={14} className="animate-spin text-amber-400" />
-                : <Play size={12} className="text-zinc-600 group-hover:text-amber-400 transition-colors" fill="currentColor" />
-              }
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
-          {streams.map(s => (
-            <button
-              key={s.stream_id}
-              onClick={() => play(s)}
-              disabled={launching === s.stream_id}
-              className="group relative aspect-[2/3] bg-zinc-900 border border-zinc-800 rounded overflow-hidden hover:border-amber-500/60 transition-colors text-left disabled:opacity-50"
-            >
-              {s.logo ? (
-                <img src={api.iptv.imageUrl(s.logo)} alt={s.name} loading="lazy" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-zinc-700 text-xs p-2 text-center">{s.name}</div>
-              )}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-2">
-                <div className="text-xs font-medium line-clamp-2">{s.name}</div>
-                {s.year && <div className="text-[10px] text-zinc-400 mt-0.5">{s.year}</div>}
-                <div className="flex items-center gap-1 mt-1.5 text-amber-400 text-xs">
-                  <Play size={11} fill="currentColor" /> Lancer
-                </div>
-              </div>
-              {launching === s.stream_id && (
-                <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
-                  <Loader2 size={20} className="animate-spin text-amber-400" />
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Sentinel pour scroll infini + indicateur de chargement */}
-      {streams.length < total && (
-        <div ref={sentinelRef} className="flex items-center justify-center py-6 text-xs text-zinc-500 gap-2">
-          {loadingMore
-            ? <><Loader2 size={14} className="animate-spin" /> Chargement…</>
-            : `${streams.length.toLocaleString()} / ${total.toLocaleString()}`}
-        </div>
-      )}
-      {streams.length > 0 && streams.length >= total && (
-        <div className="text-xs text-zinc-600 text-center pt-3 pb-1">
-          {total.toLocaleString()} résultat{total > 1 ? 's' : ''} — fin de liste
-        </div>
-      )}
-
-      {/* Modale détail série : saisons accordéon + épisodes — portal-isée vers
-          document.body pour couvrir aussi le layout chrome (sidebar + barre du haut) */}
+      {/* ── Modale série ─────────────────────────────────────────── */}
       {selectedSeries && createPortal(
         <div
           className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-start justify-center p-4 overflow-y-auto"

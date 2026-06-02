@@ -19,12 +19,13 @@ export default function Layout() {
   const [modules, setModules] = useState<{ plex: boolean; iptv: boolean; discover: boolean; launchbox: boolean }>({ plex: false, iptv: false, discover: false, launchbox: false })
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar.collapsed') === 'true')
   const location = useLocation()
-  const isIptv = location.pathname === '/catalog/iptv'
+  // Modules « immersifs » qui gèrent leur propre layout interne (sidebars latérales)
+  const isImmersive = location.pathname === '/catalog/iptv' || location.pathname === '/catalog/plex'
 
-  // Auto-réduire la sidebar quand on entre dans le module IPTV
+  // Auto-réduire la sidebar quand on entre dans un module immersif
   useEffect(() => {
-    if (isIptv) setCollapsed(true)
-  }, [isIptv])
+    if (isImmersive) setCollapsed(true)
+  }, [isImmersive])
 
   // Persistance de l'état collapsed
   useEffect(() => {
@@ -141,7 +142,7 @@ export default function Layout() {
         </div>
       </aside>
 
-      <main className={`flex-1 ${isIptv ? 'overflow-hidden' : 'overflow-y-auto p-6'}`}>
+      <main className={`flex-1 ${isImmersive ? 'overflow-hidden' : 'overflow-y-auto p-6'}`}>
         <Outlet />
       </main>
     </div>

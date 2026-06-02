@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, Device, PlexItem, PlexOnDeckItem, PlexSection, PlexShowDetail } from '../api'
-import { Search, Play, Loader2, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, X, ChevronDown, Check } from 'lucide-react'
+import { Search, Play, Loader2, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, X, ChevronDown, Check, Film, Tv, Music, Image, Library } from 'lucide-react'
+
+const SECTION_ICONS: Record<string, typeof Library> = {
+  movie: Film,
+  show: Tv,
+  artist: Music,
+  photo: Image,
+}
+const sectionIcon = (type: string) => SECTION_ICONS[type] ?? Library
 
 const PAGE_SIZE = 60
 
@@ -132,7 +140,9 @@ export default function Plex() {
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const sentinelRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement | null>(null)
   const fetchedRef = useRef(0)
+  const [sectionsCollapsed, setSectionsCollapsed] = useState(() => localStorage.getItem('plex.sections.collapsed') === 'true')
   const [devices, setDevices] = useState<Device[]>([])
   const [deviceId, setDeviceId] = useState<string>('')
   const [launching, setLaunching] = useState<string | null>(null)
@@ -160,6 +170,10 @@ export default function Plex() {
   useEffect(() => {
     if (sections.length && !sectionId) setSectionId(sections[0].id)
   }, [sections])
+
+  useEffect(() => {
+    localStorage.setItem('plex.sections.collapsed', String(sectionsCollapsed))
+  }, [sectionsCollapsed])
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 350)
@@ -196,7 +210,7 @@ export default function Plex() {
     if (!el) return
     const obs = new IntersectionObserver(
       ([entry]) => { if (entry.isIntersecting) loadMore() },
-      { rootMargin: '200px' }
+      { root: contentRef.current, rootMargin: '200px' }
     )
     obs.observe(el)
     return () => obs.disconnect()
@@ -279,50 +293,91 @@ export default function Plex() {
 
   if (connected === false) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-zinc-500 gap-3">
-        <AlertCircle size={32} />
-        <div className="text-sm">Plex n'est pas connecté.</div>
-        <a href="/settings" className="text-amber-400 hover:text-amber-300 text-sm underline">Aller dans Settings</a>
+      <div className="h-full flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-zinc-500">
+          <AlertCircle size={32} />
+          <div className="text-sm">Plex n'est pas connecté.</div>
+          <a href="/settings" className="text-amber-400 hover:text-amber-300 text-sm underline">Aller dans Settings</a>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3 flex-wrap">
-        <h1 className="text-xl font-semibold mr-auto">Plex</h1>
+    <div className="flex h-full">
 
-        <select
-          className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
-          value={sectionId}
-          onChange={e => setSectionId(e.target.value)}
-        >
-          {sections.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-        </select>
+      {/* ── Sidebar bibliothèques (collapsible) ───────────────────── */}
+      <aside className={`${sectionsCollapsed ? 'w-14' : 'w-52'} shrink-0 bg-zinc-950/60 border-r border-zinc-800 flex flex-col transition-[width] duration-200 overflow-hidden`}>
+        <div className="h-[53px] shrink-0 border-b border-zinc-800 flex items-center px-3">
+          {sectionsCollapsed
+            ? <Library size={16} strokeWidth={1.8} className="mx-auto text-zinc-500" />
+            : <span className="text-sm font-semibold text-white truncate">Plex</span>
+          }
+        </div>
+        <nav className="flex-1 py-1 overflow-y-auto">
+          {sections.map(s => {
+            const Icon = sectionIcon(s.type)
+            return (
+              <button
+                key={s.id}
+                onClick={() => setSectionId(s.id)}
+                title={sectionsCollapsed ? s.title : undefined}
+                className={`w-full flex items-center py-3 text-sm transition-colors text-left border-l-2 ${
+                  sectionsCollapsed ? 'justify-center px-0' : 'gap-2.5 px-4'
+                } ${
+                  sectionId === s.id
+                    ? 'bg-zinc-800 text-white border-amber-500'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 border-transparent'
+                }`}
+              >
+                <Icon size={15} strokeWidth={1.8} />
+                {!sectionsCollapsed && <span className="truncate">{s.title}</span>}
+              </button>
+            )
+          })}
+        </nav>
+        <div className="h-[45px] shrink-0 border-t border-zinc-800 flex items-center px-3">
+          <button
+            onClick={() => setSectionsCollapsed(v => !v)}
+            title={sectionsCollapsed ? 'Agrandir' : 'Réduire'}
+            className={`text-zinc-600 hover:text-zinc-300 transition-colors ${sectionsCollapsed ? 'mx-auto' : 'ml-auto'}`}
+          >
+            {sectionsCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
+        </div>
+      </aside>
 
-        <select
-          className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
-          value={deviceId}
-          onChange={e => setDeviceId(e.target.value)}
-        >
-          <option value="">— device —</option>
-          {devices.map(d => (
-            <option key={d.id} value={d.id} disabled={!d.ws_connected}>
-              {d.name} {d.ws_connected ? '' : '(offline)'}
-            </option>
-          ))}
-        </select>
-      </div>
+      {/* ── Zone de contenu ───────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-      <div className="relative">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-        <input
-          className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 pl-8 text-sm focus:outline-none focus:border-zinc-600"
-          placeholder="Rechercher dans la bibliothèque…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
-      </div>
+        {/* Barre de contrôles */}
+        <div className="flex items-center gap-2 px-4 min-h-[53px] border-b border-zinc-800 shrink-0 flex-wrap">
+          <select
+            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
+            value={deviceId}
+            onChange={e => setDeviceId(e.target.value)}
+          >
+            <option value="">— device —</option>
+            {devices.map(d => (
+              <option key={d.id} value={d.id} disabled={!d.ws_connected}>
+                {d.name} {d.ws_connected ? '' : '(offline)'}
+              </option>
+            ))}
+          </select>
+
+          <div className="relative flex-1 min-w-[200px]">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+            <input
+              className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 pl-8 text-sm focus:outline-none focus:border-zinc-600"
+              placeholder="Rechercher dans la bibliothèque…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Contenu scrollable */}
+        <div ref={contentRef} className="flex-1 overflow-y-auto p-4 space-y-4">
 
       {loading && items.length === 0 && (
         <div className="flex items-center justify-center py-16 text-zinc-600 gap-2 text-sm">
@@ -394,13 +449,15 @@ export default function Plex() {
         })}
       </div>
 
-      {/* Sentinel scroll infini */}
-      <div ref={sentinelRef} className="h-4" />
-      {loadingMore && (
-        <div className="flex justify-center py-4 text-zinc-600 gap-2 text-sm">
-          <Loader2 size={16} className="animate-spin" />
+          {/* Sentinel scroll infini */}
+          <div ref={sentinelRef} className="h-4" />
+          {loadingMore && (
+            <div className="flex justify-center py-4 text-zinc-600 gap-2 text-sm">
+              <Loader2 size={16} className="animate-spin" />
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Modale détail série Plex */}
       {selectedShow && createPortal(

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, Device, IptvCategory, IptvSeriesInfo, IptvStream } from '../api'
-import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight } from 'lucide-react'
+import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
 
 const PAGE_SIZE = 300
 
@@ -48,6 +48,11 @@ export default function Iptv() {
     try { return JSON.parse(localStorage.getItem(LANG_PREFS_KEY) ?? '["FR","EN"]') } catch { return ['FR', 'EN'] }
   })
   const [langPanelOpen, setLangPanelOpen] = useState(false)
+  const [mediaCollapsed, setMediaCollapsed] = useState(() => localStorage.getItem('iptv.media.collapsed') === 'true')
+
+  useEffect(() => {
+    localStorage.setItem('iptv.media.collapsed', String(mediaCollapsed))
+  }, [mediaCollapsed])
 
   useEffect(() => {
     api.iptv.credentials().then(c => {
@@ -219,27 +224,42 @@ export default function Iptv() {
   return (
     <div className="flex h-full">
 
-      {/* ── Sidebar type de média ─────────────────────────────────── */}
-      <aside className="w-36 shrink-0 bg-zinc-950/60 border-r border-zinc-800 flex flex-col">
-        <div className="px-4 py-3 border-b border-zinc-800 shrink-0">
-          <span className="text-sm font-semibold text-white">IPTV</span>
+      {/* ── Sidebar type de média (collapsible) ───────────────────── */}
+      <aside className={`${mediaCollapsed ? 'w-14' : 'w-36'} shrink-0 bg-zinc-950/60 border-r border-zinc-800 flex flex-col transition-[width] duration-200 overflow-hidden`}>
+        <div className="h-[45px] shrink-0 border-b border-zinc-800 flex items-center px-3">
+          {mediaCollapsed
+            ? <Tv size={16} strokeWidth={1.8} className="mx-auto text-zinc-500" />
+            : <span className="text-sm font-semibold text-white truncate">IPTV</span>
+          }
         </div>
-        <nav className="py-1">
+        <nav className="flex-1 py-1">
           {MEDIA_TYPES.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
-              onClick={() => { setType(key); setCategoryId('') }}
-              className={`w-full flex items-center gap-2.5 px-4 py-3 text-sm transition-colors text-left border-l-2 ${
+              onClick={() => { setType(key); setCategoryId(''); setMediaCollapsed(true) }}
+              title={mediaCollapsed ? label : undefined}
+              className={`w-full flex items-center py-3 text-sm transition-colors text-left border-l-2 ${
+                mediaCollapsed ? 'justify-center px-0' : 'gap-2.5 px-4'
+              } ${
                 type === key
                   ? 'bg-zinc-800 text-white border-amber-500'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 border-transparent'
               }`}
             >
               <Icon size={15} strokeWidth={1.8} />
-              {label}
+              {!mediaCollapsed && label}
             </button>
           ))}
         </nav>
+        <div className="shrink-0 border-t border-zinc-800 flex items-center px-3 py-2.5">
+          <button
+            onClick={() => setMediaCollapsed(v => !v)}
+            title={mediaCollapsed ? 'Agrandir' : 'Réduire'}
+            className={`text-zinc-600 hover:text-zinc-300 transition-colors ${mediaCollapsed ? 'mx-auto' : 'ml-auto'}`}
+          >
+            {mediaCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
+        </div>
       </aside>
 
       {/* ── Sidebar catégories (TV / Films / Séries) ──────────────── */}

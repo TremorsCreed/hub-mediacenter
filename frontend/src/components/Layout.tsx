@@ -20,7 +20,8 @@ export default function Layout() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar.collapsed') === 'true')
   const location = useLocation()
   // Modules « immersifs » qui gèrent leur propre layout interne (sidebars latérales)
-  const isImmersive = location.pathname === '/catalog/iptv' || location.pathname === '/catalog/plex'
+  const IMMERSIVE_PATHS = ['/catalog/iptv', '/catalog/plex', '/catalog/launchbox']
+  const isImmersive = IMMERSIVE_PATHS.includes(location.pathname)
 
   // Auto-réduire la sidebar quand on entre dans un module immersif
   useEffect(() => {

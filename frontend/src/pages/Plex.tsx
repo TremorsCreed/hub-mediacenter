@@ -4,6 +4,7 @@ import { api, Device, PlexItem, PlexOnDeckItem, PlexSection, PlexShowDetail } fr
 import { Search, Play, Loader2, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, X, ChevronDown, Check, Film, Tv, Music, Image, Library } from 'lucide-react'
 import FavoriteButton from '../components/FavoriteButton'
 import AddToPlaylist from '../components/AddToPlaylist'
+import { CatalogDndProvider, DraggableMedia } from '../components/CatalogDnd'
 
 const SECTION_ICONS: Record<string, typeof Library> = {
   movie: Film,
@@ -303,6 +304,7 @@ export default function Plex() {
   }
 
   return (
+    <CatalogDndProvider>
     <div className="flex h-full">
 
       {/* ── Sidebar bibliothèques (collapsible) ───────────────────── */}
@@ -398,7 +400,12 @@ export default function Plex() {
           const inProgress = (item.viewOffset ?? 0) > 0
           const pct = progressPct(item)
           return (
-            <div key={item.ratingKey} className="relative group">
+            <DraggableMedia
+              key={item.ratingKey}
+              id={`plex-${item.ratingKey}`}
+              item={{ app: 'plex', ref_id: item.ratingKey, ref_type: item.type, title: item.title, year: item.year, thumb: item.thumb }}
+              className="relative group"
+            >
               <button
                 onClick={() => play(item, { resume: inProgress })}
                 disabled={launching === item.ratingKey}
@@ -452,7 +459,7 @@ export default function Plex() {
                   <Play size={9} fill="currentColor" />
                 </button>
               )}
-            </div>
+            </DraggableMedia>
           )
         })}
       </div>
@@ -539,8 +546,12 @@ export default function Plex() {
                             ? Math.min(100, Math.max(0, (ep.viewOffset! / ep.duration) * 100))
                             : 0
                           return (
-                            <button
+                            <DraggableMedia
                               key={ep.ratingKey}
+                              id={`plex-ep-${ep.ratingKey}`}
+                              item={{ app: 'plex', ref_id: ep.ratingKey, ref_type: 'episode', title: `${selectedShow?.title} — S${season.season_number}E${ep.episode_number} ${ep.title}`, thumb: ep.thumb || selectedShow?.thumb }}
+                            >
+                            <button
                               onClick={() => playEpisode(ep, season.season_number, ep.episode_number)}
                               disabled={busy}
                               className="w-full flex items-center gap-3 px-2 py-2 rounded hover:bg-zinc-800 text-left disabled:opacity-50 transition-colors group"
@@ -572,6 +583,7 @@ export default function Plex() {
                                   : <Play size={12} className="text-zinc-600 group-hover:text-amber-400" fill="currentColor" />
                               }
                             </button>
+                            </DraggableMedia>
                           )
                         })}
                       </div>
@@ -594,5 +606,6 @@ export default function Plex() {
         document.body
       )}
     </div>
+    </CatalogDndProvider>
   )
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Gamepad2, Search, RefreshCw, Play, Loader2, AlertCircle, RotateCcw, Library, ChevronLeft, ChevronRight } from 'lucide-react'
 import FavoriteButton from '../components/FavoriteButton'
 import AddToPlaylist from '../components/AddToPlaylist'
+import { CatalogDndProvider, DraggableMedia } from '../components/CatalogDnd'
 
 const BASE = '/api/launchbox'
 
@@ -78,7 +79,11 @@ function GameCard({ game, launching, onLaunch }: {
   const isLaunching = launching === game.id
 
   return (
-    <div className="relative group">
+    <DraggableMedia
+      id={`lb-${game.id}`}
+      item={{ app: 'launchbox', ref_id: game.id, ref_type: game.platform, title: game.title, thumb: `${BASE}/image/${game.id}` }}
+      className="relative group"
+    >
       <button
         onClick={() => onLaunch(game.id)}
         disabled={!!launching}
@@ -123,7 +128,7 @@ function GameCard({ game, launching, onLaunch }: {
         item={{ app: 'launchbox', ref_id: game.id, ref_type: game.platform, title: game.title, thumb: `${BASE}/image/${game.id}` }}
         className="absolute top-2 right-11 w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
       />
-    </div>
+    </DraggableMedia>
   )
 }
 
@@ -259,6 +264,7 @@ export default function Launchbox() {
   }
 
   return (
+    <CatalogDndProvider>
     <div className="flex h-full">
 
       {/* ── Sidebar plateformes (collapsible) ─────────────────────── */}
@@ -406,5 +412,6 @@ export default function Launchbox() {
         </div>
       </div>
     </div>
+    </CatalogDndProvider>
   )
 }

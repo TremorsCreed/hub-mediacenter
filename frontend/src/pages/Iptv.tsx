@@ -4,6 +4,7 @@ import { api, Device, IptvCategory, IptvSeriesInfo, IptvStream } from '../api'
 import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
 import FavoriteButton from '../components/FavoriteButton'
 import AddToPlaylist from '../components/AddToPlaylist'
+import { CatalogDndProvider, DraggableMedia } from '../components/CatalogDnd'
 
 const PAGE_SIZE = 300
 
@@ -222,6 +223,7 @@ export default function Iptv() {
   }
 
   return (
+    <CatalogDndProvider>
     <div className="flex h-full">
 
       {/* ── Sidebar type de média (collapsible) ───────────────────── */}
@@ -424,7 +426,12 @@ export default function Iptv() {
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
               {streams.map(s => (
-                <div key={s.stream_id} className="group relative">
+                <DraggableMedia
+                  key={s.stream_id}
+                  id={`iptv-${s.stream_id}`}
+                  item={{ app: 'iptv', ref_id: s.stream_id, ref_type: s.type, title: s.name, thumb: s.logo, year: s.year ? Number(s.year) : undefined }}
+                  className="group relative"
+                >
                   <button
                     onClick={() => play(s)}
                     disabled={launching === s.stream_id}
@@ -456,7 +463,7 @@ export default function Iptv() {
                     item={{ app: 'iptv', ref_id: s.stream_id, ref_type: s.type, title: s.name, thumb: s.logo }}
                     className="absolute top-2 right-11 w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
                   />
-                </div>
+                </DraggableMedia>
               ))}
             </div>
           )}
@@ -572,5 +579,6 @@ export default function Iptv() {
         document.body
       )}
     </div>
+    </CatalogDndProvider>
   )
 }

@@ -1,5 +1,44 @@
 const BASE = '/api'
 
+// ── État d'auth (profil courant + token admin) ───────────────────────────────
+let currentUserId: number | null = (() => {
+  const v = localStorage.getItem('hub.userId')
+  return v ? Number(v) : null
+})()
+let adminToken: string | null = sessionStorage.getItem('hub.adminToken')
+
+export function setCurrentUserId(id: number | null) {
+  currentUserId = id
+  if (id == null) localStorage.removeItem('hub.userId')
+  else localStorage.setItem('hub.userId', String(id))
+}
+export function getCurrentUserId() { return currentUserId }
+
+export function setAdminToken(token: string | null) {
+  adminToken = token
+  if (!token) sessionStorage.removeItem('hub.adminToken')
+  else sessionStorage.setItem('hub.adminToken', token)
+}
+export function getAdminToken() { return adminToken }
+export function isAdminUnlocked() { return !!adminToken }
+
+function authHeaders(json = false): Record<string, string> {
+  const h: Record<string, string> = {}
+  if (json) h['Content-Type'] = 'application/json'
+  if (currentUserId != null) h['X-User-Id'] = String(currentUserId)
+  if (adminToken) h['X-Admin-Token'] = adminToken
+  return h
+}
+
+export interface User {
+  id: number
+  name: string
+  avatar_color: string
+  is_admin: boolean
+  has_pin: boolean
+  created_at: number
+}
+
 export interface Device {
   id: string
   name: string
@@ -49,6 +88,9 @@ export interface HistoryEntry {
   started_at: number
   ended_at?: number
   requester: string
+  user_id?: number
+  user_name?: string
+  user_color?: string
 }
 
 export interface DeviceConfig {
@@ -246,7 +288,7 @@ async function extractError(r: Response): Promise<Error> {
 }
 
 async function get<T>(path: string): Promise<T> {
-  const r = await fetch(`${BASE}${path}`)
+  const r = await fetch(`${BASE}${path}`, { headers: authHeaders() })
   if (!r.ok) throw await extractError(r)
   return r.json()
 }
@@ -254,7 +296,7 @@ async function get<T>(path: string): Promise<T> {
 async function post<T>(path: string, body: unknown): Promise<T> {
   const r = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify(body)
   })
   if (!r.ok) throw await extractError(r)
@@ -264,7 +306,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 async function put<T>(path: string, body: unknown): Promise<T> {
   const r = await fetch(`${BASE}${path}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify(body)
   })
   if (!r.ok) throw await extractError(r)
@@ -272,7 +314,7 @@ async function put<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function del<T>(path: string): Promise<T> {
-  const r = await fetch(`${BASE}${path}`, { method: 'DELETE' })
+  const r = await fetch(`${BASE}${path}`, { method: 'DELETE', headers: authHeaders() })
   if (!r.ok) throw await extractError(r)
   return r.json()
 }
@@ -292,7 +334,16 @@ export const api = {
   },
   state: {
     all: () => get<PlaybackState[]>('/state'),
-    history: () => get<HistoryEntry[]>('/state/history')
+    history: (userFilter?: string) => get<HistoryEntry[]>(`/state/history${userFilter ? `?user_id=${userFilter}` : ''}`),
+    deleteHistory: (id: number) => del<{ ok: boolean }>(`/state/history/${id}`),
+    clearHistory: (userFilter?: string) => del<{ ok: boolean }>(`/state/history${userFilter ? `?user_id=${userFilter}` : ''}`),
+  },
+  users: {
+    list: () => get<User[]>('/users'),
+    create: (u: { name: string; avatar_color?: string; is_admin?: boolean; pin?: string }) => post<{ ok: boolean; id: number }>('/users', u),
+    update: (id: number, u: { name?: string; avatar_color?: string; is_admin?: boolean; pin?: string }) => put<{ ok: boolean }>(`/users/${id}`, u),
+    remove: (id: number) => del<{ ok: boolean }>(`/users/${id}`),
+    verifyPin: (pin: string) => post<{ ok: boolean; token: string; admin: { id: number; name: string } }>('/users/verify-pin', { pin }),
   },
   play: (intent: PlayIntent) => post<{ ok: boolean; title: string; device_id: string; app: string }>('/play', intent),
   credentials: {

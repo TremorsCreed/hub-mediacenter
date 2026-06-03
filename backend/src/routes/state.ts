@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db'
 import { isConnected } from '../ws'
+import { isValidAdminToken } from '../auth'
 
 const router = Router()
 
@@ -20,14 +21,67 @@ router.get('/', async (_req, res) => {
   res.json(rows.map((r: any) => ({ ...r, ws_connected: isConnected(r.device_id) })))
 })
 
-router.get('/history', async (_req, res) => {
-  const { rows } = await db.execute(`
-    SELECT h.*, d.name as device_name
-    FROM playback_history h
-    LEFT JOIN devices d ON d.id = h.device_id
-    ORDER BY h.started_at DESC LIMIT 100
-  `)
+// GET /history — un membre ne voit que son propre historique ; l'admin (token
+// valide) voit tout et peut filtrer via ?user_id=<id> (ou ?user_id=all).
+router.get('/history', async (req, res) => {
+  const isAdmin = isValidAdminToken(req.header('X-Admin-Token') ?? undefined)
+  const userId = (req as any).userId as number | null
+  const filter = req.query.user_id as string | undefined
+
+  let where = ''
+  const args: any[] = []
+  if (isAdmin) {
+    if (filter && filter !== 'all') { where = 'WHERE h.user_id = ?'; args.push(Number(filter)) }
+  } else {
+    if (userId == null) return res.json([]) // aucun profil sélectionné
+    where = 'WHERE h.user_id = ?'; args.push(userId)
+  }
+
+  const { rows } = await db.execute({
+    sql: `
+      SELECT h.*, d.name as device_name, u.name as user_name, u.avatar_color as user_color
+      FROM playback_history h
+      LEFT JOIN devices d ON d.id = h.device_id
+      LEFT JOIN users u ON u.id = h.user_id
+      ${where}
+      ORDER BY h.started_at DESC LIMIT 200
+    `,
+    args,
+  })
   res.json(rows)
+})
+
+// DELETE /history/:id — supprime une entrée (la sienne, ou n'importe laquelle si admin).
+router.delete('/history/:id', async (req, res) => {
+  const id = parseInt(req.params.id, 10)
+  const isAdmin = isValidAdminToken(req.header('X-Admin-Token') ?? undefined)
+  const userId = (req as any).userId as number | null
+
+  if (isAdmin) {
+    await db.execute({ sql: 'DELETE FROM playback_history WHERE id = ?', args: [id] })
+  } else {
+    if (userId == null) return res.status(403).json({ error: 'no_profile' })
+    await db.execute({ sql: 'DELETE FROM playback_history WHERE id = ? AND user_id = ?', args: [id, userId] })
+  }
+  res.json({ ok: true })
+})
+
+// DELETE /history — efface tout l'historique du profil courant. L'admin peut
+// cibler ?user_id=<id> ou ?user_id=all (tout purger).
+router.delete('/history', async (req, res) => {
+  const isAdmin = isValidAdminToken(req.header('X-Admin-Token') ?? undefined)
+  const userId = (req as any).userId as number | null
+  const filter = req.query.user_id as string | undefined
+
+  if (isAdmin) {
+    if (filter === 'all') await db.execute('DELETE FROM playback_history')
+    else if (filter) await db.execute({ sql: 'DELETE FROM playback_history WHERE user_id = ?', args: [Number(filter)] })
+    else if (userId != null) await db.execute({ sql: 'DELETE FROM playback_history WHERE user_id = ?', args: [userId] })
+  } else {
+    if (userId == null) return res.status(403).json({ error: 'no_profile' })
+    await db.execute({ sql: 'DELETE FROM playback_history WHERE user_id = ?', args: [userId] })
+  }
+  res.json({ ok: true })
 })
 
 router.get('/:device_id', async (req, res) => {

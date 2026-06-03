@@ -14,22 +14,26 @@ import credentialsRouter from './routes/credentials'
 import iptvRouter from './routes/iptv'
 import controlRouter from './routes/control'
 import launchboxRouter from './routes/launchbox'
+import usersRouter from './routes/users'
+import { attachUser, requireAdmin } from './auth'
 import { preloadAll as preloadIptvVod } from './iptvVodCache'
 
 const app = express()
 const PORT = parseInt(process.env.PORT ?? '8020', 10)
 
-app.use(cors())
+app.use(cors({ exposedHeaders: ['X-User-Id', 'X-Admin-Token'] }))
 app.use(express.json())
+app.use(attachUser) // attache req.userId depuis le header X-User-Id
 
+app.use('/api/users', usersRouter)
+app.use('/api/devices/:id/config', requireAdmin, configRouter)
 app.use('/api/devices', devicesRouter)
-app.use('/api/devices/:id/config', configRouter)
 app.use('/api/catalog', catalogRouter)
 app.use('/api/play', playRouter)
 app.use('/api/state', stateRouter)
 app.use('/api/zaparoo', zaparooRouter)
 app.use('/api/plex', plexRouter)
-app.use('/api/credentials', credentialsRouter)
+app.use('/api/credentials', requireAdmin, credentialsRouter)
 app.use('/api/iptv', iptvRouter)
 app.use('/api/control', controlRouter)
 app.use('/api/launchbox', launchboxRouter)

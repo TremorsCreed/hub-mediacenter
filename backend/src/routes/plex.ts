@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { db } from '../db'
 import crypto from 'crypto'
 import { findIptvMatchesByLang, listActiveCredentialIds } from '../iptvVodCache'
+import { requireAdmin } from '../auth'
 
 const router = Router()
 
@@ -39,7 +40,7 @@ router.get('/status', async (_req, res) => {
 })
 
 // POST /api/plex/pin — démarre le flow PIN
-router.post('/pin', async (_req, res) => {
+router.post('/pin', requireAdmin, async (_req, res) => {
   const cfg = await getConfig()
   const r = await fetch(`${PLEX_TV}/api/v2/pins`, {
     method: 'POST',
@@ -53,7 +54,7 @@ router.post('/pin', async (_req, res) => {
 })
 
 // GET /api/plex/pin/:id — poll jusqu'à avoir le token
-router.get('/pin/:id', async (req, res) => {
+router.get('/pin/:id', requireAdmin, async (req, res) => {
   const cfg = await getConfig()
   const r = await fetch(`${PLEX_TV}/api/v2/pins/${req.params.id}`, {
     headers: plexHeaders(cfg.client_id)
@@ -99,7 +100,7 @@ router.get('/pin/:id', async (req, res) => {
 })
 
 // DELETE /api/plex/token — déconnexion
-router.delete('/token', async (_req, res) => {
+router.delete('/token', requireAdmin, async (_req, res) => {
   await db.execute("UPDATE plex_config SET auth_token = '', server_url = '', server_machine_id = '' WHERE id = 1")
   res.json({ ok: true })
 })

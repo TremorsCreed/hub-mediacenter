@@ -59,7 +59,7 @@ function ConfigPanel({ deviceId, capabilities, credentials }: { deviceId: string
           <div className="space-y-2">
             {xtreamCreds.length === 0 ? (
               <div className="text-xs text-zinc-500 py-2">
-                Aucun profil Xtream. <a href="/credentials" className="text-amber-400 hover:underline">En créer un</a>.
+                Aucun profil Xtream. <a href="/admin/credentials" className="text-amber-400 hover:underline">En créer un</a>.
               </div>
             ) : (
               <div className="flex items-center gap-2">

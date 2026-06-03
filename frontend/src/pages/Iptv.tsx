@@ -213,7 +213,7 @@ export default function Iptv() {
         <div className="flex flex-col items-center gap-3 text-zinc-500">
           <AlertCircle size={32} />
           <div className="text-sm">Aucun profil IPTV.</div>
-          <a href="/credentials" className="text-amber-400 hover:text-amber-300 text-sm underline">Créer un profil Xtream</a>
+          <a href="/admin/credentials" className="text-amber-400 hover:text-amber-300 text-sm underline">Créer un profil Xtream</a>
         </div>
       </div>
     )

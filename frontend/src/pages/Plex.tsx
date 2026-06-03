@@ -294,7 +294,7 @@ export default function Plex() {
         <div className="flex flex-col items-center gap-3 text-zinc-500">
           <AlertCircle size={32} />
           <div className="text-sm">Plex n'est pas connecté.</div>
-          <a href="/settings" className="text-amber-400 hover:text-amber-300 text-sm underline">Aller dans Settings</a>
+          <a href="/admin/settings" className="text-amber-400 hover:text-amber-300 text-sm underline">Aller dans Settings</a>
         </div>
       </div>
     )

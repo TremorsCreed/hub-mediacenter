@@ -1,6 +1,7 @@
 import { createClient, Client } from '@libsql/client'
 import path from 'path'
 import fs from 'fs'
+import { hashPin } from './auth'
 
 const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'data', 'hub.db')
 const dir = path.dirname(DB_PATH)
@@ -101,6 +102,29 @@ export async function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_lb_games_platform ON lb_games(platform);
     CREATE INDEX IF NOT EXISTS idx_lb_games_title ON lb_games(title);
+
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      avatar_color TEXT NOT NULL DEFAULT '#f59e0b',
+      is_admin INTEGER NOT NULL DEFAULT 0,
+      pin_hash TEXT,
+      created_at INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS favorites (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      app TEXT NOT NULL,
+      ref_id TEXT NOT NULL,
+      ref_type TEXT,
+      title TEXT,
+      thumb TEXT,
+      created_at INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(user_id, app, ref_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);
   `)
 
   // Migrations idempotentes (ALTER TABLE échoue silencieusement si la colonne existe)
@@ -108,4 +132,15 @@ export async function initDb() {
   try { await db.execute("ALTER TABLE playback_state ADD COLUMN title TEXT") } catch {}
   try { await db.execute("ALTER TABLE device_config ADD COLUMN tvoverlay_enabled INTEGER NOT NULL DEFAULT 0") } catch {}
   try { await db.execute("ALTER TABLE device_config ADD COLUMN overlay_player_duration INTEGER NOT NULL DEFAULT 0") } catch {}
+  try { await db.execute("ALTER TABLE playback_history ADD COLUMN user_id INTEGER") } catch {}
+
+  // Seed : crée un profil Admin par défaut (PIN 0000) si aucun utilisateur n'existe.
+  const { rows: userCount } = await db.execute("SELECT COUNT(*) as n FROM users")
+  if (Number((userCount[0] as any).n) === 0) {
+    await db.execute({
+      sql: "INSERT INTO users (name, avatar_color, is_admin, pin_hash, created_at) VALUES (?, ?, 1, ?, ?)",
+      args: ['Admin', '#f59e0b', hashPin('0000'), Date.now()]
+    })
+    console.log('[db] Profil Admin créé (PIN par défaut: 0000 — à changer dans Admin → Profils)')
+  }
 }

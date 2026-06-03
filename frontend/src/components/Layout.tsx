@@ -1,27 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Tv, Library, History, Play, LayoutDashboard, Settings, Film, KeyRound, Radio, FolderOpen, Compass, Gamepad2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Library, History, Film, Radio, FolderOpen, Compass, Gamepad2, ChevronLeft, ChevronRight, ShieldCheck } from 'lucide-react'
 import { api } from '../api'
-
-const topNav = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/devices', label: 'Devices', icon: Tv },
-  { to: '/credentials', label: 'Credentials', icon: KeyRound },
-]
-
-const bottomNav = [
-  { to: '/play', label: 'Play', icon: Play },
-  { to: '/history', label: 'History', icon: History },
-  { to: '/settings', label: 'Settings', icon: Settings },
-]
+import { useUser, initials } from '../UserContext'
 
 export default function Layout() {
   const [modules, setModules] = useState<{ plex: boolean; iptv: boolean; discover: boolean; launchbox: boolean }>({ plex: false, iptv: false, discover: false, launchbox: false })
   const [collapsed, setCollapsed] = useState(false)
   const location = useLocation()
+  const { currentUser, switchProfile } = useUser()
   // Modules « immersifs » qui gèrent leur propre layout interne (sidebars latérales)
   const IMMERSIVE_PATHS = ['/catalog/iptv', '/catalog/plex', '/catalog/launchbox']
-  const isImmersive = IMMERSIVE_PATHS.includes(location.pathname)
+  const isImmersive = IMMERSIVE_PATHS.includes(location.pathname) || location.pathname.startsWith('/admin')
 
   // Cascade : la sidebar système se réduit en entrant dans un module immersif,
   // et se redéveloppe en revenant sur une route classique.
@@ -73,16 +63,9 @@ export default function Layout() {
 
         {/* Navigation */}
         <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden">
-          {topNav.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} end={to === '/'} title={collapsed ? label : undefined} className={linkClass}>
-              <Icon size={15} strokeWidth={1.8} />
-              {!collapsed && label}
-            </NavLink>
-          ))}
-
           {collapsed
-            ? <div className="border-t border-zinc-800/60 mx-2 my-2" />
-            : <div className="flex items-center gap-3 px-5 pt-3 pb-1 text-[10px] uppercase tracking-widest text-zinc-600 font-medium">
+            ? <div className="border-t border-zinc-800/60 mx-2 mb-2" />
+            : <div className="flex items-center gap-3 px-5 pt-1 pb-1 text-[10px] uppercase tracking-widest text-zinc-600 font-medium">
                 <Library size={11} strokeWidth={2} />
                 Catalog
               </div>
@@ -116,17 +99,40 @@ export default function Layout() {
               {!collapsed && 'LaunchBox'}
             </NavLink>
           )}
+
           <div className="h-3" />
 
-          {bottomNav.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} title={collapsed ? label : undefined} className={linkClass}>
-              <Icon size={15} strokeWidth={1.8} />
-              {!collapsed && label}
-            </NavLink>
-          ))}
+          <NavLink to="/history" title={collapsed ? 'History' : undefined} className={linkClass}>
+            <History size={15} strokeWidth={1.8} />
+            {!collapsed && 'History'}
+          </NavLink>
+
+          <NavLink to="/admin" title={collapsed ? 'Admin' : undefined} className={linkClass}>
+            <ShieldCheck size={15} strokeWidth={1.8} />
+            {!collapsed && 'Admin'}
+          </NavLink>
         </nav>
 
-        {/* Footer avec bouton toggle */}
+        {/* Profil courant + switch */}
+        {currentUser && (
+          <button
+            onClick={switchProfile}
+            title={collapsed ? `${currentUser.name} — changer de profil` : 'Changer de profil'}
+            className={`shrink-0 border-t border-zinc-800 flex items-center py-2.5 hover:bg-zinc-800/50 transition-colors ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-4'}`}
+          >
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-semibold text-black/80 shrink-0" style={{ backgroundColor: currentUser.avatar_color }}>
+              {initials(currentUser.name)}
+            </div>
+            {!collapsed && (
+              <div className="flex-1 min-w-0 text-left">
+                <div className="text-xs font-medium text-zinc-200 truncate">{currentUser.name}</div>
+                <div className="text-[10px] text-zinc-500">Changer de profil</div>
+              </div>
+            )}
+          </button>
+        )}
+
+        {/* Footer toggle */}
         <div className="h-[45px] shrink-0 border-t border-zinc-800 flex items-center px-3">
           {!collapsed && <span className="text-xs text-zinc-600 mr-auto">v0.1.0</span>}
           <button

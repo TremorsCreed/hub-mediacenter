@@ -236,6 +236,7 @@ router.post('/', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
 
   const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, iptv_ext, external_url, external_platform, title, thumb, resume, device_id, app, requester } = parsed.data
+  const userId = (req as any).userId ?? null // profil courant (header X-User-Id)
 
   // 1. Resolve catalog entry
   let entry: CatalogEntry | null = null
@@ -374,8 +375,8 @@ router.post('/', async (req, res) => {
 
       sendNotify(target_device_id, `Playing: ${entry.title}`)
       await db.execute({
-        sql: `INSERT INTO playback_history (device_id, catalog_id, app, title, started_at, requester) VALUES (?, ?, ?, ?, ?, ?)`,
-        args: [target_device_id, entry.id, resolved_app, entry.title, Date.now(), requester]
+        sql: `INSERT INTO playback_history (device_id, catalog_id, app, title, started_at, requester, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        args: [target_device_id, entry.id, resolved_app, entry.title, Date.now(), requester, userId]
       })
       console.log(`[plex] remote control ok: ${entry.title} → ${target_device_id}`)
       return res.json({ ok: true, device_id: target_device_id, catalog_id: entry.id, title: entry.title, app: resolved_app })
@@ -384,7 +385,7 @@ router.post('/', async (req, res) => {
     const plex_watch_url = await resolvePlexWatchUrl(entry.plex_id) ?? undefined
     const cmd: WsPlayCommand = { type: 'play', catalog_id: entry.id, app: resolved_app, title: entry.title, plex_id: entry.plex_id, plex_watch_url, requester: requester as RequesterType }
     if (!sendPlayCommand(target_device_id, cmd)) return res.status(503).json({ error: 'failed to send command to device' })
-    await db.execute({ sql: `INSERT INTO playback_history (device_id, catalog_id, app, title, started_at, requester) VALUES (?, ?, ?, ?, ?, ?)`, args: [target_device_id, entry.id, resolved_app, entry.title, Date.now(), requester] })
+    await db.execute({ sql: `INSERT INTO playback_history (device_id, catalog_id, app, title, started_at, requester, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)`, args: [target_device_id, entry.id, resolved_app, entry.title, Date.now(), requester, userId] })
     return res.json({ ok: true, device_id: target_device_id, catalog_id: entry.id, title: entry.title, app: resolved_app })
   }
 
@@ -438,8 +439,8 @@ router.post('/', async (req, res) => {
   })
 
   await db.execute({
-    sql: `INSERT INTO playback_history (device_id, catalog_id, app, title, started_at, requester) VALUES (?, ?, ?, ?, ?, ?)`,
-    args: [target_device_id, entry.id, resolved_app, entry.title, Date.now(), requester]
+    sql: `INSERT INTO playback_history (device_id, catalog_id, app, title, started_at, requester, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    args: [target_device_id, entry.id, resolved_app, entry.title, Date.now(), requester, userId]
   })
 
   res.json({ ok: true, device_id: target_device_id, catalog_id: entry.id, title: entry.title, app: resolved_app })

@@ -167,6 +167,8 @@ export async function initDb() {
   // Carte NFC Zaparoo → profil (groundwork ; logique de session dans le sprint Zaparoo)
   try { await db.execute("ALTER TABLE users ADD COLUMN nfc_token TEXT") } catch {}
   try { await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nfc ON users(nfc_token) WHERE nfc_token IS NOT NULL") } catch {}
+  // Langue préférée du profil (matching des imports de playlists IPTV/Plex)
+  try { await db.execute("ALTER TABLE users ADD COLUMN preferred_lang TEXT NOT NULL DEFAULT 'FR'") } catch {}
 
   // Seed : crée un profil Admin par défaut (PIN 0000) si aucun utilisateur n'existe.
   const { rows: userCount } = await db.execute("SELECT COUNT(*) as n FROM users")

@@ -37,7 +37,25 @@ export interface User {
   is_admin: boolean
   has_pin: boolean
   has_nfc: boolean
+  preferred_lang: string
   created_at: number
+}
+
+export interface ScrapedListItem {
+  position: number
+  title: string
+  original_title?: string | null
+  year?: number | null
+  type: 'movie' | 'series'
+}
+export interface ScrapedList {
+  title: string
+  cover?: string | null
+  description?: string | null
+  likes: number
+  total: number
+  source_url: string
+  items: ScrapedListItem[]
 }
 
 // app : 'iptv' | 'plex' | 'launchbox' | 'catalog'
@@ -394,8 +412,8 @@ export const api = {
   },
   users: {
     list: () => get<User[]>('/users'),
-    create: (u: { name: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string }) => post<{ ok: boolean; id: number }>('/users', u),
-    update: (id: number, u: { name?: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string | null }) => put<{ ok: boolean }>(`/users/${id}`, u),
+    create: (u: { name: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string; preferred_lang?: string }) => post<{ ok: boolean; id: number }>('/users', u),
+    update: (id: number, u: { name?: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string | null; preferred_lang?: string }) => put<{ ok: boolean }>(`/users/${id}`, u),
     remove: (id: number) => del<{ ok: boolean }>(`/users/${id}`),
     verifyPin: (pin: string) => post<{ ok: boolean; token: string; admin: { id: number; name: string } }>('/users/verify-pin', { pin }),
   },
@@ -413,6 +431,9 @@ export const api = {
     addItem: (id: number, item: PlaylistItemInput) => post<{ ok: boolean; id: number }>(`/playlists/${id}/items`, item),
     removeItem: (id: number, itemId: number) => del<{ ok: boolean }>(`/playlists/${id}/items/${itemId}`),
     reorder: (id: number, order: number[]) => put<{ ok: boolean }>(`/playlists/${id}/reorder`, { order }),
+  },
+  senscritique: {
+    scrape: (url: string) => post<ScrapedList>('/senscritique/scrape', { url }),
   },
   play: (intent: PlayIntent) => post<{ ok: boolean; title: string; device_id: string; app: string }>('/play', intent),
   credentials: {

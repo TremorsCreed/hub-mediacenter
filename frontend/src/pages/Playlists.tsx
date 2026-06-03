@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, Playlist } from '../api'
 import { useUser } from '../UserContext'
-import { ListVideo, Plus, Users, Lock, X, Loader2 } from 'lucide-react'
+import { ListVideo, Plus, Users, Lock, X, Loader2, Download } from 'lucide-react'
 
 export default function Playlists() {
   const { currentUser } = useUser()
@@ -30,6 +30,12 @@ export default function Playlists() {
     <div className="space-y-5 max-w-5xl">
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-xl font-semibold mr-auto">Playlists</h1>
+        <button
+          onClick={() => navigate('/playlists/import')}
+          className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 text-sm rounded px-3 py-1.5 hover:border-zinc-500 transition-colors"
+        >
+          <Download size={15} /> Importer
+        </button>
         <button
           onClick={() => setCreating(true)}
           className="flex items-center gap-1.5 bg-amber-500 text-black text-sm font-medium rounded px-3 py-1.5 hover:bg-amber-400 transition-colors"

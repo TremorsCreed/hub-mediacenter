@@ -9,7 +9,7 @@ const router = Router()
 // N'expose jamais le pin_hash, juste un booléen has_pin.
 router.get('/', async (_req, res) => {
   const { rows } = await db.execute(
-    'SELECT id, name, avatar_color, is_admin, (pin_hash IS NOT NULL) as has_pin, (nfc_token IS NOT NULL) as has_nfc, created_at FROM users ORDER BY is_admin DESC, name'
+    "SELECT id, name, avatar_color, is_admin, (pin_hash IS NOT NULL) as has_pin, (nfc_token IS NOT NULL) as has_nfc, COALESCE(preferred_lang, 'FR') as preferred_lang, created_at FROM users ORDER BY is_admin DESC, name"
   )
   res.json(rows.map((r: any) => ({
     id: r.id,
@@ -18,6 +18,7 @@ router.get('/', async (_req, res) => {
     is_admin: !!r.is_admin,
     has_pin: !!r.has_pin,
     has_nfc: !!r.has_nfc,
+    preferred_lang: r.preferred_lang,
     created_at: r.created_at,
   })))
 })
@@ -42,17 +43,18 @@ const CreateSchema = z.object({
   is_admin: z.boolean().optional(),
   pin: z.string().min(4).max(8).optional(),
   nfc_token: z.string().optional(),
+  preferred_lang: z.string().optional(),
 })
 router.post('/', requireAdmin, async (req, res) => {
   const parsed = CreateSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
-  const { name, avatar_color, is_admin, pin, nfc_token } = parsed.data
+  const { name, avatar_color, is_admin, pin, nfc_token, preferred_lang } = parsed.data
   if (is_admin && !pin) return res.status(400).json({ error: 'Un profil admin nécessite un PIN' })
 
   try {
     const { rows } = await db.execute({
-      sql: 'INSERT INTO users (name, avatar_color, is_admin, pin_hash, nfc_token, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id',
-      args: [name, avatar_color ?? '#f59e0b', is_admin ? 1 : 0, is_admin && pin ? hashPin(pin) : null, nfc_token?.trim() || null, Date.now()]
+      sql: 'INSERT INTO users (name, avatar_color, is_admin, pin_hash, nfc_token, preferred_lang, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      args: [name, avatar_color ?? '#f59e0b', is_admin ? 1 : 0, is_admin && pin ? hashPin(pin) : null, nfc_token?.trim() || null, (preferred_lang ?? 'FR').toUpperCase(), Date.now()]
     })
     res.json({ ok: true, id: (rows[0] as any).id })
   } catch (e: any) {
@@ -67,6 +69,7 @@ const UpdateSchema = z.object({
   is_admin: z.boolean().optional(),
   pin: z.string().min(4).max(8).optional(),       // si fourni, (re)définit le PIN
   nfc_token: z.string().nullable().optional(),    // undefined = inchangé · null/'' = retire · valeur = associe
+  preferred_lang: z.string().optional(),
 })
 router.put('/:id', requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10)
@@ -93,13 +96,14 @@ router.put('/:id', requireAdmin, async (req, res) => {
 
   try {
     await db.execute({
-      sql: 'UPDATE users SET name = ?, avatar_color = ?, is_admin = ?, pin_hash = ?, nfc_token = ? WHERE id = ?',
+      sql: 'UPDATE users SET name = ?, avatar_color = ?, is_admin = ?, pin_hash = ?, nfc_token = ?, preferred_lang = ? WHERE id = ?',
       args: [
         parsed.data.name ?? cur.name,
         parsed.data.avatar_color ?? cur.avatar_color,
         willBeAdmin ? 1 : 0,
         newPinHash,
         newNfc,
+        (parsed.data.preferred_lang ?? cur.preferred_lang ?? 'FR').toUpperCase(),
         id,
       ]
     })

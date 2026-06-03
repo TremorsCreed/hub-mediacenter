@@ -5,6 +5,8 @@ import { ShieldCheck, Plus, Trash2, Pencil, X, Loader2, Nfc } from 'lucide-react
 
 const COLORS = ['#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#3b82f6', '#06b6d4', '#10b981', '#84cc16', '#f97316', '#64748b']
 
+const LANGS = ['FR', 'EN', 'DE', 'ES', 'IT', 'MULTI']
+
 interface FormState {
   id?: number
   name: string
@@ -14,9 +16,10 @@ interface FormState {
   nfc_token: string
   hasNfc: boolean
   clearNfc: boolean
+  preferred_lang: string
 }
 
-const emptyForm: FormState = { name: '', avatar_color: COLORS[0], is_admin: false, pin: '', nfc_token: '', hasNfc: false, clearNfc: false }
+const emptyForm: FormState = { name: '', avatar_color: COLORS[0], is_admin: false, pin: '', nfc_token: '', hasNfc: false, clearNfc: false, preferred_lang: 'FR' }
 
 export default function Profiles() {
   const { refresh: refreshContext } = useUser()
@@ -31,7 +34,7 @@ export default function Profiles() {
   const openCreate = () => { setError(null); setForm({ ...emptyForm }) }
   const openEdit = (u: User) => {
     setError(null)
-    setForm({ id: u.id, name: u.name, avatar_color: u.avatar_color, is_admin: u.is_admin, pin: '', nfc_token: '', hasNfc: u.has_nfc, clearNfc: false })
+    setForm({ id: u.id, name: u.name, avatar_color: u.avatar_color, is_admin: u.is_admin, pin: '', nfc_token: '', hasNfc: u.has_nfc, clearNfc: false, preferred_lang: u.preferred_lang ?? 'FR' })
   }
 
   const save = async () => {
@@ -48,6 +51,7 @@ export default function Profiles() {
           name: form.name.trim(),
           avatar_color: form.avatar_color,
           is_admin: form.is_admin,
+          preferred_lang: form.preferred_lang,
           ...(form.pin ? { pin: form.pin } : {}),
           ...nfcPatch,
         })
@@ -56,6 +60,7 @@ export default function Profiles() {
           name: form.name.trim(),
           avatar_color: form.avatar_color,
           is_admin: form.is_admin,
+          preferred_lang: form.preferred_lang,
           ...(form.is_admin && form.pin ? { pin: form.pin } : {}),
           ...(form.nfc_token.trim() ? { nfc_token: form.nfc_token.trim() } : {}),
         })
@@ -150,6 +155,17 @@ export default function Profiles() {
                     />
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-zinc-500 uppercase tracking-widest">Langue préférée</label>
+                <select
+                  value={form.preferred_lang}
+                  onChange={e => setForm({ ...form, preferred_lang: e.target.value })}
+                  className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-500/60"
+                >
+                  {LANGS.map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
               </div>
 
               <label className="flex items-center gap-2 cursor-pointer">

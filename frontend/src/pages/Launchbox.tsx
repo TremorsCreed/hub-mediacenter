@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Gamepad2, Search, RefreshCw, Play, Loader2, AlertCircle, RotateCcw, Library, ChevronLeft, ChevronRight } from 'lucide-react'
+import FavoriteButton from '../components/FavoriteButton'
 
 const BASE = '/api/launchbox'
 
@@ -76,42 +77,48 @@ function GameCard({ game, launching, onLaunch }: {
   const isLaunching = launching === game.id
 
   return (
-    <button
-      onClick={() => onLaunch(game.id)}
-      disabled={!!launching}
-      className="group relative flex flex-col bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden hover:border-amber-500/60 transition-colors text-left disabled:opacity-60"
-    >
-      {/* Pochette */}
-      <div className="relative w-full aspect-[3/4] bg-zinc-800 shrink-0">
-        {!imgErr ? (
-          <img
-            src={`${BASE}/image/${game.id}`}
-            alt={game.title}
-            loading="lazy"
-            className="w-full h-full object-cover"
-            onError={() => setImgErr(true)}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <Gamepad2 size={32} className="text-zinc-600" />
+    <div className="relative group">
+      <button
+        onClick={() => onLaunch(game.id)}
+        disabled={!!launching}
+        className="w-full flex flex-col bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden hover:border-amber-500/60 transition-colors text-left disabled:opacity-60"
+      >
+        {/* Pochette */}
+        <div className="relative w-full aspect-[3/4] bg-zinc-800 shrink-0">
+          {!imgErr ? (
+            <img
+              src={`${BASE}/image/${game.id}`}
+              alt={game.title}
+              loading="lazy"
+              className="w-full h-full object-cover"
+              onError={() => setImgErr(true)}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <Gamepad2 size={32} className="text-zinc-600" />
+            </div>
+          )}
+
+          {/* Overlay play */}
+          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+            {isLaunching
+              ? <Loader2 size={28} className="text-amber-400 animate-spin" />
+              : <Play size={28} className="text-white fill-white" />
+            }
           </div>
-        )}
-
-        {/* Overlay play */}
-        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          {isLaunching
-            ? <Loader2 size={28} className="text-amber-400 animate-spin" />
-            : <Play size={28} className="text-white fill-white" />
-          }
         </div>
-      </div>
 
-      {/* Infos */}
-      <div className="p-2 min-w-0">
-        <p className="text-xs font-medium text-zinc-200 truncate leading-tight">{game.title}</p>
-        {game.publisher && <p className="text-[10px] text-zinc-500 truncate mt-0.5">{game.publisher}</p>}
-      </div>
-    </button>
+        {/* Infos */}
+        <div className="p-2 min-w-0">
+          <p className="text-xs font-medium text-zinc-200 truncate leading-tight">{game.title}</p>
+          {game.publisher && <p className="text-[10px] text-zinc-500 truncate mt-0.5">{game.publisher}</p>}
+        </div>
+      </button>
+      <FavoriteButton
+        fav={{ app: 'launchbox', ref_id: game.id, ref_type: game.platform, title: game.title, thumb: `${BASE}/image/${game.id}` }}
+        className="absolute top-2 right-2 w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
+      />
+    </div>
   )
 }
 

@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import AdminSection from './components/AdminSection'
 import AdminGate from './components/AdminGate'
 import ProfileSelect from './pages/ProfileSelect'
+import UserDashboard from './pages/UserDashboard'
 import Dashboard from './pages/Dashboard'
 import Devices from './pages/Devices'
 import Catalog from './pages/Catalog'
@@ -27,7 +28,7 @@ export default function App() {
     <Routes>
       <Route element={<Layout />}>
         {/* Espace membre */}
-        <Route index element={<Navigate to="/catalog" replace />} />
+        <Route index element={<UserDashboard />} />
         <Route path="catalog" element={<Catalog />} />
         <Route path="catalog/plex" element={<Plex />} />
         <Route path="catalog/iptv" element={<Iptv />} />
@@ -46,7 +47,7 @@ export default function App() {
         </Route>
       </Route>
 
-      <Route path="*" element={<Navigate to="/catalog" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }

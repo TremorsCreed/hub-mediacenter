@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, Device, IptvCategory, IptvSeriesInfo, IptvStream } from '../api'
 import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
+import FavoriteButton from '../components/FavoriteButton'
 
 const PAGE_SIZE = 300
 
@@ -389,57 +390,68 @@ export default function Iptv() {
           {type === 'live' ? (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
               {streams.map(s => (
-                <button
-                  key={s.stream_id}
-                  onClick={() => play(s)}
-                  disabled={launching === s.stream_id}
-                  className="group flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded p-2 hover:border-amber-500/60 transition-colors text-left disabled:opacity-50"
-                >
-                  <div className="w-12 h-12 shrink-0 bg-zinc-800 rounded overflow-hidden flex items-center justify-center">
-                    {s.logo ? (
-                      <img src={api.iptv.imageUrl(s.logo)} alt="" loading="lazy" className="w-full h-full object-contain" onError={e => { e.currentTarget.style.display = 'none' }} />
-                    ) : (
-                      <Tv size={18} className="text-zinc-600" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium truncate">{s.name}</div>
-                    <div className="text-[10px] text-zinc-500 mt-0.5">Live · #{s.stream_id}</div>
-                  </div>
-                  {launching === s.stream_id
-                    ? <Loader2 size={14} className="animate-spin text-amber-400" />
-                    : <Play size={12} className="text-zinc-600 group-hover:text-amber-400 transition-colors" fill="currentColor" />
-                  }
-                </button>
+                <div key={s.stream_id} className="group relative">
+                  <button
+                    onClick={() => play(s)}
+                    disabled={launching === s.stream_id}
+                    className="w-full flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded p-2 hover:border-amber-500/60 transition-colors text-left disabled:opacity-50"
+                  >
+                    <div className="w-12 h-12 shrink-0 bg-zinc-800 rounded overflow-hidden flex items-center justify-center">
+                      {s.logo ? (
+                        <img src={api.iptv.imageUrl(s.logo)} alt="" loading="lazy" className="w-full h-full object-contain" onError={e => { e.currentTarget.style.display = 'none' }} />
+                      ) : (
+                        <Tv size={18} className="text-zinc-600" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0 pr-6">
+                      <div className="text-xs font-medium truncate">{s.name}</div>
+                      <div className="text-[10px] text-zinc-500 mt-0.5">Live · #{s.stream_id}</div>
+                    </div>
+                    {launching === s.stream_id
+                      ? <Loader2 size={14} className="animate-spin text-amber-400" />
+                      : <Play size={12} className="text-zinc-600 group-hover:text-amber-400 transition-colors" fill="currentColor" />
+                    }
+                  </button>
+                  <FavoriteButton
+                    fav={{ app: 'iptv', ref_id: s.stream_id, ref_type: s.type, title: s.name, thumb: s.logo }}
+                    size={13}
+                    className="absolute top-1.5 right-1.5 w-6 h-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                  />
+                </div>
               ))}
             </div>
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
               {streams.map(s => (
-                <button
-                  key={s.stream_id}
-                  onClick={() => play(s)}
-                  disabled={launching === s.stream_id}
-                  className="group relative aspect-[2/3] bg-zinc-900 border border-zinc-800 rounded overflow-hidden hover:border-amber-500/60 transition-colors text-left disabled:opacity-50"
-                >
-                  {s.logo ? (
-                    <img src={api.iptv.imageUrl(s.logo)} alt={s.name} loading="lazy" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-zinc-700 text-xs p-2 text-center">{s.name}</div>
-                  )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-2">
-                    <div className="text-xs font-medium line-clamp-2">{s.name}</div>
-                    {s.year && <div className="text-[10px] text-zinc-400 mt-0.5">{s.year}</div>}
-                    <div className="flex items-center gap-1 mt-1.5 text-amber-400 text-xs">
-                      <Play size={11} fill="currentColor" /> Lancer
+                <div key={s.stream_id} className="group relative">
+                  <button
+                    onClick={() => play(s)}
+                    disabled={launching === s.stream_id}
+                    className="w-full aspect-[2/3] bg-zinc-900 border border-zinc-800 rounded overflow-hidden hover:border-amber-500/60 transition-colors text-left disabled:opacity-50 block"
+                  >
+                    {s.logo ? (
+                      <img src={api.iptv.imageUrl(s.logo)} alt={s.name} loading="lazy" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-zinc-700 text-xs p-2 text-center">{s.name}</div>
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-2">
+                      <div className="text-xs font-medium line-clamp-2">{s.name}</div>
+                      {s.year && <div className="text-[10px] text-zinc-400 mt-0.5">{s.year}</div>}
+                      <div className="flex items-center gap-1 mt-1.5 text-amber-400 text-xs">
+                        <Play size={11} fill="currentColor" /> Lancer
+                      </div>
                     </div>
-                  </div>
-                  {launching === s.stream_id && (
-                    <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
-                      <Loader2 size={20} className="animate-spin text-amber-400" />
-                    </div>
-                  )}
-                </button>
+                    {launching === s.stream_id && (
+                      <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+                        <Loader2 size={20} className="animate-spin text-amber-400" />
+                      </div>
+                    )}
+                  </button>
+                  <FavoriteButton
+                    fav={{ app: 'iptv', ref_id: s.stream_id, ref_type: s.type, title: s.name, thumb: s.logo }}
+                    className="absolute top-2 right-2 w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                  />
+                </div>
               ))}
             </div>
           )}

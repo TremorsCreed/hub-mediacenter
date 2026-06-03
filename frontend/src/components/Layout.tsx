@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Library, History, Film, Radio, FolderOpen, Compass, Gamepad2, ChevronLeft, ChevronRight, ShieldCheck } from 'lucide-react'
+import { Library, History, Film, Radio, FolderOpen, Compass, Gamepad2, ChevronLeft, ChevronRight, ShieldCheck, Home } from 'lucide-react'
 import { api } from '../api'
 import { useUser, initials } from '../UserContext'
 
@@ -63,9 +63,14 @@ export default function Layout() {
 
         {/* Navigation */}
         <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden">
+          <NavLink to="/" end title={collapsed ? 'Accueil' : undefined} className={linkClass}>
+            <Home size={15} strokeWidth={1.8} />
+            {!collapsed && 'Accueil'}
+          </NavLink>
+
           {collapsed
-            ? <div className="border-t border-zinc-800/60 mx-2 mb-2" />
-            : <div className="flex items-center gap-3 px-5 pt-1 pb-1 text-[10px] uppercase tracking-widest text-zinc-600 font-medium">
+            ? <div className="border-t border-zinc-800/60 mx-2 my-2" />
+            : <div className="flex items-center gap-3 px-5 pt-3 pb-1 text-[10px] uppercase tracking-widest text-zinc-600 font-medium">
                 <Library size={11} strokeWidth={2} />
                 Catalog
               </div>

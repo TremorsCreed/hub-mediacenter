@@ -40,6 +40,19 @@ export interface User {
   created_at: number
 }
 
+// app : 'iptv' | 'plex' | 'launchbox' | 'catalog'
+export interface FavoriteInput {
+  app: string
+  ref_id: string
+  ref_type?: string
+  title?: string
+  thumb?: string
+}
+export interface Favorite extends FavoriteInput {
+  id: number
+  created_at: number
+}
+
 export interface Device {
   id: string
   name: string
@@ -345,6 +358,11 @@ export const api = {
     update: (id: number, u: { name?: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string | null }) => put<{ ok: boolean }>(`/users/${id}`, u),
     remove: (id: number) => del<{ ok: boolean }>(`/users/${id}`),
     verifyPin: (pin: string) => post<{ ok: boolean; token: string; admin: { id: number; name: string } }>('/users/verify-pin', { pin }),
+  },
+  favorites: {
+    list: () => get<Favorite[]>('/favorites'),
+    add: (f: FavoriteInput) => post<{ ok: boolean }>('/favorites', f),
+    remove: (app: string, ref_id: string) => del<{ ok: boolean }>(`/favorites?app=${encodeURIComponent(app)}&ref_id=${encodeURIComponent(ref_id)}`),
   },
   play: (intent: PlayIntent) => post<{ ok: boolean; title: string; device_id: string; app: string }>('/play', intent),
   credentials: {

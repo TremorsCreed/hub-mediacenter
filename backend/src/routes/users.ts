@@ -9,7 +9,7 @@ const router = Router()
 // N'expose jamais le pin_hash, juste un booléen has_pin.
 router.get('/', async (_req, res) => {
   const { rows } = await db.execute(
-    'SELECT id, name, avatar_color, is_admin, (pin_hash IS NOT NULL) as has_pin, created_at FROM users ORDER BY is_admin DESC, name'
+    'SELECT id, name, avatar_color, is_admin, (pin_hash IS NOT NULL) as has_pin, (nfc_token IS NOT NULL) as has_nfc, created_at FROM users ORDER BY is_admin DESC, name'
   )
   res.json(rows.map((r: any) => ({
     id: r.id,
@@ -17,6 +17,7 @@ router.get('/', async (_req, res) => {
     avatar_color: r.avatar_color,
     is_admin: !!r.is_admin,
     has_pin: !!r.has_pin,
+    has_nfc: !!r.has_nfc,
     created_at: r.created_at,
   })))
 })
@@ -40,25 +41,32 @@ const CreateSchema = z.object({
   avatar_color: z.string().optional(),
   is_admin: z.boolean().optional(),
   pin: z.string().min(4).max(8).optional(),
+  nfc_token: z.string().optional(),
 })
 router.post('/', requireAdmin, async (req, res) => {
   const parsed = CreateSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
-  const { name, avatar_color, is_admin, pin } = parsed.data
+  const { name, avatar_color, is_admin, pin, nfc_token } = parsed.data
   if (is_admin && !pin) return res.status(400).json({ error: 'Un profil admin nécessite un PIN' })
 
-  const { rows } = await db.execute({
-    sql: 'INSERT INTO users (name, avatar_color, is_admin, pin_hash, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id',
-    args: [name, avatar_color ?? '#f59e0b', is_admin ? 1 : 0, is_admin && pin ? hashPin(pin) : null, Date.now()]
-  })
-  res.json({ ok: true, id: (rows[0] as any).id })
+  try {
+    const { rows } = await db.execute({
+      sql: 'INSERT INTO users (name, avatar_color, is_admin, pin_hash, nfc_token, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id',
+      args: [name, avatar_color ?? '#f59e0b', is_admin ? 1 : 0, is_admin && pin ? hashPin(pin) : null, nfc_token?.trim() || null, Date.now()]
+    })
+    res.json({ ok: true, id: (rows[0] as any).id })
+  } catch (e: any) {
+    if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: 'Cette carte NFC est déjà associée à un profil' })
+    throw e
+  }
 })
 
 const UpdateSchema = z.object({
   name: z.string().min(1).max(40).optional(),
   avatar_color: z.string().optional(),
   is_admin: z.boolean().optional(),
-  pin: z.string().min(4).max(8).optional(), // si fourni, (re)définit le PIN
+  pin: z.string().min(4).max(8).optional(),       // si fourni, (re)définit le PIN
+  nfc_token: z.string().nullable().optional(),    // undefined = inchangé · null/'' = retire · valeur = associe
 })
 router.put('/:id', requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10)
@@ -78,17 +86,28 @@ router.put('/:id', requireAdmin, async (req, res) => {
   const newPinHash = parsed.data.pin ? hashPin(parsed.data.pin)
     : (willBeAdmin ? cur.pin_hash : null) // un profil redevenu membre perd son PIN
 
-  await db.execute({
-    sql: 'UPDATE users SET name = ?, avatar_color = ?, is_admin = ?, pin_hash = ? WHERE id = ?',
-    args: [
-      parsed.data.name ?? cur.name,
-      parsed.data.avatar_color ?? cur.avatar_color,
-      willBeAdmin ? 1 : 0,
-      newPinHash,
-      id,
-    ]
-  })
-  res.json({ ok: true })
+  // nfc_token : undefined = inchangé ; null ou '' = retire ; valeur = (ré)associe
+  const newNfc = parsed.data.nfc_token === undefined
+    ? cur.nfc_token
+    : (parsed.data.nfc_token?.trim() || null)
+
+  try {
+    await db.execute({
+      sql: 'UPDATE users SET name = ?, avatar_color = ?, is_admin = ?, pin_hash = ?, nfc_token = ? WHERE id = ?',
+      args: [
+        parsed.data.name ?? cur.name,
+        parsed.data.avatar_color ?? cur.avatar_color,
+        willBeAdmin ? 1 : 0,
+        newPinHash,
+        newNfc,
+        id,
+      ]
+    })
+    res.json({ ok: true })
+  } catch (e: any) {
+    if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: 'Cette carte NFC est déjà associée à un profil' })
+    throw e
+  }
 })
 
 router.delete('/:id', requireAdmin, async (req, res) => {

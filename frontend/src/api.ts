@@ -36,6 +36,7 @@ export interface User {
   avatar_color: string
   is_admin: boolean
   has_pin: boolean
+  has_nfc: boolean
   created_at: number
 }
 
@@ -340,8 +341,8 @@ export const api = {
   },
   users: {
     list: () => get<User[]>('/users'),
-    create: (u: { name: string; avatar_color?: string; is_admin?: boolean; pin?: string }) => post<{ ok: boolean; id: number }>('/users', u),
-    update: (id: number, u: { name?: string; avatar_color?: string; is_admin?: boolean; pin?: string }) => put<{ ok: boolean }>(`/users/${id}`, u),
+    create: (u: { name: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string }) => post<{ ok: boolean; id: number }>('/users', u),
+    update: (id: number, u: { name?: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string | null }) => put<{ ok: boolean }>(`/users/${id}`, u),
     remove: (id: number) => del<{ ok: boolean }>(`/users/${id}`),
     verifyPin: (pin: string) => post<{ ok: boolean; token: string; admin: { id: number; name: string } }>('/users/verify-pin', { pin }),
   },

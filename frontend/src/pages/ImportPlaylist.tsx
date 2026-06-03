@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, ScrapedList, ScrapedListItem, PlexSection, PlaylistItemInput } from '../api'
+import { api, ScrapedList, ScrapedListItem, ScListResult, PlexSection, PlaylistItemInput } from '../api'
 import { useUser } from '../UserContext'
-import { ArrowLeft, Download, Loader2, Link2, Heart, Film, Tv, Check, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Download, Loader2, Link2, Heart, Film, Tv, Check, AlertTriangle, Search } from 'lucide-react'
 
 const LANGS = ['FR', 'EN', 'DE', 'ES', 'IT', 'MULTI']
 
@@ -17,6 +17,10 @@ const titleMatches = (a?: string, b?: string) => {
 export default function ImportPlaylist() {
   const navigate = useNavigate()
   const { currentUser } = useUser()
+  const [mode, setMode] = useState<'search' | 'url'>('search')
+  const [q, setQ] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [results, setResults] = useState<ScListResult[]>([])
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -27,15 +31,26 @@ export default function ImportPlaylist() {
   const [importing, setImporting] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number; matched: number } | null>(null)
 
-  const preview = async () => {
-    if (!url.trim() || loading) return
+  const preview = async (overrideUrl?: string) => {
+    const target = (overrideUrl ?? url).trim()
+    if (!target || loading) return
     setLoading(true); setError(null); setScraped(null)
     try {
-      const r = await api.senscritique.scrape(url.trim())
+      const r = await api.senscritique.scrape(target)
       setScraped(r); setName(r.title)
     } catch (e: any) {
       setError(e.message || 'Échec du chargement')
     } finally { setLoading(false) }
+  }
+
+  const runSearch = async () => {
+    if (q.trim().length < 2 || searching) return
+    setSearching(true); setError(null)
+    try {
+      setResults(await api.senscritique.search(q.trim()))
+    } catch (e: any) {
+      setError(e.message || 'Recherche indisponible')
+    } finally { setSearching(false) }
   }
 
   // Résout un item SensCritique vers Plex (prioritaire) puis IPTV (langue préférée).
@@ -106,25 +121,75 @@ export default function ImportPlaylist() {
 
       <div>
         <h1 className="text-xl font-semibold">Importer une playlist</h1>
-        <p className="text-sm text-zinc-500 mt-1">Colle l'URL d'une liste SensCritique (ex. une chronologie MCU). On la résout vers ton Plex et ton IPTV.</p>
+        <p className="text-sm text-zinc-500 mt-1">Depuis SensCritique (ex. une chronologie MCU). On résout chaque titre vers ton Plex et ton IPTV.</p>
       </div>
 
-      {/* URL */}
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <Link2 size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-          <input
-            value={url}
-            onChange={e => setUrl(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') preview() }}
-            placeholder="https://www.senscritique.com/liste/…"
-            className="w-full bg-zinc-900 border border-zinc-800 rounded pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-amber-500/60"
-          />
-        </div>
-        <button onClick={preview} disabled={!url.trim() || loading} className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 text-sm rounded px-4 hover:border-zinc-500 disabled:opacity-50">
-          {loading ? <Loader2 size={15} className="animate-spin" /> : 'Aperçu'}
+      {/* Onglets */}
+      <div className="flex bg-zinc-900 border border-zinc-800 rounded overflow-hidden w-fit">
+        <button onClick={() => setMode('search')} className={`flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors ${mode === 'search' ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:text-zinc-200'}`}>
+          <Search size={13} /> Rechercher
+        </button>
+        <button onClick={() => setMode('url')} className={`flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors ${mode === 'url' ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:text-zinc-200'}`}>
+          <Link2 size={13} /> Coller une URL
         </button>
       </div>
+
+      {mode === 'url' ? (
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Link2 size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+            <input
+              value={url}
+              onChange={e => setUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') preview() }}
+              placeholder="https://www.senscritique.com/liste/…"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-amber-500/60"
+            />
+          </div>
+          <button onClick={() => preview()} disabled={!url.trim() || loading} className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 text-sm rounded px-4 hover:border-zinc-500 disabled:opacity-50">
+            {loading ? <Loader2 size={15} className="animate-spin" /> : 'Aperçu'}
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input
+                value={q}
+                onChange={e => setQ(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') runSearch() }}
+                placeholder="Rechercher une liste (ex. chronologie MCU, James Bond…)"
+                className="w-full bg-zinc-900 border border-zinc-800 rounded pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-amber-500/60"
+              />
+            </div>
+            <button onClick={runSearch} disabled={q.trim().length < 2 || searching} className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 text-sm rounded px-4 hover:border-zinc-500 disabled:opacity-50">
+              {searching ? <Loader2 size={15} className="animate-spin" /> : 'Chercher'}
+            </button>
+          </div>
+
+          {results.length > 0 && !scraped && (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
+              {results.map(r => (
+                <button
+                  key={r.id}
+                  onClick={() => preview(r.url)}
+                  disabled={loading}
+                  className="group text-left bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden hover:border-amber-500/60 transition-colors disabled:opacity-50"
+                >
+                  <div className="relative aspect-[16/7] bg-zinc-800 overflow-hidden">
+                    {r.cover && <img src={r.cover} alt="" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />}
+                    <span className="absolute top-1.5 right-1.5 flex items-center gap-1 bg-black/65 backdrop-blur-sm rounded px-1.5 py-0.5 text-[10px] text-red-300">
+                      <Heart size={10} fill="currentColor" /> {r.likes}
+                    </span>
+                  </div>
+                  <div className="p-2.5 text-sm font-medium line-clamp-2">{r.title}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {error && <div className="text-sm text-red-400 bg-red-900/20 border border-red-900/40 rounded p-3">{error}</div>}
 

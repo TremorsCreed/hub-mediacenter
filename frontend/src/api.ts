@@ -57,6 +57,13 @@ export interface ScrapedList {
   source_url: string
   items: ScrapedListItem[]
 }
+export interface ScListResult {
+  id: number
+  title: string
+  url: string
+  cover?: string | null
+  likes: number
+}
 
 // app : 'iptv' | 'plex' | 'launchbox' | 'catalog'
 export interface FavoriteInput {
@@ -434,6 +441,7 @@ export const api = {
   },
   senscritique: {
     scrape: (url: string) => post<ScrapedList>('/senscritique/scrape', { url }),
+    search: (q: string) => get<ScListResult[]>(`/senscritique/search?q=${encodeURIComponent(q)}`),
   },
   play: (intent: PlayIntent) => post<{ ok: boolean; title: string; device_id: string; app: string }>('/play', intent),
   credentials: {

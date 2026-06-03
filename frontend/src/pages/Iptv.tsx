@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { api, Device, IptvCategory, IptvSeriesInfo, IptvStream } from '../api'
 import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
 import FavoriteButton from '../components/FavoriteButton'
+import AddToPlaylist from '../components/AddToPlaylist'
 
 const PAGE_SIZE = 300
 
@@ -450,6 +451,10 @@ export default function Iptv() {
                   <FavoriteButton
                     fav={{ app: 'iptv', ref_id: s.stream_id, ref_type: s.type, title: s.name, thumb: s.logo }}
                     className="absolute top-2 right-2 w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                  />
+                  <AddToPlaylist
+                    item={{ app: 'iptv', ref_id: s.stream_id, ref_type: s.type, title: s.name, thumb: s.logo }}
+                    className="absolute top-2 right-11 w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
                   />
                 </div>
               ))}

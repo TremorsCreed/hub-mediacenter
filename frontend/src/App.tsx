@@ -17,6 +17,8 @@ import Discover from './pages/Discover'
 import Credentials from './pages/Credentials'
 import Launchbox from './pages/Launchbox'
 import Profiles from './pages/Profiles'
+import Playlists from './pages/Playlists'
+import PlaylistDetail from './pages/PlaylistDetail'
 
 export default function App() {
   const { currentUser, loading } = useUser()
@@ -34,6 +36,8 @@ export default function App() {
         <Route path="catalog/iptv" element={<Iptv />} />
         <Route path="catalog/discover" element={<Discover />} />
         <Route path="catalog/launchbox" element={<Launchbox />} />
+        <Route path="playlists" element={<Playlists />} />
+        <Route path="playlists/:id" element={<PlaylistDetail />} />
         <Route path="history" element={<History />} />
         <Route path="play" element={<PlayPage />} />
 

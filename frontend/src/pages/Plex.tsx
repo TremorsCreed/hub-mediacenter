@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { api, Device, PlexItem, PlexOnDeckItem, PlexSection, PlexShowDetail } from '../api'
 import { Search, Play, Loader2, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, X, ChevronDown, Check, Film, Tv, Music, Image, Library } from 'lucide-react'
 import FavoriteButton from '../components/FavoriteButton'
+import AddToPlaylist from '../components/AddToPlaylist'
 
 const SECTION_ICONS: Record<string, typeof Library> = {
   movie: Film,
@@ -434,6 +435,10 @@ export default function Plex() {
               <FavoriteButton
                 fav={{ app: 'plex', ref_id: item.ratingKey, ref_type: item.type, title: item.title, thumb: item.thumb }}
                 className="absolute top-1.5 left-1.5 z-10 w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
+              />
+              <AddToPlaylist
+                item={{ app: 'plex', ref_id: item.ratingKey, ref_type: item.type, title: item.title, year: item.year, thumb: item.thumb }}
+                className="absolute top-1.5 left-10 z-10 w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
               />
 
               {/* Mini bouton "recommencer du début" sur les en-cours (visible au hover) */}

@@ -53,6 +53,46 @@ export interface Favorite extends FavoriteInput {
   created_at: number
 }
 
+export interface PlaylistItem {
+  id: number
+  playlist_id: number
+  position: number
+  app: string
+  ref_id?: string
+  ref_type?: string
+  title?: string
+  year?: number
+  thumb?: string
+  lang?: string
+  status: 'resolved' | 'missing'
+  created_at: number
+}
+export interface Playlist {
+  id: number
+  owner_user_id: number
+  owner_name?: string
+  name: string
+  description?: string
+  cover?: string
+  is_shared: number
+  source: string
+  source_url?: string
+  item_count?: number
+  created_at: number
+  updated_at: number
+  items?: PlaylistItem[]
+}
+export interface PlaylistItemInput {
+  app: string
+  ref_id?: string
+  ref_type?: string
+  title?: string
+  year?: number
+  thumb?: string
+  lang?: string
+  status?: 'resolved' | 'missing'
+}
+
 export interface Device {
   id: string
   name: string
@@ -363,6 +403,16 @@ export const api = {
     list: () => get<Favorite[]>('/favorites'),
     add: (f: FavoriteInput) => post<{ ok: boolean }>('/favorites', f),
     remove: (app: string, ref_id: string) => del<{ ok: boolean }>(`/favorites?app=${encodeURIComponent(app)}&ref_id=${encodeURIComponent(ref_id)}`),
+  },
+  playlists: {
+    list: () => get<Playlist[]>('/playlists'),
+    get: (id: number) => get<Playlist>(`/playlists/${id}`),
+    create: (p: { name: string; description?: string; cover?: string; is_shared?: boolean; source?: string; source_url?: string }) => post<{ ok: boolean; id: number }>('/playlists', p),
+    update: (id: number, p: { name?: string; description?: string | null; cover?: string | null; is_shared?: boolean }) => put<{ ok: boolean }>(`/playlists/${id}`, p),
+    remove: (id: number) => del<{ ok: boolean }>(`/playlists/${id}`),
+    addItem: (id: number, item: PlaylistItemInput) => post<{ ok: boolean; id: number }>(`/playlists/${id}/items`, item),
+    removeItem: (id: number, itemId: number) => del<{ ok: boolean }>(`/playlists/${id}/items/${itemId}`),
+    reorder: (id: number, order: number[]) => put<{ ok: boolean }>(`/playlists/${id}/reorder`, { order }),
   },
   play: (intent: PlayIntent) => post<{ ok: boolean; title: string; device_id: string; app: string }>('/play', intent),
   credentials: {

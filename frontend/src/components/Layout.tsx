@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Library, History, Film, Radio, FolderOpen, Compass, Gamepad2, ChevronLeft, ChevronRight, ShieldCheck, Home } from 'lucide-react'
+import { Library, History, Film, Radio, FolderOpen, Compass, Gamepad2, ChevronLeft, ChevronRight, ShieldCheck, Home, ListVideo } from 'lucide-react'
 import { api } from '../api'
 import { useUser, initials } from '../UserContext'
 
@@ -106,6 +106,11 @@ export default function Layout() {
           )}
 
           <div className="h-3" />
+
+          <NavLink to="/playlists" title={collapsed ? 'Playlists' : undefined} className={linkClass}>
+            <ListVideo size={15} strokeWidth={1.8} />
+            {!collapsed && 'Playlists'}
+          </NavLink>
 
           <NavLink to="/history" title={collapsed ? 'History' : undefined} className={linkClass}>
             <History size={15} strokeWidth={1.8} />

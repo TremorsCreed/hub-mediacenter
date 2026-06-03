@@ -125,6 +125,37 @@ export async function initDb() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);
+
+    CREATE TABLE IF NOT EXISTS playlists (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner_user_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      cover TEXT,
+      is_shared INTEGER NOT NULL DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'manual',
+      source_url TEXT,
+      created_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS playlist_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      playlist_id INTEGER NOT NULL,
+      position INTEGER NOT NULL DEFAULT 0,
+      app TEXT NOT NULL DEFAULT 'unresolved',
+      ref_id TEXT,
+      ref_type TEXT,
+      title TEXT,
+      year INTEGER,
+      thumb TEXT,
+      lang TEXT,
+      status TEXT NOT NULL DEFAULT 'resolved',
+      created_at INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_playlist_items_pl ON playlist_items(playlist_id, position);
   `)
 
   // Migrations idempotentes (ALTER TABLE échoue silencieusement si la colonne existe)

@@ -142,7 +142,8 @@ export default function Plex() {
   const sentinelRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
   const fetchedRef = useRef(0)
-  const [sectionsCollapsed, setSectionsCollapsed] = useState(() => localStorage.getItem('plex.sections.collapsed') === 'true')
+  // Cascade : développée à l'entrée du module (la sidebar système, elle, se réduit)
+  const [sectionsCollapsed, setSectionsCollapsed] = useState(false)
   const [devices, setDevices] = useState<Device[]>([])
   const [deviceId, setDeviceId] = useState<string>('')
   const [launching, setLaunching] = useState<string | null>(null)
@@ -170,10 +171,6 @@ export default function Plex() {
   useEffect(() => {
     if (sections.length && !sectionId) setSectionId(sections[0].id)
   }, [sections])
-
-  useEffect(() => {
-    localStorage.setItem('plex.sections.collapsed', String(sectionsCollapsed))
-  }, [sectionsCollapsed])
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 350)

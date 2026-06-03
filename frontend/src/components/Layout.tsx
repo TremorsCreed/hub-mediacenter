@@ -17,21 +17,17 @@ const bottomNav = [
 
 export default function Layout() {
   const [modules, setModules] = useState<{ plex: boolean; iptv: boolean; discover: boolean; launchbox: boolean }>({ plex: false, iptv: false, discover: false, launchbox: false })
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar.collapsed') === 'true')
+  const [collapsed, setCollapsed] = useState(false)
   const location = useLocation()
   // Modules « immersifs » qui gèrent leur propre layout interne (sidebars latérales)
   const IMMERSIVE_PATHS = ['/catalog/iptv', '/catalog/plex', '/catalog/launchbox']
   const isImmersive = IMMERSIVE_PATHS.includes(location.pathname)
 
-  // Auto-réduire la sidebar quand on entre dans un module immersif
+  // Cascade : la sidebar système se réduit en entrant dans un module immersif,
+  // et se redéveloppe en revenant sur une route classique.
   useEffect(() => {
-    if (isImmersive) setCollapsed(true)
+    setCollapsed(isImmersive)
   }, [isImmersive])
-
-  // Persistance de l'état collapsed
-  useEffect(() => {
-    localStorage.setItem('sidebar.collapsed', String(collapsed))
-  }, [collapsed])
 
   const refreshModules = useCallback(() => {
     Promise.all([

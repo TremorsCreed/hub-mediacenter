@@ -48,11 +48,9 @@ export default function Iptv() {
     try { return JSON.parse(localStorage.getItem(LANG_PREFS_KEY) ?? '["FR","EN"]') } catch { return ['FR', 'EN'] }
   })
   const [langPanelOpen, setLangPanelOpen] = useState(false)
-  const [mediaCollapsed, setMediaCollapsed] = useState(() => localStorage.getItem('iptv.media.collapsed') === 'true')
-
-  useEffect(() => {
-    localStorage.setItem('iptv.media.collapsed', String(mediaCollapsed))
-  }, [mediaCollapsed])
+  // Cascade : média développé à l'entrée du module ; se réduit au clic d'un type
+  // pour laisser apparaître la sidebar catégories.
+  const [mediaCollapsed, setMediaCollapsed] = useState(false)
 
   useEffect(() => {
     api.iptv.credentials().then(c => {
@@ -262,8 +260,8 @@ export default function Iptv() {
         </div>
       </aside>
 
-      {/* ── Sidebar catégories (TV / Films / Séries) ──────────────── */}
-      <aside className="w-48 shrink-0 bg-zinc-950/40 border-r border-zinc-800 flex flex-col">
+      {/* ── Sidebar catégories (apparaît quand un type est ouvert) ── */}
+      <aside className={`${mediaCollapsed ? 'w-48 border-r border-zinc-800' : 'w-0'} shrink-0 bg-zinc-950/40 flex flex-col transition-[width] duration-200 overflow-hidden`}>
         <div className="h-[53px] shrink-0 flex items-center px-3 border-b border-zinc-800 text-[10px] uppercase tracking-widest text-zinc-600 font-medium">
           Catégories
         </div>

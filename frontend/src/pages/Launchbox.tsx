@@ -129,15 +129,12 @@ export default function Launchbox() {
   const [launchMsg, setLaunchMsg] = useState<string | null>(null)
   const [reloading, setReloading] = useState(false)
   const [resetting, setResetting] = useState(false)
-  const [platformsCollapsed, setPlatformsCollapsed] = useState(() => localStorage.getItem('launchbox.platforms.collapsed') === 'true')
+  // Cascade : développée à l'entrée du module (la sidebar système, elle, se réduit)
+  const [platformsCollapsed, setPlatformsCollapsed] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
   const fetchedRef = useRef(0)
-
-  useEffect(() => {
-    localStorage.setItem('launchbox.platforms.collapsed', String(platformsCollapsed))
-  }, [platformsCollapsed])
 
   // Charger les plateformes au montage
   useEffect(() => {

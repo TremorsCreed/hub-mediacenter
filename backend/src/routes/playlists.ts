@@ -124,6 +124,7 @@ const ItemSchema = z.object({
   year: z.number().optional(),
   thumb: z.string().optional(),
   lang: z.string().optional(),
+  ext: z.string().optional(),
   status: z.enum(['resolved', 'missing']).optional(),
 })
 router.post('/:id/items', async (req, res) => {
@@ -136,9 +137,9 @@ router.post('/:id/items', async (req, res) => {
   const { rows: maxRows } = await db.execute({ sql: 'SELECT COALESCE(MAX(position), -1) + 1 as pos FROM playlist_items WHERE playlist_id = ?', args: [pl.id] })
   const pos = Number((maxRows[0] as any).pos)
   const { rows } = await db.execute({
-    sql: `INSERT INTO playlist_items (playlist_id, position, app, ref_id, ref_type, title, year, thumb, lang, status, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-    args: [pl.id, pos, d.app, d.ref_id ?? null, d.ref_type ?? null, d.title ?? null, d.year ?? null, d.thumb ?? null, d.lang ?? null, d.status ?? 'resolved', Date.now()],
+    sql: `INSERT INTO playlist_items (playlist_id, position, app, ref_id, ref_type, title, year, thumb, lang, ext, status, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+    args: [pl.id, pos, d.app, d.ref_id ?? null, d.ref_type ?? null, d.title ?? null, d.year ?? null, d.thumb ?? null, d.lang ?? null, d.ext ?? null, d.status ?? 'resolved', Date.now()],
   })
   await db.execute({ sql: 'UPDATE playlists SET updated_at = ? WHERE id = ?', args: [Date.now(), pl.id] })
   res.json({ ok: true, id: (rows[0] as any).id })

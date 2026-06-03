@@ -10,10 +10,11 @@ import { ListVideo, Plus, Check } from 'lucide-react'
 
 // ── Wrapper rendant un contenu glissable vers le dock playlists ───────────────
 // Appui long ~1s pour démarrer le drag (le tap continue de déclencher la lecture).
-export function DraggableMedia({ id, item, children, className = '' }: {
-  id: string; item: PlaylistItemInput; children: ReactNode; className?: string
+// `item` pour un élément unique, ou `items` pour un lot (ex. une saison entière).
+export function DraggableMedia({ id, item, items, label, children, className = '' }: {
+  id: string; item?: PlaylistItemInput; items?: PlaylistItemInput[]; label?: string; children: ReactNode; className?: string
 }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, data: { item } })
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, data: { item, items, label } })
   return (
     <div ref={setNodeRef} {...attributes} {...listeners}
       className={`${className} ${isDragging ? 'opacity-40' : ''}`}>
@@ -45,15 +46,20 @@ export const useCatalogDnd = () => useContext(Ctx)
 export function CatalogDndProvider({ children }: { children: ReactNode }) {
   const { currentUser, adminUnlocked } = useUser()
   const [dragging, setDragging] = useState(false)
-  const [preview, setPreview] = useState<PlaylistItemInput | null>(null)
+  const [previewLabel, setPreviewLabel] = useState<string | null>(null)
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [toast, setToast] = useState<string | null>(null)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { delay: 1000, tolerance: 8 } }))
 
+  const dragItems = (data: any): PlaylistItemInput[] =>
+    (data?.items as PlaylistItemInput[]) ?? (data?.item ? [data.item as PlaylistItemInput] : [])
+
   const onStart = useCallback((e: DragStartEvent) => {
     setDragging(true)
-    setPreview((e.active.data.current as any)?.item ?? null)
+    const data = e.active.data.current as any
+    const list = dragItems(data)
+    setPreviewLabel(data?.label ?? (list.length > 1 ? `${list.length} éléments` : list[0]?.title ?? 'Élément'))
     api.playlists.list()
       .then(ls => setPlaylists(ls.filter(p => adminUnlocked || p.owner_user_id === currentUser?.id)))
       .catch(() => setPlaylists([]))
@@ -61,24 +67,25 @@ export function CatalogDndProvider({ children }: { children: ReactNode }) {
 
   const onEnd = useCallback(async (e: DragEndEvent) => {
     setDragging(false)
-    const item = (e.active.data.current as any)?.item as PlaylistItemInput | undefined
+    const list = dragItems(e.active.data.current)
     const overId = e.over?.id ? String(e.over.id) : ''
-    setPreview(null)
-    if (item && overId.startsWith('pl-')) {
+    setPreviewLabel(null)
+    if (list.length && overId.startsWith('pl-')) {
       const plId = Number(overId.slice(3))
       const pl = playlists.find(p => p.id === plId)
-      try {
-        await api.playlists.addItem(plId, item)
-        setPlaylists(prev => prev.map(p => p.id === plId ? { ...p, item_count: (p.item_count ?? 0) + 1 } : p))
-        setToast(`Ajouté à « ${pl?.name ?? 'la playlist'} »`)
-        setTimeout(() => setToast(null), 2500)
-      } catch { /* */ }
+      let added = 0
+      for (const it of list) {
+        try { await api.playlists.addItem(plId, it); added++ } catch { /* */ }
+      }
+      setPlaylists(prev => prev.map(p => p.id === plId ? { ...p, item_count: (p.item_count ?? 0) + added } : p))
+      setToast(added > 1 ? `${added} ajoutés à « ${pl?.name ?? 'la playlist'} »` : `Ajouté à « ${pl?.name ?? 'la playlist'} »`)
+      setTimeout(() => setToast(null), 2500)
     }
   }, [playlists])
 
   return (
     <Ctx.Provider value={{ dragging }}>
-      <DndContext sensors={sensors} onDragStart={onStart} onDragEnd={onEnd} onDragCancel={() => { setDragging(false); setPreview(null) }}>
+      <DndContext sensors={sensors} onDragStart={onStart} onDragEnd={onEnd} onDragCancel={() => { setDragging(false); setPreviewLabel(null) }}>
         {children}
 
         {/* Dock playlists : visible uniquement pendant un drag */}
@@ -95,10 +102,10 @@ export function CatalogDndProvider({ children }: { children: ReactNode }) {
 
         {/* Aperçu suivant le curseur pendant le drag */}
         <DragOverlay dropAnimation={null}>
-          {preview ? (
+          {previewLabel ? (
             <div className="flex items-center gap-2 bg-zinc-900 border border-amber-500/60 rounded-lg px-3 py-2 shadow-xl max-w-[220px]">
               <Plus size={14} className="text-amber-400 shrink-0" />
-              <span className="text-sm truncate">{preview.title ?? 'Élément'}</span>
+              <span className="text-sm truncate">{previewLabel}</span>
             </div>
           ) : null}
         </DragOverlay>

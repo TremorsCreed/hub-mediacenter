@@ -525,17 +525,23 @@ export default function Plex() {
                 const allViewed = season.viewed_count >= season.episode_count
                 return (
                   <div key={season.ratingKey} className="border-t border-zinc-800 first:border-t-0">
-                    <button
-                      onClick={() => toggleSeason(season.season_number)}
-                      className="w-full flex items-center gap-2 py-3 text-left hover:text-amber-400 transition-colors"
+                    <DraggableMedia
+                      id={`plex-season-${season.ratingKey}`}
+                      items={season.episodes.map(ep => ({ app: 'plex', ref_id: ep.ratingKey, ref_type: 'episode', title: `${selectedShow?.title} — S${season.season_number}E${ep.episode_number} ${ep.title}`, thumb: ep.thumb || selectedShow?.thumb }))}
+                      label={`${season.title} (${season.episode_count} ép.)`}
                     >
-                      <ChevronDown size={16} className={`transition-transform ${isOpen ? '' : '-rotate-90'}`} />
-                      <span className="font-medium">{season.title}</span>
-                      <span className="text-xs text-zinc-500">
-                        · {season.viewed_count}/{season.episode_count}
-                      </span>
-                      {allViewed && <Check size={12} className="text-green-500 ml-1" />}
-                    </button>
+                      <button
+                        onClick={() => toggleSeason(season.season_number)}
+                        className="w-full flex items-center gap-2 py-3 text-left hover:text-amber-400 transition-colors"
+                      >
+                        <ChevronDown size={16} className={`transition-transform ${isOpen ? '' : '-rotate-90'}`} />
+                        <span className="font-medium">{season.title}</span>
+                        <span className="text-xs text-zinc-500">
+                          · {season.viewed_count}/{season.episode_count}
+                        </span>
+                        {allViewed && <Check size={12} className="text-green-500 ml-1" />}
+                      </button>
+                    </DraggableMedia>
                     {isOpen && (
                       <div className="space-y-1 pb-3">
                         {season.episodes.map(ep => {

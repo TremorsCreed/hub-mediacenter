@@ -529,34 +529,46 @@ export default function Iptv() {
               )}
               {!loadingSeries && seriesInfo?.seasons.map(season => {
                 const isOpen = openSeasons.has(season.season_number)
+                const epItem = (ep: typeof season.episodes[number]) => ({
+                  app: 'iptv', ref_id: ep.episode_id, ref_type: 'series',
+                  title: `${selectedSeries.name} — S${season.season_number}E${ep.episode_num} ${ep.title}`,
+                  thumb: selectedSeries.logo, ext: ep.container_extension,
+                })
                 return (
                   <div key={season.season_number} className="border-t border-zinc-800 first:border-t-0">
-                    <button
-                      onClick={() => toggleSeason(season.season_number)}
-                      className="w-full flex items-center gap-2 py-3 text-left hover:text-amber-400 transition-colors"
+                    <DraggableMedia
+                      id={`iptv-season-${season.season_number}`}
+                      items={season.episodes.map(epItem)}
+                      label={`${season.name} (${season.episode_count} ép.)`}
                     >
-                      {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                      <span className="font-medium">{season.name}</span>
-                      <span className="text-xs text-zinc-500">· {season.episode_count} épisode{season.episode_count > 1 ? 's' : ''}</span>
-                    </button>
+                      <button
+                        onClick={() => toggleSeason(season.season_number)}
+                        className="w-full flex items-center gap-2 py-3 text-left hover:text-amber-400 transition-colors"
+                      >
+                        {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        <span className="font-medium">{season.name}</span>
+                        <span className="text-xs text-zinc-500">· {season.episode_count} épisode{season.episode_count > 1 ? 's' : ''}</span>
+                      </button>
+                    </DraggableMedia>
                     {isOpen && (
                       <div className="space-y-1 pb-3">
                         {season.episodes.map(ep => {
                           const busy = launching === `ep-${ep.episode_id}`
                           return (
-                            <button
-                              key={ep.episode_id}
-                              onClick={() => playEpisode(ep.episode_id, ep.container_extension, `${selectedSeries.name} — S${season.season_number}E${ep.episode_num} ${ep.title}`)}
-                              disabled={busy}
-                              className="w-full flex items-center gap-3 px-2 py-2 rounded hover:bg-zinc-800 text-left disabled:opacity-50 transition-colors"
-                            >
-                              <div className="text-xs text-zinc-500 w-12 shrink-0">S{season.season_number}E{ep.episode_num}</div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm truncate">{ep.title}</div>
-                                {ep.air_date && <div className="text-[11px] text-zinc-600">{ep.air_date}</div>}
-                              </div>
-                              {busy ? <Loader2 size={14} className="animate-spin text-amber-400" /> : <Play size={12} className="text-zinc-600" fill="currentColor" />}
-                            </button>
+                            <DraggableMedia key={ep.episode_id} id={`iptv-ep-${ep.episode_id}`} item={epItem(ep)}>
+                              <button
+                                onClick={() => playEpisode(ep.episode_id, ep.container_extension, `${selectedSeries.name} — S${season.season_number}E${ep.episode_num} ${ep.title}`)}
+                                disabled={busy}
+                                className="w-full flex items-center gap-3 px-2 py-2 rounded hover:bg-zinc-800 text-left disabled:opacity-50 transition-colors"
+                              >
+                                <div className="text-xs text-zinc-500 w-12 shrink-0">S{season.season_number}E{ep.episode_num}</div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm truncate">{ep.title}</div>
+                                  {ep.air_date && <div className="text-[11px] text-zinc-600">{ep.air_date}</div>}
+                                </div>
+                                {busy ? <Loader2 size={14} className="animate-spin text-amber-400" /> : <Play size={12} className="text-zinc-600" fill="currentColor" />}
+                              </button>
+                            </DraggableMedia>
                           )
                         })}
                       </div>

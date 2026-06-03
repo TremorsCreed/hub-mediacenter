@@ -84,6 +84,18 @@ router.delete('/history', async (req, res) => {
   res.json({ ok: true })
 })
 
+// GET /played — identifiants (catalog_id = entry.id) déjà lancés par le profil
+// courant. Sert à marquer les items « vus » dans une playlist (pastille verte).
+router.get('/played', async (req, res) => {
+  const userId = (req as any).userId as number | null
+  if (userId == null) return res.json([])
+  const { rows } = await db.execute({
+    sql: 'SELECT DISTINCT catalog_id FROM playback_history WHERE user_id = ? AND catalog_id IS NOT NULL',
+    args: [userId],
+  })
+  res.json(rows.map((r: any) => r.catalog_id))
+})
+
 router.get('/:device_id', async (req, res) => {
   const { rows } = await db.execute({
     sql: `SELECT ps.*, d.name as device_name, c.title

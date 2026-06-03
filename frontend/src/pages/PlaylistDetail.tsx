@@ -9,8 +9,15 @@ import { api, Device, Playlist, PlaylistItem } from '../api'
 import { useUser } from '../UserContext'
 import {
   ArrowLeft, Play, Loader2, Trash2, GripVertical, Film, Tv, Gamepad2, Radio, MonitorPlay,
-  Users, Lock, AlertTriangle,
+  Users, Lock, AlertTriangle, Check,
 } from 'lucide-react'
+
+// Reconstruit l'identifiant d'historique (entry.id) d'un item pour le marquage « vu ».
+const playedKey = (it: PlaylistItem): string | null => {
+  if (it.app === 'plex' && it.ref_id) return `plex:${it.ref_id}`
+  if (it.app === 'iptv' && it.ref_id) return `iptv:${it.ref_type ?? 'vod'}:${it.ref_id}`
+  return null
+}
 
 const APP_ICON: Record<string, typeof Tv> = { iptv: Radio, plex: Film, launchbox: Gamepad2, catalog: MonitorPlay }
 
@@ -21,9 +28,9 @@ function itemImg(it: PlaylistItem): string {
   return api.iptv.imageUrl(it.thumb)
 }
 
-function SortableRow({ it, index, canEdit, onPlay, onRemove, busy }: {
+function SortableRow({ it, index, canEdit, onPlay, onRemove, busy, watched }: {
   it: PlaylistItem; index: number; canEdit: boolean
-  onPlay: (it: PlaylistItem) => void; onRemove: (it: PlaylistItem) => void; busy: boolean
+  onPlay: (it: PlaylistItem) => void; onRemove: (it: PlaylistItem) => void; busy: boolean; watched: boolean
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: it.id })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
@@ -40,10 +47,15 @@ function SortableRow({ it, index, canEdit, onPlay, onRemove, busy }: {
       >
         {canEdit && <GripVertical size={16} className="text-zinc-600 shrink-0" />}
         <span className="text-xs text-zinc-500 w-5 text-right shrink-0">{index + 1}</span>
-        <div className="w-10 h-14 rounded bg-zinc-800 overflow-hidden shrink-0 flex items-center justify-center">
+        <div className="relative w-10 h-14 rounded bg-zinc-800 overflow-hidden shrink-0 flex items-center justify-center">
           {itemImg(it)
             ? <img src={itemImg(it)} alt="" loading="lazy" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
             : <Icon size={16} className="text-zinc-600" />}
+          {watched && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-green-500 ring-2 ring-zinc-900 flex items-center justify-center" title="Déjà lancé">
+              <Check size={10} className="text-black" strokeWidth={3} />
+            </span>
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium truncate flex items-center gap-1.5">
@@ -82,6 +94,7 @@ export default function PlaylistDetail() {
   const [deviceId, setDeviceId] = useState('')
   const [busy, setBusy] = useState<number | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [played, setPlayed] = useState<Set<string>>(new Set())
 
   const canEdit = !!pl && (adminUnlocked || pl.owner_user_id === currentUser?.id)
 
@@ -93,6 +106,10 @@ export default function PlaylistDetail() {
 
   const load = () => api.playlists.get(plId).then(p => { setPl(p); setItems(p.items ?? []) }).catch(() => navigate('/playlists'))
   useEffect(() => { load() }, [plId])
+
+  // Marquage « vu » : identifiants déjà lancés par le profil courant
+  const loadPlayed = () => api.state.played().then(arr => setPlayed(new Set(arr))).catch(() => {})
+  useEffect(() => { loadPlayed() }, [])
 
   useEffect(() => {
     api.devices.list().then(ds => {
@@ -135,12 +152,15 @@ export default function PlaylistDetail() {
         if (!r.ok) throw new Error('échec')
         flash(`▶ ${it.title}`, true)
       } else if (it.app === 'iptv') {
-        const r = await api.play({ iptv_stream_id: it.ref_id, iptv_type: (it.ref_type as any) ?? 'vod', title: it.title, thumb: it.thumb, app: 'iptv', device_id: deviceId, requester: 'manual' })
+        const r = await api.play({ iptv_stream_id: it.ref_id, iptv_type: (it.ref_type as any) ?? 'vod', iptv_ext: it.ext, title: it.title, thumb: it.thumb, app: 'iptv', device_id: deviceId, requester: 'manual' })
         flash(`▶ ${r.title}`, true)
       } else if (it.app === 'plex') {
-        const r = await api.play({ plex_id: it.ref_id, title: it.title, thumb: it.thumb, app: 'plex', device_id: deviceId, requester: 'manual' })
+        const r = await api.play({ plex_id: it.ref_id, title: it.title, thumb: it.thumb, resume: true, app: 'plex', device_id: deviceId, requester: 'manual' })
         flash(`▶ ${r.title}`, true)
       }
+      // rafraîchit le marquage « vu » après un lancement
+      const k = playedKey(it)
+      if (k) setPlayed(prev => new Set(prev).add(k))
     } catch (e: any) {
       flash(`Échec : ${e.message}`, false)
     } finally {
@@ -209,9 +229,12 @@ export default function PlaylistDetail() {
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}>
             <div className="space-y-1.5">
-              {items.map((it, idx) => (
-                <SortableRow key={it.id} it={it} index={idx} canEdit={canEdit} onPlay={play} onRemove={removeItem} busy={busy === it.id} />
-              ))}
+              {items.map((it, idx) => {
+                const k = playedKey(it)
+                return (
+                  <SortableRow key={it.id} it={it} index={idx} canEdit={canEdit} onPlay={play} onRemove={removeItem} busy={busy === it.id} watched={!!k && played.has(k)} />
+                )
+              })}
             </div>
           </SortableContext>
         </DndContext>

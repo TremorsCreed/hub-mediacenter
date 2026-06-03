@@ -89,6 +89,7 @@ export interface PlaylistItem {
   year?: number
   thumb?: string
   lang?: string
+  ext?: string
   status: 'resolved' | 'missing'
   created_at: number
 }
@@ -115,6 +116,7 @@ export interface PlaylistItemInput {
   year?: number
   thumb?: string
   lang?: string
+  ext?: string
   status?: 'resolved' | 'missing'
 }
 
@@ -416,6 +418,7 @@ export const api = {
     history: (userFilter?: string) => get<HistoryEntry[]>(`/state/history${userFilter ? `?user_id=${userFilter}` : ''}`),
     deleteHistory: (id: number) => del<{ ok: boolean }>(`/state/history/${id}`),
     clearHistory: (userFilter?: string) => del<{ ok: boolean }>(`/state/history${userFilter ? `?user_id=${userFilter}` : ''}`),
+    played: () => get<string[]>('/state/played'),
   },
   users: {
     list: () => get<User[]>('/users'),

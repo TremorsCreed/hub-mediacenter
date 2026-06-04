@@ -10,3 +10,9 @@ body {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
+
+/* Anneau « hold-to-drag » : se remplit de 0 à la circonférence (2π·16 ≈ 100.53) */
+@keyframes holdFill {
+  from { stroke-dashoffset: 100.53; }
+  to { stroke-dashoffset: 0; }
+}

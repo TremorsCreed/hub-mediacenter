@@ -152,7 +152,7 @@ export default function PlaylistDetail() {
         if (!r.ok) throw new Error('échec')
         flash(`▶ ${it.title}`, true)
       } else if (it.app === 'iptv') {
-        const r = await api.play({ iptv_stream_id: it.ref_id, iptv_type: (it.ref_type as any) ?? 'vod', iptv_ext: it.ext, title: it.title, thumb: it.thumb, app: 'iptv', device_id: deviceId, requester: 'manual' })
+        const r = await api.play({ iptv_stream_id: it.ref_id, iptv_type: (it.ref_type as any) ?? 'vod', iptv_ext: it.ext ?? undefined, title: it.title, thumb: it.thumb, app: 'iptv', device_id: deviceId, requester: 'manual' })
         flash(`▶ ${r.title}`, true)
       } else if (it.app === 'plex') {
         const r = await api.play({ plex_id: it.ref_id, title: it.title, thumb: it.thumb, resume: true, app: 'plex', device_id: deviceId, requester: 'manual' })

@@ -186,11 +186,12 @@ const PlaySchema = z.object({
   plex_id: z.string().optional(),
   iptv_stream_id: z.string().optional(),
   iptv_type: z.enum(['live', 'vod', 'series']).optional(),
-  iptv_ext: z.string().optional(),  // container_extension (pour series episode)
-  external_url: z.string().optional(),                 // URL pour deep link (Netflix, Disney+, ...)
-  external_platform: z.string().optional(),            // ex "netflix", "disney+", "primevideo"
-  title: z.string().optional(),
-  thumb: z.string().optional(),
+  // nullable→undefined : les items de playlist envoient null pour les champs vides
+  iptv_ext: z.string().nullable().optional().transform(v => v ?? undefined),  // container_extension (series episode)
+  external_url: z.string().nullable().optional().transform(v => v ?? undefined),
+  external_platform: z.string().nullable().optional().transform(v => v ?? undefined),
+  title: z.string().nullable().optional().transform(v => v ?? undefined),
+  thumb: z.string().nullable().optional().transform(v => v ?? undefined),
   resume: z.boolean().optional(),
   device_id: z.string().optional(),
   app: z.string().optional(),

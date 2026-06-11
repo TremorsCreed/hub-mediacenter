@@ -20,14 +20,33 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
     companion object {
         private const val TAG = "XtreamLauncher"
 
-        // Prefer these players if installed — ordered by quality for IPTV
-        private val PREFERRED_PLAYERS = listOf(
-            "org.videolan.vlc",              // VLC
-            "com.mxtech.videoplayer.ad",     // MX Player (free)
-            "com.mxtech.videoplayer.pro",    // MX Player Pro
-            "ar.tvplayer.tv",                // TiviMate (fallback)
-            "com.amazon.firetv.tvplayer",    // Fire TV built-in
+        // Packages par lecteur (plusieurs variantes possibles)
+        private val PKGS_BY_PLAYER = mapOf(
+            "mxplayer" to listOf("com.mxtech.videoplayer.pro", "com.mxtech.videoplayer.ad"),
+            "vlc" to listOf("org.videolan.vlc"),
+            "tivimate" to listOf("ar.tvplayer.tv"),
         )
+
+        // Ordre "auto" : MX Player préféré (plus robuste sur le TS IPTV), puis VLC, etc.
+        private val AUTO_ORDER = listOf(
+            "com.mxtech.videoplayer.pro",
+            "com.mxtech.videoplayer.ad",
+            "org.videolan.vlc",
+            "ar.tvplayer.tv",
+            "com.amazon.firetv.tvplayer",
+        )
+    }
+
+    // Choisit le package du lecteur selon la préférence (cmd.player), avec repli.
+    private fun pickPlayer(pm: android.content.pm.PackageManager, pref: String?): String? {
+        fun installed(pkg: String) = pm.getLaunchIntentForPackage(pkg) != null
+        val choice = (pref ?: "auto").lowercase()
+        if (choice != "auto" && PKGS_BY_PLAYER.containsKey(choice)) {
+            // Lecteur explicite : si installé on l'utilise, sinon on retombe sur l'auto
+            PKGS_BY_PLAYER[choice]!!.firstOrNull { installed(it) }?.let { return it }
+            Log.w(TAG, "lecteur '$choice' non installé, repli sur auto")
+        }
+        return AUTO_ORDER.firstOrNull { installed(it) }
     }
 
     override fun canHandle(cmd: PlayCommand) =
@@ -50,10 +69,8 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
         Log.i(TAG, "Launching stream: $streamUrl")
 
         val pm = ctx.packageManager
-        val playerPkg = PREFERRED_PLAYERS.firstOrNull {
-            pm.getLaunchIntentForPackage(it) != null
-        }
-        Log.i(TAG, "Selected player: ${playerPkg ?: "(system chooser)"}")
+        val playerPkg = pickPlayer(pm, cmd.player)
+        Log.i(TAG, "Préférence='${cmd.player ?: "auto"}' → lecteur: ${playerPkg ?: "(system chooser)"}")
 
         return try {
             val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -63,6 +80,8 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP
                 )
+                // Titre affiché par le lecteur (MX Player / VLC le lisent)
+                putExtra("title", cmd.title)
                 playerPkg?.let { setPackage(it) }
             }
             ctx.startActivity(intent)

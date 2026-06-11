@@ -29,6 +29,7 @@ data class PlayCommand(
     val streamUrl: String?,
     val externalUrl: String?,        // Netflix/Disney+/... deep link
     val externalPlatform: String?,   // "netflix" | "disney+" | ...
+    val player: String? = null,      // lecteur IPTV préféré : auto/mxplayer/vlc/tivimate
     val requester: String
 ) {
     companion object {
@@ -44,6 +45,7 @@ data class PlayCommand(
             streamUrl = json.optString("stream_url").ifEmpty { null },
             externalUrl = json.optString("external_url").ifEmpty { null },
             externalPlatform = json.optString("external_platform").ifEmpty { null },
+            player = json.optString("player").ifEmpty { null } ?: config?.iptvPlayer?.ifEmpty { null },
             requester = json.optString("requester", "unknown")
         )
     }
@@ -79,7 +81,8 @@ data class HubConfig(
     val xtreamPass: String,
     val xtreamExt: String,
     val plexServerId: String,
-    val appMappings: Map<String, String>
+    val appMappings: Map<String, String>,
+    val iptvPlayer: String = "auto"   // lecteur IPTV préféré du device
 ) {
     companion object {
         fun fromJson(json: JSONObject) = HubConfig(
@@ -90,7 +93,8 @@ data class HubConfig(
             plexServerId = json.optString("plex_server_id"),
             appMappings = json.optJSONObject("app_mappings")?.let { obj ->
                 obj.keys().asSequence().associateWith { obj.getString(it) }
-            } ?: emptyMap()
+            } ?: emptyMap(),
+            iptvPlayer = json.optString("iptv_player", "auto").ifEmpty { "auto" }
         )
     }
 }

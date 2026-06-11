@@ -107,9 +107,9 @@ router.post('/reminders', async (req, res) => {
   const b = req.body ?? {}
   if (!b.stream_id || !b.start_ts) return res.status(400).json({ error: 'stream_id et start_ts requis' })
   const { rows } = await db.execute({
-    sql: `INSERT INTO epg_reminders (user_id, cred_id, stream_id, channel_name, title, start_ts, device_id, lead_min, notified, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?) RETURNING id`,
-    args: [userId, b.cred_id ?? null, String(b.stream_id), b.channel_name ?? null, b.title ?? null, Number(b.start_ts), b.device_id ?? null, Number(b.lead_min ?? 5), Date.now()],
+    sql: `INSERT INTO epg_reminders (user_id, cred_id, stream_id, channel_name, title, start_ts, device_id, lead_min, logo, notified, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?) RETURNING id`,
+    args: [userId, b.cred_id ?? null, String(b.stream_id), b.channel_name ?? null, b.title ?? null, Number(b.start_ts), b.device_id ?? null, Number(b.lead_min ?? 5), b.logo ?? null, Date.now()],
   })
   res.json({ ok: true, id: (rows[0] as any).id })
 })

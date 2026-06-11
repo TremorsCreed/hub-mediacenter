@@ -44,6 +44,7 @@ export default function EpgGuide({ credId, channels, deviceId, onPlay }: {
       const r = await api.iptv.reminders.create({
         cred_id: credId, stream_id: ch.stream_id, channel_name: ch.name, title: p.title,
         start_ts: p.start_ts, device_id: deviceId || undefined, lead_min: 5,
+        logo: ch.logo || undefined, // URL brute : l'agent la télécharge en natif (pas de mixed-content)
       }).catch(() => null)
       if (r) setReminders(m => new Map(m).set(k, r.id))
     }

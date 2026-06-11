@@ -187,6 +187,8 @@ export async function initDb() {
   try { await db.execute("ALTER TABLE users ADD COLUMN preferred_lang TEXT NOT NULL DEFAULT 'FR'") } catch {}
   // Extension de conteneur (épisodes IPTV séries, pour la relecture depuis une playlist)
   try { await db.execute("ALTER TABLE playlist_items ADD COLUMN ext TEXT") } catch {}
+  // Logo de la chaîne pour l'overlay de rappel EPG (carte du bas)
+  try { await db.execute("ALTER TABLE epg_reminders ADD COLUMN logo TEXT") } catch {}
 
   // ── Spotify : un compte Spotify lié par profil hub ───────────────────────────
   // Le token « suit le profil actif » (cf. design Spotify). user_id = id du profil hub,

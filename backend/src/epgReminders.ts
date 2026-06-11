@@ -2,7 +2,7 @@
 // l'heure de début approche (selon lead_min) et envoie une notif au device choisi.
 import { db } from './db'
 import { sendNotify, isConnected } from './ws'
-import { notifyOverlay } from './notify'
+import { notifyOverlayPlayer } from './notify'
 
 async function check() {
   const now = Math.floor(Date.now() / 1000)
@@ -21,11 +21,19 @@ async function check() {
     if (!dev || !isConnected(dev)) continue // best-effort : on retentera tant que la fenêtre est ouverte
     const mins = Math.max(0, Math.round((Number(rem.start_ts) - now) / 60))
     const chan = rem.channel_name || 'IPTV'
-    const msg = mins > 0
-      ? `« ${rem.title} » sur ${chan} commence dans ${mins} min`
-      : `« ${rem.title} » sur ${chan} commence maintenant`
-    try { sendNotify(dev, `⏰ ${msg}`) } catch { /* */ }
-    try { await notifyOverlay(dev, { title: '⏰ Rappel', message: msg, duration: 12 }) } catch { /* */ }
+    const when = mins > 0 ? `commence dans ${mins} min` : 'commence maintenant'
+    try { sendNotify(dev, `⏰ « ${rem.title} » sur ${chan} ${when}`) } catch { /* */ }
+    // Carte du bas (style player) avec le logo de la chaîne
+    try {
+      await notifyOverlayPlayer(dev, {
+        title: rem.title || chan,
+        message: `⏰ ${chan} · ${when}`,
+        app_label: 'RAPPEL',
+        image: rem.logo || undefined,
+        image_kind: 'logo',
+        duration: 20,
+      })
+    } catch { /* */ }
     try { await db.execute({ sql: 'UPDATE epg_reminders SET notified = 1 WHERE id = ?', args: [rem.id] }) } catch { /* */ }
   }
 

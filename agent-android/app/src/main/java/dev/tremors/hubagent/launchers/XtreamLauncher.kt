@@ -37,6 +37,23 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
         )
     }
 
+    // MIME précis selon le conteneur réel. Indispensable pour MX Player qui, sur une
+    // URL réseau SANS extension (cas des redirections Xtream), n'arrive pas à deviner
+    // le format → "Impossible de jouer ce lien". VLC s'en sort avec "video/*".
+    private fun mimeFor(container: String?, type: String?): String {
+        if (type == "live") return "video/*"
+        return when (container?.lowercase()?.removePrefix(".")) {
+            "mkv" -> "video/x-matroska"
+            "mp4", "m4v", "mov" -> "video/mp4"
+            "avi" -> "video/x-msvideo"
+            "ts" -> "video/mp2t"
+            "webm" -> "video/webm"
+            "flv" -> "video/x-flv"
+            "wmv" -> "video/x-ms-wmv"
+            else -> "video/*"
+        }
+    }
+
     // Choisit le package du lecteur selon la préférence (cmd.player), avec repli.
     private fun pickPlayer(pm: android.content.pm.PackageManager, pref: String?): String? {
         fun installed(pkg: String) = pm.getLaunchIntentForPackage(pkg) != null
@@ -73,8 +90,10 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
         Log.i(TAG, "Préférence='${cmd.player ?: "auto"}' → lecteur: ${playerPkg ?: "(system chooser)"}")
 
         return try {
+            val mime = mimeFor(cmd.iptvContainer, cmd.iptvType)
+            Log.i(TAG, "MIME='$mime' (container=${cmd.iptvContainer}, type=${cmd.iptvType})")
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(Uri.parse(streamUrl), "video/*")
+                setDataAndType(Uri.parse(streamUrl), mime)
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or

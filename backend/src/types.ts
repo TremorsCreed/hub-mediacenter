@@ -78,6 +78,7 @@ export interface WsPlayCommand extends WsMessage {
   tivimate_channel?: string
   iptv_type?: 'live' | 'vod' | 'series'
   stream_url?: string
+  iptv_container?: string     // conteneur réel (mkv/mp4/ts...) pour poser le bon MIME côté player
   external_url?: string       // deep link Netflix/Disney+/etc.
   external_platform?: string  // "netflix" | "disney+" | "primevideo" | "appletvplus" | "web"
   player?: string             // lecteur IPTV préféré : 'auto' | 'mxplayer' | 'vlc' | 'tivimate'

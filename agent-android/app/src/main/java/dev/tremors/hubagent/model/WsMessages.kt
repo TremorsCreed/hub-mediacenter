@@ -27,6 +27,7 @@ data class PlayCommand(
     val tiviMateChannel: String?,
     val iptvType: String?,
     val streamUrl: String?,
+    val iptvContainer: String?,      // conteneur réel (mkv/mp4/ts...) → MIME précis
     val externalUrl: String?,        // Netflix/Disney+/... deep link
     val externalPlatform: String?,   // "netflix" | "disney+" | ...
     val player: String? = null,      // lecteur IPTV préféré : auto/mxplayer/vlc/tivimate
@@ -43,6 +44,7 @@ data class PlayCommand(
             tiviMateChannel = json.optString("tivimate_channel").ifEmpty { null },
             iptvType = json.optString("iptv_type").ifEmpty { null },
             streamUrl = json.optString("stream_url").ifEmpty { null },
+            iptvContainer = json.optString("iptv_container").ifEmpty { null },
             externalUrl = json.optString("external_url").ifEmpty { null },
             externalPlatform = json.optString("external_platform").ifEmpty { null },
             player = json.optString("player").ifEmpty { null } ?: config?.iptvPlayer?.ifEmpty { null },

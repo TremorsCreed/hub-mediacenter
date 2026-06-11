@@ -15,6 +15,17 @@ android {
         versionName = "0.1.0"
     }
 
+    // Clé de debug FIXE (commitée) : signature stable sur tous les builds CI,
+    // donc plus de désinstall/réinstall lors des mises à jour (install -r suffit).
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("../debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true

@@ -16,7 +16,7 @@ async function buildIptvStreamUrl(
   streamId: string,
   type: 'live' | 'vod' | 'series',
   explicitExt?: string,
-): Promise<string | null> {
+): Promise<{ url: string; container: string } | null> {
   const { rows: cfgRows } = await db.execute({ sql: 'SELECT * FROM device_config WHERE device_id = ?', args: [deviceId] })
   const cfg = cfgRows[0] as any | undefined
   let server = '', user = '', pass = '', ext = 'ts'
@@ -44,10 +44,12 @@ async function buildIptvStreamUrl(
   const base = server.replace(/\/+$/, '')
 
   let url: string
+  let container: string
   if (type === 'series') {
     // streamId = episode_id ; extension fournie par le frontend (get_series_info)
     const epExt = (explicitExt || 'mp4').replace(/^\./, '')
     url = `${base}/series/${user}/${pass}/${streamId}.${epExt}`
+    container = epExt
   } else if (type === 'vod') {
     // Récupérer container_extension via get_vod_info — l'extension réelle varie (mkv/mp4/avi)
     let containerExt = explicitExt?.replace(/^\./, '') || 'mp4'
@@ -62,8 +64,10 @@ async function buildIptvStreamUrl(
       } catch (e) { console.warn('[iptv] get_vod_info failed:', (e as any).message) }
     }
     url = `${base}/movie/${user}/${pass}/${streamId}.${containerExt}`
+    container = containerExt
   } else {
     url = `${base}/${user}/${pass}/${streamId}.${ext}`
+    container = ext
   }
 
   // Résoudre la redirection 302 Xtream → URL directe du serveur de stream.
@@ -79,10 +83,10 @@ async function buildIptvStreamUrl(
     const loc = r.headers.get('location')
     if (loc && (r.status === 301 || r.status === 302 || r.status === 303 || r.status === 307 || r.status === 308)) {
       console.log(`[iptv] resolved redirect → ${loc}`)
-      return loc
+      return { url: loc, container }
     }
   } catch (e) { console.warn('[iptv] redirect resolve failed:', (e as any).message) }
-  return url
+  return { url, container }
 }
 
 async function waitForPlexClient(deviceIp: string, maxMs: number = 10000): Promise<boolean> {
@@ -428,11 +432,13 @@ router.post('/', async (req, res) => {
   const resolvedIptvType: 'live' | 'vod' | 'series' | undefined = iptv_type
     ?? (entry.type === 'vod' ? 'vod' : entry.type === 'episode' ? 'series' : entry.type === 'live_channel' ? 'live' : undefined)
   let streamUrl: string | undefined
+  let iptvContainer: string | undefined
   if (resolved_app === 'iptv' && entry.tivimate_id && resolvedIptvType) {
-    const url = await buildIptvStreamUrl(target_device_id, entry.tivimate_id, resolvedIptvType, iptv_ext)
-    if (url) {
-      streamUrl = url
-      console.log(`[iptv] resolved ${resolvedIptvType} stream URL: ${url}`)
+    const built = await buildIptvStreamUrl(target_device_id, entry.tivimate_id, resolvedIptvType, iptv_ext)
+    if (built) {
+      streamUrl = built.url
+      iptvContainer = built.container
+      console.log(`[iptv] resolved ${resolvedIptvType} stream URL: ${built.url} (container=${built.container})`)
     } else {
       console.warn(`[iptv] failed to build stream URL for ${entry.tivimate_id} — agent will fallback`)
     }
@@ -458,6 +464,7 @@ router.post('/', async (req, res) => {
     tivimate_channel: entry.tivimate_id ?? undefined,
     iptv_type: resolvedIptvType,
     stream_url: streamUrl,
+    iptv_container: iptvContainer,
     external_url: external_url ?? undefined,
     external_platform: external_platform ?? undefined,
     player: iptvPlayer,

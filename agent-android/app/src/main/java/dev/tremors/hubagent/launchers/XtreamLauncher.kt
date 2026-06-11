@@ -27,11 +27,21 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
             "tivimate" to listOf("ar.tvplayer.tv"),
         )
 
-        // Ordre "auto" : MX Player préféré (plus robuste sur le TS IPTV), puis VLC, etc.
-        private val AUTO_ORDER = listOf(
+        // Auto LIVE : MX Player préféré (robuste sur le TS, pas de gel image)
+        private val AUTO_LIVE = listOf(
             "com.mxtech.videoplayer.pro",
             "com.mxtech.videoplayer.ad",
             "org.videolan.vlc",
+            "ar.tvplayer.tv",
+            "com.amazon.firetv.tvplayer",
+        )
+
+        // Auto VOD/SÉRIES : VLC préféré (codecs E-AC3/AC3/DTS que MX Player free ne
+        // décode pas), puis MX Player Pro qui les a, puis le reste.
+        private val AUTO_VOD = listOf(
+            "org.videolan.vlc",
+            "com.mxtech.videoplayer.pro",
+            "com.mxtech.videoplayer.ad",
             "ar.tvplayer.tv",
             "com.amazon.firetv.tvplayer",
         )
@@ -54,8 +64,9 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
         }
     }
 
-    // Choisit le package du lecteur selon la préférence (cmd.player), avec repli.
-    private fun pickPlayer(pm: android.content.pm.PackageManager, pref: String?): String? {
+    // Choisit le package du lecteur. Préférence explicite respectée ; en "auto",
+    // route selon le type (live → MX Player, vod/série → VLC pour les codecs).
+    private fun pickPlayer(pm: android.content.pm.PackageManager, pref: String?, type: String?): String? {
         fun installed(pkg: String) = pm.getLaunchIntentForPackage(pkg) != null
         val choice = (pref ?: "auto").lowercase()
         if (choice != "auto" && PKGS_BY_PLAYER.containsKey(choice)) {
@@ -63,7 +74,8 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
             PKGS_BY_PLAYER[choice]!!.firstOrNull { installed(it) }?.let { return it }
             Log.w(TAG, "lecteur '$choice' non installé, repli sur auto")
         }
-        return AUTO_ORDER.firstOrNull { installed(it) }
+        val order = if (type == "vod" || type == "series") AUTO_VOD else AUTO_LIVE
+        return order.firstOrNull { installed(it) }
     }
 
     override fun canHandle(cmd: PlayCommand) =
@@ -86,8 +98,8 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
         Log.i(TAG, "Launching stream: $streamUrl")
 
         val pm = ctx.packageManager
-        val playerPkg = pickPlayer(pm, cmd.player)
-        Log.i(TAG, "Préférence='${cmd.player ?: "auto"}' → lecteur: ${playerPkg ?: "(system chooser)"}")
+        val playerPkg = pickPlayer(pm, cmd.player, cmd.iptvType)
+        Log.i(TAG, "Préférence='${cmd.player ?: "auto"}' type='${cmd.iptvType}' → lecteur: ${playerPkg ?: "(system chooser)"}")
 
         return try {
             val mime = mimeFor(cmd.iptvContainer, cmd.iptvType)

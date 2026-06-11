@@ -1,0 +1,28 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <!-- Fond sombre -->
+    <path android:fillColor="#18181B" android:pathData="M0,0h320v180H0z" />
+
+    <!-- Glyphe écran + play (centré), repris de l'icône via group scale/translate -->
+    <group
+        android:translateX="84"
+        android:translateY="13"
+        android:scaleX="1.4"
+        android:scaleY="1.4">
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#F59E0B"
+            android:strokeWidth="5"
+            android:pathData="M30,30 L78,30 A6,6 0 0 1 84,36 L84,64 A6,6 0 0 1 78,70 L30,70 A6,6 0 0 1 24,64 L24,36 A6,6 0 0 1 30,30 Z" />
+        <path android:fillColor="#F59E0B" android:pathData="M48,70 h12 v6 h-12 z" />
+        <path android:fillColor="#F59E0B" android:pathData="M40,80 h28 a3,3 0 0 1 0,6 h-28 a3,3 0 0 1 0,-6 z" />
+        <path android:fillColor="#F59E0B" android:pathData="M48,41 L48,59 L65,50 Z" />
+    </group>
+
+    <!-- Liseré ambre en bas -->
+    <path android:fillColor="#F59E0B" android:pathData="M0,176 h320 v4 H0 z" />
+</vector>

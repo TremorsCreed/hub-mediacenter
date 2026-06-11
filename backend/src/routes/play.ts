@@ -442,6 +442,13 @@ router.post('/', async (req, res) => {
   // route vers le ExternalUrlLauncher (deep link Intent ACTION_VIEW).
   const finalApp: AppId = external_url ? 'external' : resolved_app
 
+  // Lecteur IPTV préféré du device (auto/mxplayer/vlc/tivimate)
+  let iptvPlayer: string | undefined
+  if (resolved_app === 'iptv') {
+    const { rows: pcfg } = await db.execute({ sql: 'SELECT iptv_player FROM device_config WHERE device_id = ?', args: [target_device_id] })
+    iptvPlayer = ((pcfg[0] as any)?.iptv_player as string) || undefined
+  }
+
   const cmd: WsPlayCommand = {
     type: 'play',
     catalog_id: entry.id,
@@ -453,6 +460,7 @@ router.post('/', async (req, res) => {
     stream_url: streamUrl,
     external_url: external_url ?? undefined,
     external_platform: external_platform ?? undefined,
+    player: iptvPlayer,
     requester: requester as RequesterType
   }
 

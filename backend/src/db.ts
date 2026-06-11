@@ -179,6 +179,8 @@ export async function initDb() {
   try { await db.execute("ALTER TABLE playback_state ADD COLUMN title TEXT") } catch {}
   try { await db.execute("ALTER TABLE device_config ADD COLUMN tvoverlay_enabled INTEGER NOT NULL DEFAULT 0") } catch {}
   try { await db.execute("ALTER TABLE device_config ADD COLUMN overlay_player_duration INTEGER NOT NULL DEFAULT 0") } catch {}
+  // Lecteur IPTV préféré par device : 'auto' | 'mxplayer' | 'vlc' | 'tivimate'
+  try { await db.execute("ALTER TABLE device_config ADD COLUMN iptv_player TEXT NOT NULL DEFAULT 'auto'") } catch {}
   try { await db.execute("ALTER TABLE playback_history ADD COLUMN user_id INTEGER") } catch {}
   // Carte NFC Zaparoo → profil (groundwork ; logique de session dans le sprint Zaparoo)
   try { await db.execute("ALTER TABLE users ADD COLUMN nfc_token TEXT") } catch {}

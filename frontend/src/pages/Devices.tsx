@@ -4,7 +4,7 @@ import { Wifi, WifiOff, Trash2, ChevronDown, ChevronUp, Save, KeyRound } from 'l
 
 const CONTENT_TYPES = ['movie', 'episode', 'live_channel', 'vod', 'music']
 const APP_NAMES: Record<string, string> = { iptv: 'IPTV (Xtream)', plex: 'Plex', kodi: 'Kodi' }
-const DEFAULT_CONFIG: DeviceConfig = { xtream_server: '', xtream_user: '', xtream_pass: '', xtream_ext: 'ts', plex_server_id: '', app_mappings: {}, xtream_credential_id: null, tvoverlay_enabled: false, overlay_player_duration: 0 }
+const DEFAULT_CONFIG: DeviceConfig = { xtream_server: '', xtream_user: '', xtream_pass: '', xtream_ext: 'ts', plex_server_id: '', app_mappings: {}, xtream_credential_id: null, tvoverlay_enabled: false, overlay_player_duration: 0, iptv_player: 'auto' }
 
 function ConfigPanel({ deviceId, capabilities, credentials }: { deviceId: string; capabilities: { app: string }[]; credentials: Credential[] }) {
   const [cfg, setCfg] = useState<DeviceConfig>(DEFAULT_CONFIG)
@@ -172,6 +172,21 @@ function ConfigPanel({ deviceId, capabilities, credentials }: { deviceId: string
             <span className="text-xs text-zinc-600">0 = reste affiché pendant tout le film</span>
           </div>
         )}
+
+        <div className="flex items-center gap-2 mt-3">
+          <span className="text-xs text-zinc-500 w-44 shrink-0">Lecteur IPTV</span>
+          <select
+            className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-zinc-500"
+            value={cfg.iptv_player ?? 'auto'}
+            onChange={e => setCfg(prev => ({ ...prev, iptv_player: e.target.value as DeviceConfig['iptv_player'] }))}
+          >
+            <option value="auto">Auto (MX Player &gt; VLC)</option>
+            <option value="mxplayer">MX Player</option>
+            <option value="vlc">VLC</option>
+            <option value="tivimate">TiviMate</option>
+          </select>
+          <span className="text-xs text-zinc-600">flux live/VOD IPTV</span>
+        </div>
       </div>
 
       <button

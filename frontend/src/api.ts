@@ -282,6 +282,14 @@ export interface IptvStream {
   type: 'live' | 'vod' | 'series'
 }
 
+export interface EpgEntry {
+  id: string
+  start_ts: number
+  stop_ts: number
+  title: string
+  desc: string
+}
+
 export interface IptvEpisode {
   episode_id: string
   episode_num: number
@@ -529,6 +537,7 @@ export const api = {
       return get<{ total: number; start: number; size: number; items: IptvStream[] }>(`/iptv/${credId}/streams?${p}`)
     },
     seriesInfo: (credId: number, seriesId: string) => get<IptvSeriesInfo>(`/iptv/${credId}/series/${seriesId}`),
+    epgBatch: (credId: number, streamIds: string[]) => post<Record<string, EpgEntry[]>>(`/iptv/${credId}/epg/batch`, { stream_ids: streamIds }),
     imageUrl: (url?: string) => url ? `${BASE}/iptv/image?url=${encodeURIComponent(url)}` : '',
   },
   plex: {

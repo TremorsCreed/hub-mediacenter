@@ -29,6 +29,65 @@ async function xtreamCall(cred: NonNullable<Awaited<ReturnType<typeof getXtreamC
   return r.json()
 }
 
+// ── EPG (guide) ──────────────────────────────────────────────────────────────
+interface EpgEntry { id: string; start_ts: number; stop_ts: number; title: string; desc: string }
+const epgCache = new Map<string, { ts: number; listings: EpgEntry[] }>()
+const EPG_TTL = 20 * 60 * 1000 // 20 min
+
+function b64(s: any): string {
+  try { return Buffer.from(String(s ?? ''), 'base64').toString('utf-8') } catch { return String(s ?? '') }
+}
+
+function parseEpg(raw: any[]): EpgEntry[] {
+  return (raw ?? []).map((e: any) => ({
+    id: String(e.id ?? ''),
+    start_ts: Number(e.start_timestamp) || Math.floor(Date.parse(e.start) / 1000) || 0,
+    stop_ts: Number(e.stop_timestamp) || Number(e.end_timestamp) || Math.floor(Date.parse(e.end) / 1000) || 0,
+    title: b64(e.title),
+    desc: b64(e.description),
+  }))
+    .filter((e: EpgEntry) => e.start_ts > 0 && e.stop_ts > e.start_ts)
+    .sort((a: EpgEntry, b: EpgEntry) => a.start_ts - b.start_ts)
+}
+
+async function getEpg(cred: NonNullable<Awaited<ReturnType<typeof getXtreamCred>>>, credId: string, streamId: string): Promise<EpgEntry[]> {
+  const key = `${credId}:${streamId}`
+  const c = epgCache.get(key)
+  if (c && Date.now() - c.ts < EPG_TTL) return c.listings
+  const data: any = await xtreamCall(cred, 'get_simple_data_table', { stream_id: String(streamId) })
+  const listings = parseEpg(data?.epg_listings ?? [])
+  epgCache.set(key, { ts: Date.now(), listings })
+  return listings
+}
+
+// POST /api/iptv/:credId/epg/batch  { stream_ids: string[] } → { [streamId]: EpgEntry[] }
+router.post('/:credId/epg/batch', async (req, res) => {
+  const cred = await getXtreamCred(req.params.credId)
+  if (!cred) return res.status(404).json({ error: 'credential not found or incomplete' })
+  const ids: string[] = Array.isArray(req.body?.stream_ids) ? req.body.stream_ids.map(String).slice(0, 120) : []
+  const out: Record<string, EpgEntry[]> = {}
+  let i = 0
+  const worker = async () => {
+    while (i < ids.length) {
+      const id = ids[i++]
+      try { out[id] = await getEpg(cred, req.params.credId, id) } catch { out[id] = [] }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(6, ids.length || 1) }, worker))
+  res.json(out)
+})
+
+// GET /api/iptv/:credId/epg/:streamId → EpgEntry[]
+router.get('/:credId/epg/:streamId', async (req, res) => {
+  const cred = await getXtreamCred(req.params.credId)
+  if (!cred) return res.status(404).json({ error: 'credential not found or incomplete' })
+  try {
+    res.json(await getEpg(cred, req.params.credId, req.params.streamId))
+  } catch (e: any) {
+    res.status(502).json({ error: e.message })
+  }
+})
+
 // GET /api/iptv/credentials
 router.get('/credentials', async (_req, res) => {
   const { rows } = await db.execute("SELECT id, name FROM credentials WHERE type = 'xtream' ORDER BY name")

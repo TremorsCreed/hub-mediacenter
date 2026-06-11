@@ -5,6 +5,8 @@ import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X
 import FavoriteButton from '../components/FavoriteButton'
 import AddToPlaylist from '../components/AddToPlaylist'
 import { CatalogDndProvider, DraggableMedia } from '../components/CatalogDnd'
+import EpgGuide from '../components/EpgGuide'
+import { LayoutGrid, CalendarDays } from 'lucide-react'
 
 const PAGE_SIZE = 300
 
@@ -54,6 +56,7 @@ export default function Iptv() {
   // Cascade : média développé à l'entrée du module ; se réduit au clic d'un type
   // pour laisser apparaître la sidebar catégories.
   const [mediaCollapsed, setMediaCollapsed] = useState(false)
+  const [liveView, setLiveView] = useState<'list' | 'guide'>('list') // TV : liste de chaînes ou guide EPG
 
   useEffect(() => {
     api.iptv.credentials().then(c => {
@@ -322,6 +325,24 @@ export default function Iptv() {
             ))}
           </select>
 
+          {/* Toggle Liste / Guide (TV uniquement) */}
+          {type === 'live' && (
+            <div className="flex bg-zinc-900 border border-zinc-800 rounded overflow-hidden">
+              <button
+                onClick={() => setLiveView('list')}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm transition-colors ${liveView === 'list' ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:text-zinc-200'}`}
+              >
+                <LayoutGrid size={13} /> Liste
+              </button>
+              <button
+                onClick={() => setLiveView('guide')}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm transition-colors ${liveView === 'guide' ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:text-zinc-200'}`}
+              >
+                <CalendarDays size={13} /> Guide
+              </button>
+            </div>
+          )}
+
           {/* Filtre langues */}
           <div className="relative">
             <button
@@ -378,8 +399,12 @@ export default function Iptv() {
           )}
         </div>
 
-        {/* Grille de streams */}
-        <div ref={contentRef} className="flex-1 overflow-y-auto p-4">
+        {/* Grille de streams / Guide EPG */}
+        <div ref={contentRef} className={`flex-1 min-w-0 ${type === 'live' && liveView === 'guide' ? 'overflow-hidden p-3' : 'overflow-y-auto p-4'}`}>
+          {type === 'live' && liveView === 'guide' ? (
+            <EpgGuide credId={credId!} channels={streams} onPlay={play} />
+          ) : (
+          <>
           {loading && streams.length === 0 && (
             <div className="flex items-center justify-center py-16 text-zinc-600 gap-2 text-sm">
               <Loader2 size={16} className="animate-spin" /> Chargement…
@@ -479,6 +504,8 @@ export default function Iptv() {
             <div className="text-xs text-zinc-600 text-center pt-3 pb-1">
               {total.toLocaleString()} résultat{total > 1 ? 's' : ''} — fin de liste
             </div>
+          )}
+          </>
           )}
         </div>
       </div>

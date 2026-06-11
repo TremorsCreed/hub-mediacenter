@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { api, User } from '../api'
+import { api, User, SpotifyStatus } from '../api'
 import { useUser, initials } from '../UserContext'
-import { ShieldCheck, Plus, Trash2, Pencil, X, Loader2, Nfc } from 'lucide-react'
+import { ShieldCheck, Plus, Trash2, Pencil, X, Loader2, Nfc, Music2 } from 'lucide-react'
 
 const COLORS = ['#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#3b82f6', '#06b6d4', '#10b981', '#84cc16', '#f97316', '#64748b']
 
@@ -27,9 +27,46 @@ export default function Profiles() {
   const [form, setForm] = useState<FormState | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [spotify, setSpotify] = useState<SpotifyStatus | null>(null)
+  const [linking, setLinking] = useState<number | null>(null)
 
   const load = () => api.users.list().then(setUsers).catch(() => {})
-  useEffect(() => { load() }, [])
+  const loadSpotify = () => api.spotify.status().then(setSpotify).catch(() => setSpotify(null))
+  useEffect(() => { load(); loadSpotify() }, [])
+
+  // Lie un compte Spotify à un profil via une popup OAuth (le callback poste un
+  // message à la fenêtre parente quand c'est terminé). cf. routes/spotify.ts.
+  const linkSpotify = async (userId: number) => {
+    try {
+      setLinking(userId)
+      const { url } = await api.spotify.loginUrl(userId)
+      const popup = window.open(url, 'spotify-link', 'width=480,height=720')
+      const onMsg = (ev: MessageEvent) => {
+        if (ev.data?.type === 'spotify-linked') {
+          window.removeEventListener('message', onMsg)
+          setLinking(null)
+          loadSpotify()
+          try { popup?.close() } catch {}
+        }
+      }
+      window.addEventListener('message', onMsg)
+      // Sécurité : si la popup est fermée manuellement, on arrête le spinner
+      const timer = setInterval(() => {
+        if (popup?.closed) { clearInterval(timer); window.removeEventListener('message', onMsg); setLinking(null); loadSpotify() }
+      }, 800)
+    } catch (e: any) {
+      setLinking(null)
+      alert(e.message || 'Impossible de démarrer la liaison Spotify')
+    }
+  }
+
+  const unlinkSpotify = async (userId: number, name: string) => {
+    if (!confirm(`Délier le compte Spotify de « ${name} » ?`)) return
+    try { await api.spotify.unlink(userId); loadSpotify() }
+    catch (e: any) { alert(e.message || 'Échec') }
+  }
+
+  const spotifyFor = (userId: number) => spotify?.accounts.find(a => a.user_id === userId) ?? null
 
   const openCreate = () => { setError(null); setForm({ ...emptyForm }) }
   const openEdit = (u: User) => {
@@ -109,11 +146,24 @@ export default function Profiles() {
                 {u.name}
                 {u.is_admin && <ShieldCheck size={13} className="text-amber-400" />}
                 {u.has_nfc && <Nfc size={13} className="text-cyan-400" />}
+                {spotifyFor(u.id) && <Music2 size={13} className="text-green-400" />}
               </div>
               <div className="text-xs text-zinc-500">
                 {u.is_admin ? 'Administrateur' : 'Membre'}{u.has_nfc ? ' · carte NFC' : ''}
+                {(() => { const a = spotifyFor(u.id); return a ? ` · Spotify : ${a.display_name ?? a.spotify_user_id}${a.product && a.product !== 'premium' ? ` (${a.product})` : ''}` : '' })()}
               </div>
             </div>
+            {spotify?.app_configured && (
+              spotifyFor(u.id) ? (
+                <button onClick={() => unlinkSpotify(u.id, u.name)} className="text-green-500 hover:text-red-400 p-1.5 transition-colors" title="Délier Spotify">
+                  <Music2 size={15} />
+                </button>
+              ) : (
+                <button onClick={() => linkSpotify(u.id)} disabled={linking === u.id} className="text-zinc-500 hover:text-green-400 p-1.5 transition-colors disabled:opacity-50" title="Lier Spotify">
+                  {linking === u.id ? <Loader2 size={15} className="animate-spin" /> : <Music2 size={15} />}
+                </button>
+              )
+            )}
             <button onClick={() => openEdit(u)} className="text-zinc-500 hover:text-zinc-200 p-1.5 transition-colors" title="Modifier">
               <Pencil size={15} />
             </button>
@@ -122,6 +172,46 @@ export default function Profiles() {
             </button>
           </div>
         ))}
+      </div>
+
+      {/* Spotify : configuration de l'app + compte « Maison » (enceintes partagées) */}
+      <div className="space-y-2 pt-2">
+        <h2 className="text-sm font-semibold text-zinc-400 flex items-center gap-1.5">
+          <Music2 size={14} className="text-green-400" /> Spotify
+        </h2>
+        {!spotify?.app_configured ? (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-xs text-zinc-400">
+            L'app Spotify n'est pas encore configurée. Ajoute un credential de type <span className="text-zinc-200">spotify_app</span> (client_id / client_secret / redirect_uri) dans <span className="text-amber-400">Admin → Credentials</span>, puis chaque membre pourra lier son compte ici.
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3">
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-green-500/15 text-green-400 shrink-0">
+                <Music2 size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium">Compte « Maison »</div>
+                <div className="text-xs text-zinc-500">
+                  Enceintes partagées (Echo). {(() => { const a = spotifyFor(spotify.maison_user_id); return a ? `Lié : ${a.display_name ?? a.spotify_user_id}` : 'Non lié — utilise un compte dédié pour ne pas polluer le tien.' })()}
+                </div>
+              </div>
+              {spotifyFor(spotify.maison_user_id) ? (
+                <button onClick={() => unlinkSpotify(spotify.maison_user_id, 'Maison')} className="text-green-500 hover:text-red-400 p-1.5" title="Délier">
+                  <Music2 size={15} />
+                </button>
+              ) : (
+                <button onClick={() => linkSpotify(spotify.maison_user_id)} disabled={linking === spotify.maison_user_id} className="text-zinc-500 hover:text-green-400 p-1.5 disabled:opacity-50" title="Lier le compte Maison">
+                  {linking === spotify.maison_user_id ? <Loader2 size={15} className="animate-spin" /> : <Music2 size={15} />}
+                </button>
+              )}
+            </div>
+            {spotify.redirect_uri && (
+              <p className="text-[10px] text-zinc-600">
+                Redirect URI à déclarer dans le dashboard Spotify : <span className="text-zinc-400">{spotify.redirect_uri}</span>
+              </p>
+            )}
+          </>
+        )}
       </div>
 
       {/* Formulaire création / édition */}

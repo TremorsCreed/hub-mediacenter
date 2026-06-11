@@ -172,6 +172,27 @@ export async function initDb() {
   // Extension de conteneur (épisodes IPTV séries, pour la relecture depuis une playlist)
   try { await db.execute("ALTER TABLE playlist_items ADD COLUMN ext TEXT") } catch {}
 
+  // ── Spotify : un compte Spotify lié par profil hub ───────────────────────────
+  // Le token « suit le profil actif » (cf. design Spotify). user_id = id du profil hub,
+  // ou MAISON_USER_ID (-1) pour le compte « Maison » dédié aux enceintes partagées
+  // (Echo) — découplé du compte perso de l'admin pour ne plus polluer ses recos.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS spotify_accounts (
+      user_id INTEGER PRIMARY KEY,
+      spotify_user_id TEXT,
+      display_name TEXT,
+      email TEXT,
+      product TEXT,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT NOT NULL,
+      expires_at INTEGER NOT NULL DEFAULT 0,
+      scopes TEXT NOT NULL DEFAULT '',
+      image TEXT,
+      created_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0
+    )
+  `)
+
   // Seed : crée un profil Admin par défaut (PIN 0000) si aucun utilisateur n'existe.
   const { rows: userCount } = await db.execute("SELECT COUNT(*) as n FROM users")
   if (Number((userCount[0] as any).n) === 0) {

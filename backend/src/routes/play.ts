@@ -4,6 +4,7 @@ import { db } from '../db'
 import { sendPlayCommand, sendNotify, isConnected, getConnectedIds } from '../ws'
 import { AppId, CatalogEntry, RequesterType, WsPlayCommand } from '../types'
 import { resolvePlexWatchUrl } from './plex'
+import { spotifyFetch, MAISON_USER_ID } from './spotify'
 import { notifyOverlay, notifyOverlayPlayer, hideOverlay } from '../notify'
 
 // Helper pour construire l'URL stream Xtream complète côté backend.
@@ -190,6 +191,9 @@ const PlaySchema = z.object({
   iptv_ext: z.string().nullable().optional().transform(v => v ?? undefined),  // container_extension (series episode)
   external_url: z.string().nullable().optional().transform(v => v ?? undefined),
   external_platform: z.string().nullable().optional().transform(v => v ?? undefined),
+  // Spotify : ref_id de l'item = URI (spotify:playlist:… / spotify:album:… / spotify:track:…)
+  spotify_uri: z.string().nullable().optional().transform(v => v ?? undefined),
+  spotify_device_id: z.string().nullable().optional().transform(v => v ?? undefined),  // cible Connect (Echo/Shield…)
   title: z.string().nullable().optional().transform(v => v ?? undefined),
   thumb: z.string().nullable().optional().transform(v => v ?? undefined),
   resume: z.boolean().optional(),
@@ -236,8 +240,38 @@ router.post('/', async (req, res) => {
   const parsed = PlaySchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
 
-  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, iptv_ext, external_url, external_platform, title, thumb, resume, device_id, app, requester } = parsed.data
+  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, iptv_ext, external_url, external_platform, spotify_uri, spotify_device_id, title, thumb, resume, device_id, app, requester } = parsed.data
   const userId = (req as any).userId ?? null // profil courant (header X-User-Id)
+
+  // 0. Spotify : flux à part — contrôle Spotify Connect via Web API, pas le catalogue
+  //    ni l'agent WS. Le token « suit le profil actif » : on lit avec le compte du
+  //    profil courant (ou le compte « Maison » si on cible une enceinte partagée).
+  if (app === 'spotify' || spotify_uri) {
+    if (!spotify_uri) return res.status(400).json({ error: 'spotify_uri requis' })
+    // Le profil qui « possède » la lecture : header X-User-Id, ou Maison si demandé
+    const playUserId = userId ?? MAISON_USER_ID
+    const isTrack = spotify_uri.startsWith('spotify:track:')
+    const body: any = isTrack ? { uris: [spotify_uri] } : { context_uri: spotify_uri }
+    if (resume === false) body.position_ms = 0
+    const dq = spotify_device_id ? `?device_id=${encodeURIComponent(spotify_device_id)}` : ''
+    try {
+      const r = await spotifyFetch(playUserId, `/me/player/play${dq}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      })
+      if (!r.ok && r.status !== 204) {
+        const detail = await r.text()
+        return res.status(r.status).json({ error: 'spotify_play_failed', status: r.status, detail })
+      }
+    } catch (e: any) {
+      // no_spotify_account : le profil actif n'a pas lié de compte
+      return res.status(400).json({ error: e.message || 'spotify_error' })
+    }
+    await db.execute({
+      sql: `INSERT INTO playback_history (device_id, catalog_id, app, title, started_at, requester, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      args: [spotify_device_id ?? 'spotify', spotify_uri, 'spotify', title ?? 'Spotify', Date.now(), requester, userId],
+    })
+    return res.json({ ok: true, app: 'spotify', uri: spotify_uri, device_id: spotify_device_id ?? null, title: title ?? 'Spotify' })
+  }
 
   // 1. Resolve catalog entry
   let entry: CatalogEntry | null = null

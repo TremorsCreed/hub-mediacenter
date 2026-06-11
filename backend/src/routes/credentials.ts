@@ -7,14 +7,19 @@ const router = Router()
 
 const CredentialSchema = z.object({
   name: z.string().min(1),
-  type: z.enum(['xtream']),
+  type: z.enum(['xtream', 'spotify_app']),
   data: z.record(z.unknown()).default({})
 }).transform(c => {
   // Trim les champs string du data — les credentials copiés-collés ont souvent des
   // espaces parasites qui cassent les URLs stream (vu en prod sur Elon IPTV).
-  if (c.type === 'xtream' && c.data) {
+  const trimKeys: Record<string, string[]> = {
+    xtream: ['server', 'user', 'pass', 'ext'],
+    spotify_app: ['client_id', 'client_secret', 'redirect_uri'],
+  }
+  const keys = trimKeys[c.type]
+  if (keys && c.data) {
     const trimmed: Record<string, unknown> = { ...c.data }
-    for (const k of ['server', 'user', 'pass', 'ext']) {
+    for (const k of keys) {
       if (typeof trimmed[k] === 'string') trimmed[k] = (trimmed[k] as string).trim()
     }
     c.data = trimmed

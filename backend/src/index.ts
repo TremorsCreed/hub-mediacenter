@@ -18,6 +18,7 @@ import usersRouter from './routes/users'
 import favoritesRouter from './routes/favorites'
 import playlistsRouter from './routes/playlists'
 import senscritiqueRouter from './routes/senscritique'
+import spotifyRouter from './routes/spotify'
 import { attachUser, requireAdmin } from './auth'
 import { preloadAll as preloadIptvVod } from './iptvVodCache'
 
@@ -32,6 +33,7 @@ app.use('/api/users', usersRouter)
 app.use('/api/favorites', favoritesRouter)
 app.use('/api/playlists', playlistsRouter)
 app.use('/api/senscritique', senscritiqueRouter)
+app.use('/api/spotify', spotifyRouter)
 app.use('/api/devices/:id/config', requireAdmin, configRouter)
 app.use('/api/devices', devicesRouter)
 app.use('/api/catalog', catalogRouter)

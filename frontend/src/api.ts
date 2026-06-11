@@ -189,10 +189,36 @@ export interface DeviceConfig {
 export interface Credential {
   id: number
   name: string
-  type: 'xtream'
+  type: 'xtream' | 'spotify_app'
   data: Record<string, any>
   created_at: number
   updated_at: number
+}
+
+// ── Spotify ──────────────────────────────────────────────────────────────────
+export interface SpotifyAccount {
+  user_id: number
+  spotify_user_id: string | null
+  display_name: string | null
+  product: string | null  // 'premium' | 'free' | ...
+  image: string | null
+}
+export interface SpotifyStatus {
+  app_configured: boolean
+  redirect_uri: string | null
+  maison_user_id: number
+  accounts: SpotifyAccount[]
+}
+export interface SpotifyControlInput {
+  user_id?: number
+  action: 'play' | 'pause' | 'next' | 'previous' | 'seek' | 'transfer' | 'volume' | 'shuffle' | 'repeat'
+  device_id?: string
+  context_uri?: string
+  uris?: string[]
+  offset?: { position?: number; uri?: string }
+  position_ms?: number
+  volume_percent?: number
+  state?: boolean | 'off' | 'track' | 'context'
 }
 
 export interface PlayIntent {
@@ -205,6 +231,8 @@ export interface PlayIntent {
   iptv_ext?: string
   external_url?: string
   external_platform?: string
+  spotify_uri?: string
+  spotify_device_id?: string
   title?: string
   thumb?: string
   resume?: boolean
@@ -452,6 +480,36 @@ export const api = {
     create: (c: Omit<Credential, 'id' | 'created_at' | 'updated_at'>) => post<{ ok: boolean; id: number }>('/credentials', c),
     update: (id: number, c: Omit<Credential, 'id' | 'created_at' | 'updated_at'>) => put<{ ok: boolean }>(`/credentials/${id}`, c),
     remove: (id: number) => del<{ ok: boolean }>(`/credentials/${id}`)
+  },
+  spotify: {
+    status: () => get<SpotifyStatus>('/spotify/status'),
+    // Renvoie l'URL d'autorisation à ouvrir en popup pour lier le compte du profil.
+    loginUrl: (userId: number) => get<{ url: string }>(`/spotify/login?user_id=${userId}`),
+    unlink: (userId: number) => del<{ ok: boolean }>(`/spotify/unlink/${userId}`),
+    me: (userId?: number) => get<any>(`/spotify/me${userId !== undefined ? `?user_id=${userId}` : ''}`),
+    playlists: (userId?: number, opts: { limit?: number; offset?: number } = {}) => {
+      const p = new URLSearchParams()
+      if (userId !== undefined) p.set('user_id', String(userId))
+      if (opts.limit) p.set('limit', String(opts.limit))
+      if (opts.offset) p.set('offset', String(opts.offset))
+      return get<any>(`/spotify/playlists?${p}`)
+    },
+    playlistTracks: (id: string, userId?: number, opts: { limit?: number; offset?: number } = {}) => {
+      const p = new URLSearchParams()
+      if (userId !== undefined) p.set('user_id', String(userId))
+      if (opts.limit) p.set('limit', String(opts.limit))
+      if (opts.offset) p.set('offset', String(opts.offset))
+      return get<any>(`/spotify/playlists/${encodeURIComponent(id)}/tracks?${p}`)
+    },
+    search: (q: string, userId?: number, type = 'track,album,artist,playlist') => {
+      const p = new URLSearchParams({ q, type })
+      if (userId !== undefined) p.set('user_id', String(userId))
+      return get<any>(`/spotify/search?${p}`)
+    },
+    recentlyPlayed: (userId?: number) => get<any>(`/spotify/recently-played${userId !== undefined ? `?user_id=${userId}` : ''}`),
+    devices: (userId?: number) => get<{ devices: any[] }>(`/spotify/devices${userId !== undefined ? `?user_id=${userId}` : ''}`),
+    player: (userId?: number) => get<any>(`/spotify/player${userId !== undefined ? `?user_id=${userId}` : ''}`),
+    control: (input: SpotifyControlInput) => post<{ ok: boolean }>('/spotify/control', input),
   },
   control: {
     send: (deviceId: string, action: 'play_pause' | 'play' | 'pause' | 'stop' | 'next' | 'previous' | 'volume_up' | 'volume_down' | 'mute') =>

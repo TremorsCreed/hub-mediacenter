@@ -106,13 +106,18 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
             Log.i(TAG, "MIME='$mime' (container=${cmd.iptvContainer}, type=${cmd.iptvType})")
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(Uri.parse(streamUrl), mime)
+                // CLEAR_TASK : relance le lecteur dans une tâche neuve à chaque flux →
+                // le décodeur/surface vidéo est réinitialisé. Évite "image gelée / audio
+                // continue" quand on change de flux dans une instance VLC déjà ouverte
+                // (CLEAR_TOP|SINGLE_TOP réutilisait l'instance sans reset).
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    Intent.FLAG_ACTIVITY_CLEAR_TASK
                 )
                 // Titre affiché par le lecteur (MX Player / VLC le lisent)
                 putExtra("title", cmd.title)
+                // VLC : démarre du début sans la pop-up "reprendre la lecture ?"
+                putExtra("from_start", true)
                 playerPkg?.let { setPackage(it) }
             }
             ctx.startActivity(intent)

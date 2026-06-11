@@ -156,6 +156,22 @@ export async function initDb() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_playlist_items_pl ON playlist_items(playlist_id, position);
+
+    CREATE TABLE IF NOT EXISTS epg_reminders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      cred_id INTEGER,
+      stream_id TEXT NOT NULL,
+      channel_name TEXT,
+      title TEXT,
+      start_ts INTEGER NOT NULL,
+      device_id TEXT,
+      lead_min INTEGER NOT NULL DEFAULT 5,
+      notified INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reminders_due ON epg_reminders(notified, start_ts);
   `)
 
   // Migrations idempotentes (ALTER TABLE échoue silencieusement si la colonne existe)

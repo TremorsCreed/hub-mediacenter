@@ -21,6 +21,7 @@ import senscritiqueRouter from './routes/senscritique'
 import spotifyRouter from './routes/spotify'
 import { attachUser, requireAdmin } from './auth'
 import { preloadAll as preloadIptvVod } from './iptvVodCache'
+import { startReminderChecker } from './epgReminders'
 
 const app = express()
 const PORT = parseInt(process.env.PORT ?? '8020', 10)
@@ -53,6 +54,7 @@ async function start() {
   // Préchauffe les listes VOD IPTV en arrière-plan pour que le 1er cross-ref Discover
   // soit instantané. Ne bloque pas le démarrage.
   preloadIptvVod().catch(() => {})
+  startReminderChecker()
   const server = http.createServer(app)
   setupWebSocket(server)
   server.listen(PORT, () => {

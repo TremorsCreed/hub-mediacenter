@@ -290,6 +290,17 @@ export interface EpgEntry {
   desc: string
 }
 
+export interface EpgReminder {
+  id: number
+  stream_id: string
+  channel_name?: string
+  title?: string
+  start_ts: number
+  device_id?: string
+  lead_min: number
+  notified: number
+}
+
 export interface IptvEpisode {
   episode_id: string
   episode_num: number
@@ -538,6 +549,11 @@ export const api = {
     },
     seriesInfo: (credId: number, seriesId: string) => get<IptvSeriesInfo>(`/iptv/${credId}/series/${seriesId}`),
     epgBatch: (credId: number, streamIds: string[]) => post<Record<string, EpgEntry[]>>(`/iptv/${credId}/epg/batch`, { stream_ids: streamIds }),
+    reminders: {
+      list: () => get<EpgReminder[]>('/iptv/reminders'),
+      create: (r: { cred_id?: number; stream_id: string; channel_name?: string; title?: string; start_ts: number; device_id?: string; lead_min?: number }) => post<{ ok: boolean; id: number }>('/iptv/reminders', r),
+      remove: (id: number) => del<{ ok: boolean }>(`/iptv/reminders/${id}`),
+    },
     imageUrl: (url?: string) => url ? `${BASE}/iptv/image?url=${encodeURIComponent(url)}` : '',
   },
   plex: {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, EpgEntry, IptvStream } from '../api'
-import { Loader2, Play, X, Tv, Clock } from 'lucide-react'
+import { Loader2, Play, X, Tv, Clock, Bell, BellRing } from 'lucide-react'
 
 const CHANNEL_W = 168
 const ROW_H = 56
@@ -13,9 +13,12 @@ const MAX_CHANNELS = 100      // plafond de chaînes affichées dans le guide
 
 const fmtTime = (ts: number) => new Date(ts * 1000).toLocaleTimeString('fr-CH', { hour: '2-digit', minute: '2-digit' })
 
-export default function EpgGuide({ credId, channels, onPlay }: {
+const remKey = (streamId: string, startTs: number) => `${streamId}:${startTs}`
+
+export default function EpgGuide({ credId, channels, deviceId, onPlay }: {
   credId: number
   channels: IptvStream[]
+  deviceId: string
   onPlay: (s: IptvStream) => void
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -23,7 +26,28 @@ export default function EpgGuide({ credId, channels, onPlay }: {
   const [loading, setLoading] = useState(false)
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
   const [selected, setSelected] = useState<{ ch: IptvStream; p: EpgEntry } | null>(null)
+  const [reminders, setReminders] = useState<Map<string, number>>(new Map()) // key → reminder id
   const didCenter = useRef(false)
+
+  const loadReminders = () => api.iptv.reminders.list()
+    .then(rs => setReminders(new Map(rs.map(r => [remKey(r.stream_id, r.start_ts), r.id]))))
+    .catch(() => {})
+  useEffect(() => { loadReminders() }, [])
+
+  const toggleReminder = async (ch: IptvStream, p: EpgEntry) => {
+    const k = remKey(ch.stream_id, p.start_ts)
+    const existing = reminders.get(k)
+    if (existing) {
+      setReminders(m => { const n = new Map(m); n.delete(k); return n })
+      await api.iptv.reminders.remove(existing).catch(loadReminders)
+    } else {
+      const r = await api.iptv.reminders.create({
+        cred_id: credId, stream_id: ch.stream_id, channel_name: ch.name, title: p.title,
+        start_ts: p.start_ts, device_id: deviceId || undefined, lead_min: 5,
+      }).catch(() => null)
+      if (r) setReminders(m => new Map(m).set(k, r.id))
+    }
+  }
 
   const shown = useMemo(() => channels.slice(0, MAX_CHANNELS), [channels])
 
@@ -133,6 +157,7 @@ export default function EpgGuide({ credId, channels, onPlay }: {
                       const width = Math.max(2, xOf(p.stop_ts) - left)
                       const isNow = p.start_ts <= now && now < p.stop_ts
                       const isPast = p.stop_ts <= now
+                      const hasRem = reminders.has(remKey(ch.stream_id, p.start_ts))
                       return (
                         <button
                           key={p.id || p.start_ts}
@@ -142,7 +167,8 @@ export default function EpgGuide({ credId, channels, onPlay }: {
                           }`}
                           style={{ left, width }}
                         >
-                          <div className="text-[11px] font-medium truncate leading-tight mt-0.5">{p.title}</div>
+                          {hasRem && <BellRing size={9} className="absolute top-1 right-1 text-amber-400" />}
+                          <div className="text-[11px] font-medium truncate leading-tight mt-0.5 pr-2">{p.title}</div>
                           <div className="text-[9px] text-zinc-500 truncate">{fmtTime(p.start_ts)}</div>
                         </button>
                       )
@@ -173,7 +199,22 @@ export default function EpgGuide({ credId, channels, onPlay }: {
             <h2 className="text-lg font-semibold leading-tight pr-6">{selected.p.title}</h2>
             <div className="text-xs text-amber-400 mt-1">{fmtTime(selected.p.start_ts)} – {fmtTime(selected.p.stop_ts)}</div>
             {selected.p.desc && <p className="text-sm text-zinc-300 mt-3 max-h-48 overflow-y-auto">{selected.p.desc}</p>}
-            <div className="flex justify-end gap-2 mt-4">
+            <div className="flex items-center justify-end gap-2 mt-4">
+              {selected.p.start_ts > now && (() => {
+                const has = reminders.has(remKey(selected.ch.stream_id, selected.p.start_ts))
+                return (
+                  <button
+                    onClick={() => toggleReminder(selected.ch, selected.p)}
+                    disabled={!deviceId && !has}
+                    title={!deviceId && !has ? 'Choisis un device dans la barre du haut' : undefined}
+                    className={`flex items-center gap-1.5 text-sm rounded px-3 py-2 border transition-colors disabled:opacity-50 ${
+                      has ? 'border-amber-500/60 text-amber-400 hover:bg-amber-500/10' : 'border-zinc-700 text-zinc-300 hover:border-zinc-500'
+                    }`}
+                  >
+                    {has ? <><BellRing size={14} /> Rappel activé</> : <><Bell size={14} /> Me rappeler</>}
+                  </button>
+                )
+              })()}
               <button onClick={() => { onPlay(selected.ch); setSelected(null) }} className="flex items-center gap-1.5 bg-amber-500 text-black text-sm font-medium rounded px-4 py-2 hover:bg-amber-400">
                 <Play size={14} fill="currentColor" /> Regarder la chaîne
               </button>

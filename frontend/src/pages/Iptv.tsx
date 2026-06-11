@@ -402,7 +402,7 @@ export default function Iptv() {
         {/* Grille de streams / Guide EPG */}
         <div ref={contentRef} className={`flex-1 min-w-0 ${type === 'live' && liveView === 'guide' ? 'overflow-hidden p-3' : 'overflow-y-auto p-4'}`}>
           {type === 'live' && liveView === 'guide' ? (
-            <EpgGuide credId={credId!} channels={streams} onPlay={play} />
+            <EpgGuide credId={credId!} channels={streams} deviceId={deviceId} onPlay={play} />
           ) : (
           <>
           {loading && streams.length === 0 && (

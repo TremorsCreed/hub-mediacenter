@@ -88,6 +88,39 @@ router.get('/:credId/epg/:streamId', async (req, res) => {
   }
 })
 
+// ── Rappels EPG (par profil) ─────────────────────────────────────────────────
+// GET liste les rappels à venir du profil courant
+router.get('/reminders', async (req, res) => {
+  const userId = (req as any).userId as number | null
+  if (userId == null) return res.json([])
+  const now = Math.floor(Date.now() / 1000)
+  const { rows } = await db.execute({
+    sql: 'SELECT * FROM epg_reminders WHERE user_id = ? AND start_ts > ? ORDER BY start_ts',
+    args: [userId, now - 3600],
+  })
+  res.json(rows)
+})
+
+router.post('/reminders', async (req, res) => {
+  const userId = (req as any).userId as number | null
+  if (userId == null) return res.status(403).json({ error: 'no_profile' })
+  const b = req.body ?? {}
+  if (!b.stream_id || !b.start_ts) return res.status(400).json({ error: 'stream_id et start_ts requis' })
+  const { rows } = await db.execute({
+    sql: `INSERT INTO epg_reminders (user_id, cred_id, stream_id, channel_name, title, start_ts, device_id, lead_min, notified, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?) RETURNING id`,
+    args: [userId, b.cred_id ?? null, String(b.stream_id), b.channel_name ?? null, b.title ?? null, Number(b.start_ts), b.device_id ?? null, Number(b.lead_min ?? 5), Date.now()],
+  })
+  res.json({ ok: true, id: (rows[0] as any).id })
+})
+
+router.delete('/reminders/:id', async (req, res) => {
+  const userId = (req as any).userId as number | null
+  if (userId == null) return res.status(403).json({ error: 'no_profile' })
+  await db.execute({ sql: 'DELETE FROM epg_reminders WHERE id = ? AND user_id = ?', args: [parseInt(req.params.id, 10), userId] })
+  res.json({ ok: true })
+})
+
 // GET /api/iptv/credentials
 router.get('/credentials', async (_req, res) => {
   const { rows } = await db.execute("SELECT id, name FROM credentials WHERE type = 'xtream' ORDER BY name")

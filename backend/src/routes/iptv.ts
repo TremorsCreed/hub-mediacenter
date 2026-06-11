@@ -32,7 +32,7 @@ async function xtreamCall(cred: NonNullable<Awaited<ReturnType<typeof getXtreamC
 // ── EPG (guide) ──────────────────────────────────────────────────────────────
 interface EpgEntry { id: string; start_ts: number; stop_ts: number; title: string; desc: string }
 const epgCache = new Map<string, { ts: number; listings: EpgEntry[] }>()
-const EPG_TTL = 20 * 60 * 1000 // 20 min
+const EPG_TTL = 60 * 60 * 1000 // 60 min (l'EPG futur est stable ; le passé est passé)
 
 function b64(s: any): string {
   try { return Buffer.from(String(s ?? ''), 'base64').toString('utf-8') } catch { return String(s ?? '') }

@@ -121,27 +121,34 @@ export default function EpgGuide({ credId, channels, onPlay }: {
                 </button>
 
                 <div className="relative" style={{ width: TLW }}>
-                  {progs.map(p => {
-                    const left = xOf(p.start_ts)
-                    const width = Math.max(2, xOf(p.stop_ts) - left)
-                    const isNow = p.start_ts <= now && now < p.stop_ts
-                    const isPast = p.stop_ts <= now
-                    return (
-                      <button
-                        key={p.id || p.start_ts}
-                        onClick={() => setSelected({ ch, p })}
-                        className={`absolute top-1 bottom-1 rounded px-1.5 overflow-hidden text-left border transition-colors ${
-                          isNow ? 'bg-amber-500/20 border-amber-500/60' : isPast ? 'bg-zinc-900/40 border-zinc-800/60 text-zinc-500' : 'bg-zinc-800/60 border-zinc-700/50 hover:border-zinc-500'
-                        }`}
-                        style={{ left, width }}
-                      >
-                        <div className="text-[11px] font-medium truncate leading-tight mt-0.5">{p.title}</div>
-                        <div className="text-[9px] text-zinc-500 truncate">{fmtTime(p.start_ts)}</div>
-                      </button>
-                    )
-                  })}
-                  {progs.length === 0 && !loading && (
-                    <div className="absolute inset-0 flex items-center pl-3 text-[10px] text-zinc-700">Pas de guide</div>
+                  {loading && progs.length === 0 ? (
+                    <>
+                      <div className="absolute top-2 bottom-2 rounded bg-zinc-800/60 animate-pulse" style={{ left: 4, width: 150 }} />
+                      <div className="absolute top-2 bottom-2 rounded bg-zinc-800/40 animate-pulse" style={{ left: 160, width: 240 }} />
+                      <div className="absolute top-2 bottom-2 rounded bg-zinc-800/25 animate-pulse" style={{ left: 406, width: 200 }} />
+                    </>
+                  ) : progs.length > 0 ? (
+                    progs.map(p => {
+                      const left = xOf(p.start_ts)
+                      const width = Math.max(2, xOf(p.stop_ts) - left)
+                      const isNow = p.start_ts <= now && now < p.stop_ts
+                      const isPast = p.stop_ts <= now
+                      return (
+                        <button
+                          key={p.id || p.start_ts}
+                          onClick={() => setSelected({ ch, p })}
+                          className={`absolute top-1 bottom-1 rounded px-1.5 overflow-hidden text-left border transition-colors ${
+                            isNow ? 'bg-amber-500/20 border-amber-500/60' : isPast ? 'bg-zinc-900/40 border-zinc-800/60 text-zinc-500' : 'bg-zinc-800/60 border-zinc-700/50 hover:border-zinc-500'
+                          }`}
+                          style={{ left, width }}
+                        >
+                          <div className="text-[11px] font-medium truncate leading-tight mt-0.5">{p.title}</div>
+                          <div className="text-[9px] text-zinc-500 truncate">{fmtTime(p.start_ts)}</div>
+                        </button>
+                      )
+                    })
+                  ) : (
+                    <div className="sticky left-0 inline-flex items-center h-full pl-3 text-[11px] text-zinc-600" style={{ width: 'min(100%, 420px)' }}>Pas de guide pour cette chaîne</div>
                   )}
                 </div>
               </div>

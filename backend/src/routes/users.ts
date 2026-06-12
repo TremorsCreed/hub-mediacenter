@@ -9,7 +9,7 @@ const router = Router()
 // N'expose jamais le pin_hash, juste un booléen has_pin.
 router.get('/', async (_req, res) => {
   const { rows } = await db.execute(
-    "SELECT id, name, avatar_color, is_admin, (pin_hash IS NOT NULL) as has_pin, (nfc_token IS NOT NULL) as has_nfc, COALESCE(preferred_lang, 'FR') as preferred_lang, created_at FROM users ORDER BY is_admin DESC, name"
+    "SELECT id, name, avatar_color, is_admin, (pin_hash IS NOT NULL) as has_pin, (nfc_token IS NOT NULL) as has_nfc, COALESCE(preferred_lang, 'FR') as preferred_lang, default_device_id, default_player, created_at FROM users ORDER BY is_admin DESC, name"
   )
   res.json(rows.map((r: any) => ({
     id: r.id,
@@ -19,6 +19,8 @@ router.get('/', async (_req, res) => {
     has_pin: !!r.has_pin,
     has_nfc: !!r.has_nfc,
     preferred_lang: r.preferred_lang,
+    default_device_id: r.default_device_id ?? null,
+    default_player: r.default_player ?? null,
     created_at: r.created_at,
   })))
 })
@@ -34,6 +36,17 @@ router.post('/verify-pin', async (req, res) => {
   if (!match) return res.status(401).json({ error: 'PIN incorrect' })
 
   res.json({ ok: true, token: issueAdminToken(), admin: { id: (match as any).id, name: (match as any).name } })
+})
+
+// Vérifie le PIN admin SANS émettre de token (déverrouillage parental d'une
+// catégorie : on ne veut pas donner les droits admin au client pour autant).
+router.post('/check-pin', async (req, res) => {
+  const parsed = VerifyPinSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'pin requis' })
+  const { rows } = await db.execute('SELECT pin_hash FROM users WHERE is_admin = 1')
+  const ok = rows.some((r: any) => verifyPin(parsed.data.pin, r.pin_hash as string))
+  if (!ok) return res.status(401).json({ error: 'PIN incorrect' })
+  res.json({ ok: true })
 })
 
 // ── Mutations : réservées à l'admin (token requis) ───────────────────────────
@@ -70,6 +83,8 @@ const UpdateSchema = z.object({
   pin: z.string().min(4).max(8).optional(),       // si fourni, (re)définit le PIN
   nfc_token: z.string().nullable().optional(),    // undefined = inchangé · null/'' = retire · valeur = associe
   preferred_lang: z.string().optional(),
+  default_device_id: z.string().nullable().optional(),  // null/'' = aucun défaut
+  default_player: z.string().nullable().optional(),     // null/'' = suit le réglage du device
 })
 router.put('/:id', requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10)
@@ -94,9 +109,17 @@ router.put('/:id', requireAdmin, async (req, res) => {
     ? cur.nfc_token
     : (parsed.data.nfc_token?.trim() || null)
 
+  // Défauts par profil : undefined = inchangé ; null ou '' = retire ; valeur = définit
+  const newDefaultDevice = parsed.data.default_device_id === undefined
+    ? cur.default_device_id
+    : (parsed.data.default_device_id?.trim() || null)
+  const newDefaultPlayer = parsed.data.default_player === undefined
+    ? cur.default_player
+    : (parsed.data.default_player?.trim() || null)
+
   try {
     await db.execute({
-      sql: 'UPDATE users SET name = ?, avatar_color = ?, is_admin = ?, pin_hash = ?, nfc_token = ?, preferred_lang = ? WHERE id = ?',
+      sql: 'UPDATE users SET name = ?, avatar_color = ?, is_admin = ?, pin_hash = ?, nfc_token = ?, preferred_lang = ?, default_device_id = ?, default_player = ? WHERE id = ?',
       args: [
         parsed.data.name ?? cur.name,
         parsed.data.avatar_color ?? cur.avatar_color,
@@ -104,6 +127,8 @@ router.put('/:id', requireAdmin, async (req, res) => {
         newPinHash,
         newNfc,
         (parsed.data.preferred_lang ?? cur.preferred_lang ?? 'FR').toUpperCase(),
+        newDefaultDevice,
+        newDefaultPlayer,
         id,
       ]
     })

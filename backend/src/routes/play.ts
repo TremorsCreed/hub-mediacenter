@@ -437,11 +437,17 @@ router.post('/', async (req, res) => {
   // route vers le ExternalUrlLauncher (deep link Intent ACTION_VIEW).
   const finalApp: AppId = external_url ? 'external' : resolved_app
 
-  // Lecteur IPTV préféré du device (auto/mxplayer/vlc/tivimate)
+  // Lecteur IPTV : réglage du device (auto/justplayer/mxplayer/vlc/tivimate),
+  // surchargé par le lecteur par défaut du profil courant s'il en a un.
   let iptvPlayer: string | undefined
   if (resolved_app === 'iptv') {
     const { rows: pcfg } = await db.execute({ sql: 'SELECT iptv_player FROM device_config WHERE device_id = ?', args: [target_device_id] })
     iptvPlayer = ((pcfg[0] as any)?.iptv_player as string) || undefined
+    if (userId != null) {
+      const { rows: urows } = await db.execute({ sql: 'SELECT default_player FROM users WHERE id = ?', args: [userId] })
+      const userPlayer = ((urows[0] as any)?.default_player as string) || undefined
+      if (userPlayer) iptvPlayer = userPlayer
+    }
   }
 
   const cmd: WsPlayCommand = {

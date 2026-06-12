@@ -1,5 +1,7 @@
 import { Router } from 'express'
+import { z } from 'zod'
 import { db } from '../db'
+import { requireAdmin } from '../auth'
 import { getList, normalizeTitle } from '../iptvVodCache'
 import { warmImages } from '../iptvImageWarmer'
 import { createHash } from 'node:crypto'
@@ -127,17 +129,92 @@ router.get('/credentials', async (_req, res) => {
   res.json(rows.map((r: any) => ({ id: r.id, name: r.name })))
 })
 
-// GET /api/iptv/:credId/categories?type=live|vod|series
+// ── Préférences de catégories : masquer (déclutter) / verrouiller (parental) ──
+type CatState = 'hidden' | 'locked'
+
+// État effectif pour un profil = fusion global + surcharge profil, le plus
+// restrictif gagne (hidden > locked > visible).
+async function getEffectiveCatPrefs(credId: number, type: string, userId: number | null): Promise<Map<string, CatState>> {
+  const { rows } = await db.execute({
+    sql: 'SELECT category_id, scope, state FROM iptv_category_prefs WHERE cred_id = ? AND content_type = ?',
+    args: [credId, type],
+  })
+  const effective = new Map<string, CatState>()
+  const apply = (id: string, st: CatState) => {
+    const cur = effective.get(id)
+    effective.set(id, cur === 'hidden' || st === 'hidden' ? 'hidden' : st)
+  }
+  for (const r of rows as any[]) {
+    if (r.scope === 'global') apply(String(r.category_id), r.state)
+    else if (userId != null && r.scope === String(userId)) apply(String(r.category_id), r.state)
+  }
+  return effective
+}
+
+// GET /api/iptv/:credId/category-prefs?type=live — toutes les lignes brutes
+// (global + tous profils), pour l'UI d'administration.
+router.get('/:credId/category-prefs', async (req, res) => {
+  const credId = parseInt(req.params.credId)
+  if (!credId) return res.status(404).json({ error: 'invalid credential id' })
+  const type = (req.query.type as string) ?? 'live'
+  const { rows } = await db.execute({
+    sql: 'SELECT category_id, scope, state FROM iptv_category_prefs WHERE cred_id = ? AND content_type = ?',
+    args: [credId, type],
+  })
+  res.json(rows.map((r: any) => ({ category_id: String(r.category_id), scope: String(r.scope), state: r.state as CatState })))
+})
+
+// PUT /api/iptv/:credId/category-prefs (admin) — pose/retire un état.
+// state null = retour à visible (suppression de la ligne).
+const CatPrefSchema = z.object({
+  type: z.enum(['live', 'vod', 'series']),
+  category_id: z.string().min(1),
+  scope: z.string().min(1),            // 'global' ou un user_id
+  state: z.enum(['hidden', 'locked']).nullable(),
+})
+router.put('/:credId/category-prefs', requireAdmin, async (req, res) => {
+  const credId = parseInt(req.params.credId)
+  if (!credId) return res.status(404).json({ error: 'invalid credential id' })
+  const parsed = CatPrefSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.message })
+  const { type, category_id, scope, state } = parsed.data
+  if (state === null) {
+    await db.execute({
+      sql: 'DELETE FROM iptv_category_prefs WHERE cred_id = ? AND content_type = ? AND category_id = ? AND scope = ?',
+      args: [credId, type, category_id, scope],
+    })
+  } else {
+    await db.execute({
+      sql: `INSERT INTO iptv_category_prefs (cred_id, content_type, category_id, scope, state)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(cred_id, content_type, category_id, scope) DO UPDATE SET state = excluded.state`,
+      args: [credId, type, category_id, scope, state],
+    })
+  }
+  res.json({ ok: true })
+})
+
+// GET /api/iptv/:credId/categories?type=live|vod|series[&all=1]
+// Par défaut : catégories masquées exclues, verrouillées marquées state='locked'
+// (état effectif pour le profil courant). all=1 (UI admin) = tout, sans filtrage.
 router.get('/:credId/categories', async (req, res) => {
   const cred = await getXtreamCred(req.params.credId)
   if (!cred) return res.status(404).json({ error: 'credential not found or incomplete' })
   const type = (req.query.type as string) ?? 'live'
+  const all = req.query.all === '1'
   const action = type === 'vod' ? 'get_vod_categories'
                : type === 'series' ? 'get_series_categories'
                : 'get_live_categories'
   try {
     const data = await xtreamCall(cred, action) as any[]
-    res.json(data.map(c => ({ id: String(c.category_id), name: c.category_name as string })))
+    let cats = data.map(c => ({ id: String(c.category_id), name: c.category_name as string })) as { id: string; name: string; state?: CatState }[]
+    if (!all) {
+      const effective = await getEffectiveCatPrefs(parseInt(req.params.credId), type, (req as any).userId)
+      cats = cats
+        .filter(c => effective.get(c.id) !== 'hidden')
+        .map(c => effective.get(c.id) === 'locked' ? { ...c, state: 'locked' as CatState } : c)
+    }
+    res.json(cats)
   } catch (e: any) {
     res.status(502).json({ error: e.message })
   }
@@ -160,7 +237,17 @@ router.get('/:credId/streams', async (req, res) => {
   try {
     const all = await getList(credId, type)
     let items = all
-    if (category) items = items.filter(it => it.category_id === category)
+    const effective = await getEffectiveCatPrefs(credId, type, (req as any).userId)
+    if (category) {
+      // Catégorie masquée : rien à servir. Verrouillée : servie — le PIN est
+      // demandé côté client AVANT d'ouvrir le groupe.
+      if (effective.get(category) === 'hidden') return res.json({ total: 0, start: 0, size: 0, items: [] })
+      items = items.filter(it => it.category_id === category)
+    } else if (effective.size > 0) {
+      // Vue « toutes les catégories » / recherche : le contenu des catégories
+      // masquées ET verrouillées est exclu (pas de fuite via la recherche).
+      items = items.filter(it => !effective.has(String(it.category_id)))
+    }
     if (langs.size > 0) {
       items = items.filter(it => {
         if (!it.language) return includeUnknown

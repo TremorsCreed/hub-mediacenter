@@ -172,6 +172,20 @@ export async function initDb() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_reminders_due ON epg_reminders(notified, start_ts);
+
+    -- Préférences de catégories IPTV : masquer (déclutter) ou verrouiller (parental).
+    -- scope = 'global' (base posée par l'admin) ou un user_id en texte (surcharge par
+    -- profil). État effectif = fusion, le plus restrictif gagne (hidden > locked).
+    -- Absence de ligne = catégorie visible.
+    CREATE TABLE IF NOT EXISTS iptv_category_prefs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cred_id INTEGER NOT NULL,
+      content_type TEXT NOT NULL,
+      category_id TEXT NOT NULL,
+      scope TEXT NOT NULL DEFAULT 'global',
+      state TEXT NOT NULL CHECK (state IN ('hidden','locked')),
+      UNIQUE(cred_id, content_type, category_id, scope)
+    );
   `)
 
   // Migrations idempotentes (ALTER TABLE échoue silencieusement si la colonne existe)
@@ -187,6 +201,10 @@ export async function initDb() {
   try { await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nfc ON users(nfc_token) WHERE nfc_token IS NOT NULL") } catch {}
   // Langue préférée du profil (matching des imports de playlists IPTV/Plex)
   try { await db.execute("ALTER TABLE users ADD COLUMN preferred_lang TEXT NOT NULL DEFAULT 'FR'") } catch {}
+  // Défauts par profil : device cible (présélectionné à l'activation du profil)
+  // et lecteur IPTV (prime sur le réglage du device s'il est défini)
+  try { await db.execute("ALTER TABLE users ADD COLUMN default_device_id TEXT") } catch {}
+  try { await db.execute("ALTER TABLE users ADD COLUMN default_player TEXT") } catch {}
   // Extension de conteneur (épisodes IPTV séries, pour la relecture depuis une playlist)
   try { await db.execute("ALTER TABLE playlist_items ADD COLUMN ext TEXT") } catch {}
   // Logo de la chaîne pour l'overlay de rappel EPG (carte du bas)

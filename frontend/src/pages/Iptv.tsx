@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, Device, IptvCategory, IptvSeriesInfo, IptvStream } from '../api'
 import { usePersistentDevice } from '../usePersistentDevice'
-import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
+import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight, ChevronLeft, Lock } from 'lucide-react'
 import FavoriteButton from '../components/FavoriteButton'
 import AddToPlaylist from '../components/AddToPlaylist'
 import { CatalogDndProvider, DraggableMedia } from '../components/CatalogDnd'
 import EpgGuide from '../components/EpgGuide'
+import PinDialog from '../components/PinDialog'
 import { LayoutGrid, CalendarDays } from 'lucide-react'
 
 const PAGE_SIZE = 300
@@ -58,6 +59,10 @@ export default function Iptv() {
   // Cascade : média développé à l'entrée du module ; se réduit au clic d'un type
   // pour laisser apparaître la sidebar catégories.
   const [mediaCollapsed, setMediaCollapsed] = useState(false)
+  // Contrôle parental : une catégorie verrouillée demande le PIN à l'ouverture et
+  // reste déverrouillée tant qu'on n'en sort pas (changement de catégorie/type).
+  const [unlockedCat, setUnlockedCat] = useState<string | null>(null)
+  const [pinPrompt, setPinPrompt] = useState<{ catId: string; name: string } | null>(null)
   const [liveView, setLiveView] = useState<'list' | 'guide'>('list') // TV : liste de chaînes ou guide EPG
 
   useEffect(() => {
@@ -262,7 +267,7 @@ export default function Iptv() {
           {MEDIA_TYPES.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
-              onClick={() => { setType(key); setCategoryId(''); setMediaCollapsed(true) }}
+              onClick={() => { setType(key); setCategoryId(''); setUnlockedCat(null); setMediaCollapsed(true) }}
               title={mediaCollapsed ? label : undefined}
               className={`w-full flex items-center py-3 text-sm transition-colors text-left border-l-2 ${
                 mediaCollapsed ? 'justify-center px-0' : 'gap-2.5 px-4'
@@ -295,7 +300,7 @@ export default function Iptv() {
         </div>
         <div className="flex-1 overflow-y-auto py-1">
           <button
-            onClick={() => setCategoryId('')}
+            onClick={() => { setCategoryId(''); setUnlockedCat(null) }}
             className={`w-full px-3 py-2 text-xs text-left transition-colors truncate ${
               categoryId === ''
                 ? 'bg-zinc-800 text-white'
@@ -307,14 +312,22 @@ export default function Iptv() {
           {categories.map(c => (
             <button
               key={c.id}
-              onClick={() => setCategoryId(c.id)}
-              className={`w-full px-3 py-2 text-xs text-left transition-colors truncate ${
+              onClick={() => {
+                if (c.state === 'locked' && unlockedCat !== c.id) { setPinPrompt({ catId: c.id, name: c.name }); return }
+                setCategoryId(c.id)
+                // Sortir d'un groupe verrouillé le re-verrouille
+                if (unlockedCat && unlockedCat !== c.id) setUnlockedCat(null)
+              }}
+              className={`w-full px-3 py-2 text-xs text-left transition-colors truncate flex items-center gap-1.5 ${
                 categoryId === c.id
                   ? 'bg-zinc-800 text-white'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
               }`}
             >
-              {c.name}
+              {c.state === 'locked' && (
+                <Lock size={11} className={`shrink-0 ${unlockedCat === c.id ? 'text-emerald-500' : 'text-amber-500'}`} />
+              )}
+              <span className="truncate">{c.name}</span>
             </button>
           ))}
         </div>
@@ -645,6 +658,15 @@ export default function Iptv() {
           {toast.msg}
         </div>,
         document.body
+      )}
+
+      {/* PIN parental : déverrouille une catégorie verrouillée */}
+      {pinPrompt && (
+        <PinDialog
+          title={pinPrompt.name}
+          onSuccess={() => { setUnlockedCat(pinPrompt.catId); setCategoryId(pinPrompt.catId); setPinPrompt(null) }}
+          onCancel={() => setPinPrompt(null)}
+        />
       )}
     </div>
     </CatalogDndProvider>

@@ -7,6 +7,12 @@ import type { Device } from './api'
 // le change explicitement, ou si le device mémorisé n'existe plus.
 const KEY = 'hub.selectedDeviceId'
 
+// Pose le device cible hors React (utilisé à l'activation d'un profil qui a un
+// device par défaut : la cible bascule dessus, puis reste modifiable librement).
+export function setPersistedDevice(id: string) {
+  try { id ? localStorage.setItem(KEY, id) : localStorage.removeItem(KEY) } catch { /* ignore */ }
+}
+
 export function usePersistentDevice() {
   const [deviceId, setRaw] = useState<string>(() => {
     try { return localStorage.getItem(KEY) ?? '' } catch { return '' }

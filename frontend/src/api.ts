@@ -38,6 +38,8 @@ export interface User {
   has_pin: boolean
   has_nfc: boolean
   preferred_lang: string
+  default_device_id: string | null  // device présélectionné à l'activation du profil
+  default_player: string | null     // lecteur IPTV du profil (prime sur celui du device)
   created_at: number
 }
 
@@ -270,7 +272,9 @@ export interface DiscoverAvailability {
   iptv_language?: string           // "FR", "EN", ... — undefined si non détectée
 }
 
-export interface IptvCategory { id: string; name: string }
+export interface IptvCategory { id: string; name: string; state?: 'hidden' | 'locked' }
+// Préférence de catégorie posée par l'admin : scope 'global' ou un user_id (texte)
+export interface IptvCategoryPref { category_id: string; scope: string; state: 'hidden' | 'locked' }
 export interface IptvStream {
   stream_id: string
   name: string
@@ -465,9 +469,11 @@ export const api = {
   users: {
     list: () => get<User[]>('/users'),
     create: (u: { name: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string; preferred_lang?: string }) => post<{ ok: boolean; id: number }>('/users', u),
-    update: (id: number, u: { name?: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string | null; preferred_lang?: string }) => put<{ ok: boolean }>(`/users/${id}`, u),
+    update: (id: number, u: { name?: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string | null; preferred_lang?: string; default_device_id?: string | null; default_player?: string | null }) => put<{ ok: boolean }>(`/users/${id}`, u),
     remove: (id: number) => del<{ ok: boolean }>(`/users/${id}`),
     verifyPin: (pin: string) => post<{ ok: boolean; token: string; admin: { id: number; name: string } }>('/users/verify-pin', { pin }),
+    // Vérifie le PIN sans obtenir de droits admin (déverrouillage parental)
+    checkPin: (pin: string) => post<{ ok: boolean }>('/users/check-pin', { pin }),
   },
   favorites: {
     list: () => get<Favorite[]>('/favorites'),
@@ -531,7 +537,10 @@ export const api = {
   },
   iptv: {
     credentials: () => get<{ id: number; name: string }[]>('/iptv/credentials'),
-    categories: (credId: number, type: 'live' | 'vod' | 'series') => get<IptvCategory[]>(`/iptv/${credId}/categories?type=${type}`),
+    categories: (credId: number, type: 'live' | 'vod' | 'series', all = false) => get<IptvCategory[]>(`/iptv/${credId}/categories?type=${type}${all ? '&all=1' : ''}`),
+    categoryPrefs: (credId: number, type: 'live' | 'vod' | 'series') => get<IptvCategoryPref[]>(`/iptv/${credId}/category-prefs?type=${type}`),
+    setCategoryPref: (credId: number, pref: { type: 'live' | 'vod' | 'series'; category_id: string; scope: string; state: 'hidden' | 'locked' | null }) =>
+      put<{ ok: boolean }>(`/iptv/${credId}/category-prefs`, pref),
     languages: (credId: number, type: 'live' | 'vod' | 'series') => get<{ code: string; count: number }[]>(`/iptv/${credId}/languages?type=${type}`),
     streams: (credId: number, opts: { type: 'live' | 'vod' | 'series'; category?: string; search?: string; languages?: string[]; start?: number; limit?: number }) => {
       const p = new URLSearchParams({ type: opts.type })

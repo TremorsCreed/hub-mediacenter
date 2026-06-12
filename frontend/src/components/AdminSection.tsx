@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { LayoutDashboard, Users, Tv, KeyRound, Settings as SettingsIcon, Lock } from 'lucide-react'
+import { LayoutDashboard, Users, Tv, KeyRound, Settings as SettingsIcon, Lock, ListFilter } from 'lucide-react'
 import { useUser } from '../UserContext'
 
 const adminNav = [
@@ -7,6 +7,7 @@ const adminNav = [
   { to: '/admin/profiles', label: 'Profils', icon: Users, end: false },
   { to: '/admin/devices', label: 'Devices', icon: Tv, end: false },
   { to: '/admin/credentials', label: 'Credentials', icon: KeyRound, end: false },
+  { to: '/admin/iptv-categories', label: 'Catégories IPTV', icon: ListFilter, end: false },
   { to: '/admin/settings', label: 'Settings', icon: SettingsIcon, end: false },
 ]
 

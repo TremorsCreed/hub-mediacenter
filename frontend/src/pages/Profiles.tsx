@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react'
-import { api, User, SpotifyStatus } from '../api'
+import { api, User, Device, SpotifyStatus } from '../api'
 import { useUser, initials } from '../UserContext'
 import { ShieldCheck, Plus, Trash2, Pencil, X, Loader2, Nfc, Music2 } from 'lucide-react'
+
+// Lecteurs IPTV proposés comme défaut de profil ('' = suit le réglage du device)
+const PLAYERS = [
+  { value: '', label: 'Suit le réglage du device' },
+  { value: 'auto', label: 'Auto (live: MX Player · VOD: Just Player)' },
+  { value: 'justplayer', label: 'Just Player' },
+  { value: 'mxplayer', label: 'MX Player' },
+  { value: 'vlc', label: 'VLC' },
+  { value: 'tivimate', label: 'TiviMate' },
+]
 
 const COLORS = ['#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#3b82f6', '#06b6d4', '#10b981', '#84cc16', '#f97316', '#64748b']
 
@@ -17,9 +27,11 @@ interface FormState {
   hasNfc: boolean
   clearNfc: boolean
   preferred_lang: string
+  default_device_id: string
+  default_player: string
 }
 
-const emptyForm: FormState = { name: '', avatar_color: COLORS[0], is_admin: false, pin: '', nfc_token: '', hasNfc: false, clearNfc: false, preferred_lang: 'FR' }
+const emptyForm: FormState = { name: '', avatar_color: COLORS[0], is_admin: false, pin: '', nfc_token: '', hasNfc: false, clearNfc: false, preferred_lang: 'FR', default_device_id: '', default_player: '' }
 
 export default function Profiles() {
   const { refresh: refreshContext } = useUser()
@@ -29,10 +41,11 @@ export default function Profiles() {
   const [error, setError] = useState<string | null>(null)
   const [spotify, setSpotify] = useState<SpotifyStatus | null>(null)
   const [linking, setLinking] = useState<number | null>(null)
+  const [devices, setDevices] = useState<Device[]>([])
 
   const load = () => api.users.list().then(setUsers).catch(() => {})
   const loadSpotify = () => api.spotify.status().then(setSpotify).catch(() => setSpotify(null))
-  useEffect(() => { load(); loadSpotify() }, [])
+  useEffect(() => { load(); loadSpotify(); api.devices.list().then(setDevices).catch(() => {}) }, [])
 
   // Lie un compte Spotify à un profil via une popup OAuth (le callback poste un
   // message à la fenêtre parente quand c'est terminé). cf. routes/spotify.ts.
@@ -71,7 +84,7 @@ export default function Profiles() {
   const openCreate = () => { setError(null); setForm({ ...emptyForm }) }
   const openEdit = (u: User) => {
     setError(null)
-    setForm({ id: u.id, name: u.name, avatar_color: u.avatar_color, is_admin: u.is_admin, pin: '', nfc_token: '', hasNfc: u.has_nfc, clearNfc: false, preferred_lang: u.preferred_lang ?? 'FR' })
+    setForm({ id: u.id, name: u.name, avatar_color: u.avatar_color, is_admin: u.is_admin, pin: '', nfc_token: '', hasNfc: u.has_nfc, clearNfc: false, preferred_lang: u.preferred_lang ?? 'FR', default_device_id: u.default_device_id ?? '', default_player: u.default_player ?? '' })
   }
 
   const save = async () => {
@@ -89,11 +102,13 @@ export default function Profiles() {
           avatar_color: form.avatar_color,
           is_admin: form.is_admin,
           preferred_lang: form.preferred_lang,
+          default_device_id: form.default_device_id || null,
+          default_player: form.default_player || null,
           ...(form.pin ? { pin: form.pin } : {}),
           ...nfcPatch,
         })
       } else {
-        await api.users.create({
+        const created = await api.users.create({
           name: form.name.trim(),
           avatar_color: form.avatar_color,
           is_admin: form.is_admin,
@@ -101,6 +116,13 @@ export default function Profiles() {
           ...(form.is_admin && form.pin ? { pin: form.pin } : {}),
           ...(form.nfc_token.trim() ? { nfc_token: form.nfc_token.trim() } : {}),
         })
+        // Les défauts (device/lecteur) se posent via update — second appel si renseignés
+        if (form.default_device_id || form.default_player) {
+          await api.users.update(created.id, {
+            default_device_id: form.default_device_id || null,
+            default_player: form.default_player || null,
+          })
+        }
       }
       setForm(null)
       await load()
@@ -255,6 +277,30 @@ export default function Profiles() {
                   className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-500/60"
                 >
                   {LANGS.map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-zinc-500 uppercase tracking-widest">Device par défaut</label>
+                <select
+                  value={form.default_device_id}
+                  onChange={e => setForm({ ...form, default_device_id: e.target.value })}
+                  className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-500/60"
+                >
+                  <option value="">— aucun (garde la dernière cible) —</option>
+                  {devices.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+                <p className="mt-1 text-[11px] text-zinc-600">À l'activation du profil, la cible de lecture bascule sur ce device.</p>
+              </div>
+
+              <div>
+                <label className="text-xs text-zinc-500 uppercase tracking-widest">Lecteur IPTV du profil</label>
+                <select
+                  value={form.default_player}
+                  onChange={e => setForm({ ...form, default_player: e.target.value })}
+                  className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-500/60"
+                >
+                  {PLAYERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                 </select>
               </div>
 

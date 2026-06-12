@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react'
 import { api, User, setCurrentUserId, getCurrentUserId, setAdminToken, isAdminUnlocked } from './api'
+import { setPersistedDevice } from './usePersistentDevice'
 
 interface UserContextValue {
   users: User[]
@@ -39,6 +40,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const selectUser = useCallback((u: User) => {
     setCurrentUserId(u.id)
     setCurrentUser(u)
+    // Le profil a un device par défaut → la cible bascule dessus (puis reste
+    // librement modifiable jusqu'au prochain changement de profil).
+    if (u.default_device_id) setPersistedDevice(u.default_device_id)
   }, [])
 
   const switchProfile = useCallback(() => {

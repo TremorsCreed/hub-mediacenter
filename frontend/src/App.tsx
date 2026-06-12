@@ -13,6 +13,7 @@ import Plex from './pages/Plex'
 import Iptv from './pages/Iptv'
 import Discover from './pages/Discover'
 import Credentials from './pages/Credentials'
+import IptvCategories from './pages/IptvCategories'
 import Launchbox from './pages/Launchbox'
 import Profiles from './pages/Profiles'
 import Playlists from './pages/Playlists'
@@ -46,6 +47,7 @@ export default function App() {
           <Route path="profiles" element={<Profiles />} />
           <Route path="devices" element={<Devices />} />
           <Route path="credentials" element={<Credentials />} />
+          <Route path="iptv-categories" element={<IptvCategories />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Route>

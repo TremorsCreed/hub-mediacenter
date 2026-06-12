@@ -4,6 +4,7 @@ import { db } from '../db'
 import { requireAdmin } from '../auth'
 import { getList, normalizeTitle } from '../iptvVodCache'
 import { warmImages } from '../iptvImageWarmer'
+import { isDead, markDead } from '../imageNegCache'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -416,11 +417,24 @@ router.get('/image', async (req, res) => {
     } catch { /* fallthrough fetch */ }
   }
 
+  // Cache négatif : URL connue morte (404/timeout récent) → 404 immédiat, avec
+  // Cache-Control pour que le navigateur n'insiste pas non plus. Sans ça, chaque
+  // rendu re-paie jusqu'à 5 s de timeout PAR vignette quand l'upstream pend.
+  if (isDead(hash)) {
+    res.set('Cache-Control', 'public, max-age=21600')
+    res.set('X-Cache', 'neg')
+    return res.status(404).end()
+  }
+
   try {
     // Timeout court (5s) : si le serveur upstream rame, fail fast pour pas bloquer
     // le rendu. Le warmer continuera de tenter en arrière-plan.
     const r = await fetch(url, { signal: AbortSignal.timeout(5000) } as any)
-    if (!r.ok) return res.status(r.status).end()
+    if (!r.ok) {
+      markDead(hash)
+      res.set('Cache-Control', 'public, max-age=21600')
+      return res.status(r.status).end()
+    }
     const ct = r.headers.get('content-type') ?? 'image/png'
     const buf = Buffer.from(await r.arrayBuffer())
     try { writeFileSync(cachePath, buf); writeFileSync(ctPath, ct) } catch {}
@@ -429,6 +443,8 @@ router.get('/image', async (req, res) => {
     res.set('X-Cache', 'miss')
     res.send(buf)
   } catch {
+    markDead(hash)
+    res.set('Cache-Control', 'public, max-age=21600')
     res.status(504).end()
   }
 })

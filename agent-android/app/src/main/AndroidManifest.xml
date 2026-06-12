@@ -7,6 +7,7 @@
     <queries>
         <package android:name="com.plexapp.android" />
         <package android:name="org.videolan.vlc" />
+        <package android:name="com.brouken.player" />
         <package android:name="com.mxtech.videoplayer.ad" />
         <package android:name="com.mxtech.videoplayer.pro" />
         <package android:name="ar.tvplayer.tv" />

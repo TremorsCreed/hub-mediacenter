@@ -70,22 +70,11 @@ async function buildIptvStreamUrl(
     container = ext
   }
 
-  // Résoudre la redirection 302 Xtream → URL directe du serveur de stream.
-  // Beaucoup de players (notamment VLC sur certaines builds) bricolent quand
-  // la redirection change d'host et de port (ex: tv.infinitrx.online → 103.176.90.96).
-  try {
-    const r = await fetch(url, {
-      method: 'GET',
-      redirect: 'manual',
-      headers: { Range: 'bytes=0-0' },
-      signal: AbortSignal.timeout(5000),
-    } as any)
-    const loc = r.headers.get('location')
-    if (loc && (r.status === 301 || r.status === 302 || r.status === 303 || r.status === 307 || r.status === 308)) {
-      console.log(`[iptv] resolved redirect → ${loc}`)
-      return { url: loc, container }
-    }
-  } catch (e) { console.warn('[iptv] redirect resolve failed:', (e as any).message) }
+  // On NE pré-résout PAS la redirection 302 : le token de la redirection Xtream est
+  // à usage unique / expirant. Si le Hub le consomme en le résolvant, le lecteur
+  // reçoit un token déjà mort → HTTP 400 "no access modules matched" (cas Armageddon).
+  // On passe l'URL d'origine (avec la bonne extension) ; le lecteur suit le 302 et
+  // obtient son propre token frais. VLC/MX Player gèrent très bien la redirection.
   return { url, container }
 }
 

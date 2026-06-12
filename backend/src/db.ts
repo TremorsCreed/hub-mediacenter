@@ -175,18 +175,43 @@ export async function initDb() {
 
     -- Préférences de catégories IPTV : masquer (déclutter) ou verrouiller (parental).
     -- scope = 'global' (base posée par l'admin) ou un user_id en texte (surcharge par
-    -- profil). État effectif = fusion, le plus restrictif gagne (hidden > locked).
-    -- Absence de ligne = catégorie visible.
+    -- profil). La surcharge profil REMPLACE la base pour cette catégorie : 'visible'
+    -- ré-affiche un groupe masqué/verrouillé globalement, 'hidden'/'locked' restreint
+    -- plus. Absence de ligne = hérite (profil) / visible (global).
     CREATE TABLE IF NOT EXISTS iptv_category_prefs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       cred_id INTEGER NOT NULL,
       content_type TEXT NOT NULL,
       category_id TEXT NOT NULL,
       scope TEXT NOT NULL DEFAULT 'global',
-      state TEXT NOT NULL CHECK (state IN ('hidden','locked')),
+      state TEXT NOT NULL CHECK (state IN ('hidden','locked','visible')),
       UNIQUE(cred_id, content_type, category_id, scope)
     );
   `)
+
+  // Migration : la première version de la table n'acceptait pas 'visible' dans le
+  // CHECK. SQLite ne modifie pas une contrainte : on sonde avec un insert témoin
+  // et on reconstruit la table si l'ancienne contrainte est encore en place.
+  try {
+    await db.execute("INSERT INTO iptv_category_prefs (cred_id, content_type, category_id, scope, state) VALUES (-999, 'live', '__probe__', 'global', 'visible')")
+    await db.execute("DELETE FROM iptv_category_prefs WHERE cred_id = -999")
+  } catch {
+    await db.executeMultiple(`
+      CREATE TABLE iptv_category_prefs_v2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cred_id INTEGER NOT NULL,
+        content_type TEXT NOT NULL,
+        category_id TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT 'global',
+        state TEXT NOT NULL CHECK (state IN ('hidden','locked','visible')),
+        UNIQUE(cred_id, content_type, category_id, scope)
+      );
+      INSERT INTO iptv_category_prefs_v2 (id, cred_id, content_type, category_id, scope, state)
+        SELECT id, cred_id, content_type, category_id, scope, state FROM iptv_category_prefs;
+      DROP TABLE iptv_category_prefs;
+      ALTER TABLE iptv_category_prefs_v2 RENAME TO iptv_category_prefs;
+    `)
+  }
 
   // Migrations idempotentes (ALTER TABLE échoue silencieusement si la colonne existe)
   try { await db.execute("ALTER TABLE device_config ADD COLUMN xtream_credential_id INTEGER") } catch {}

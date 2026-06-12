@@ -130,23 +130,31 @@ router.get('/credentials', async (_req, res) => {
 })
 
 // ── Préférences de catégories : masquer (déclutter) / verrouiller (parental) ──
-type CatState = 'hidden' | 'locked'
+type CatState = 'hidden' | 'locked' | 'visible'
+type CatRestriction = 'hidden' | 'locked'
 
-// État effectif pour un profil = fusion global + surcharge profil, le plus
-// restrictif gagne (hidden > locked > visible).
-async function getEffectiveCatPrefs(credId: number, type: string, userId: number | null): Promise<Map<string, CatState>> {
+// État effectif pour un profil : la base 'global' s'applique partout, et la
+// surcharge profil la REMPLACE catégorie par catégorie — 'visible' ré-affiche
+// un groupe masqué/verrouillé globalement, 'hidden'/'locked' restreint plus.
+// Sans surcharge, le profil hérite du global.
+async function getEffectiveCatPrefs(credId: number, type: string, userId: number | null): Promise<Map<string, CatRestriction>> {
   const { rows } = await db.execute({
     sql: 'SELECT category_id, scope, state FROM iptv_category_prefs WHERE cred_id = ? AND content_type = ?',
     args: [credId, type],
   })
-  const effective = new Map<string, CatState>()
-  const apply = (id: string, st: CatState) => {
-    const cur = effective.get(id)
-    effective.set(id, cur === 'hidden' || st === 'hidden' ? 'hidden' : st)
-  }
+  const effective = new Map<string, CatRestriction>()
+  // 1. Base globale ('visible' global = équivalent à aucune ligne)
   for (const r of rows as any[]) {
-    if (r.scope === 'global') apply(String(r.category_id), r.state)
-    else if (userId != null && r.scope === String(userId)) apply(String(r.category_id), r.state)
+    if (r.scope === 'global' && r.state !== 'visible') effective.set(String(r.category_id), r.state)
+  }
+  // 2. Surcharge profil : remplace la base dans les deux sens
+  if (userId != null) {
+    for (const r of rows as any[]) {
+      if (r.scope !== String(userId)) continue
+      const id = String(r.category_id)
+      if (r.state === 'visible') effective.delete(id)
+      else effective.set(id, r.state)
+    }
   }
   return effective
 }
@@ -170,7 +178,8 @@ const CatPrefSchema = z.object({
   type: z.enum(['live', 'vod', 'series']),
   category_id: z.string().min(1),
   scope: z.string().min(1),            // 'global' ou un user_id
-  state: z.enum(['hidden', 'locked']).nullable(),
+  // 'visible' = surcharge profil qui ré-affiche ; null = retire la ligne (hérite)
+  state: z.enum(['hidden', 'locked', 'visible']).nullable(),
 })
 router.put('/:credId/category-prefs', requireAdmin, async (req, res) => {
   const credId = parseInt(req.params.credId)
@@ -199,7 +208,7 @@ router.put('/:credId/category-prefs', requireAdmin, async (req, res) => {
 const CatPrefBulkSchema = z.object({
   type: z.enum(['live', 'vod', 'series']),
   scope: z.string().min(1),
-  state: z.enum(['hidden', 'locked']).nullable(),
+  state: z.enum(['hidden', 'locked', 'visible']).nullable(),
   category_ids: z.array(z.string().min(1)).min(1).max(2000),
 })
 router.put('/:credId/category-prefs/bulk', requireAdmin, async (req, res) => {

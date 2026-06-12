@@ -273,8 +273,9 @@ export interface DiscoverAvailability {
 }
 
 export interface IptvCategory { id: string; name: string; state?: 'hidden' | 'locked' }
-// Préférence de catégorie posée par l'admin : scope 'global' ou un user_id (texte)
-export interface IptvCategoryPref { category_id: string; scope: string; state: 'hidden' | 'locked' }
+// Préférence de catégorie posée par l'admin : scope 'global' ou un user_id (texte).
+// 'visible' (scope profil) = ré-affiche un groupe masqué/verrouillé globalement.
+export interface IptvCategoryPref { category_id: string; scope: string; state: 'hidden' | 'locked' | 'visible' }
 export interface IptvStream {
   stream_id: string
   name: string
@@ -549,9 +550,9 @@ export const api = {
     credentials: () => get<{ id: number; name: string }[]>('/iptv/credentials'),
     categories: (credId: number, type: 'live' | 'vod' | 'series', all = false) => get<IptvCategory[]>(`/iptv/${credId}/categories?type=${type}${all ? '&all=1' : ''}`),
     categoryPrefs: (credId: number, type: 'live' | 'vod' | 'series') => get<IptvCategoryPref[]>(`/iptv/${credId}/category-prefs?type=${type}`),
-    setCategoryPref: (credId: number, pref: { type: 'live' | 'vod' | 'series'; category_id: string; scope: string; state: 'hidden' | 'locked' | null }) =>
+    setCategoryPref: (credId: number, pref: { type: 'live' | 'vod' | 'series'; category_id: string; scope: string; state: 'hidden' | 'locked' | 'visible' | null }) =>
       put<{ ok: boolean }>(`/iptv/${credId}/category-prefs`, pref),
-    setCategoryPrefsBulk: (credId: number, bulk: { type: 'live' | 'vod' | 'series'; scope: string; state: 'hidden' | 'locked' | null; category_ids: string[] }) =>
+    setCategoryPrefsBulk: (credId: number, bulk: { type: 'live' | 'vod' | 'series'; scope: string; state: 'hidden' | 'locked' | 'visible' | null; category_ids: string[] }) =>
       put<{ ok: boolean; count: number }>(`/iptv/${credId}/category-prefs/bulk`, bulk),
     languages: (credId: number, type: 'live' | 'vod' | 'series') => get<{ code: string; count: number }[]>(`/iptv/${credId}/languages?type=${type}`),
     streams: (credId: number, opts: { type: 'live' | 'vod' | 'series'; category?: string; search?: string; languages?: string[]; start?: number; limit?: number }) => {

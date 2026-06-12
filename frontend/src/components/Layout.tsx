@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Library, History, Film, Radio, FolderOpen, Compass, Gamepad2, ChevronLeft, ChevronRight, ShieldCheck, Home, ListVideo } from 'lucide-react'
+import { Library, History, Film, Radio, Compass, Gamepad2, ChevronLeft, ChevronRight, ShieldCheck, Home, ListVideo } from 'lucide-react'
 import { api } from '../api'
 import { useUser, initials } from '../UserContext'
 
@@ -52,7 +52,14 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <aside className={`${collapsed ? 'w-14' : 'w-52'} shrink-0 bg-zinc-900 border-r border-zinc-800 flex flex-col transition-[width] duration-200 overflow-hidden`}>
+      <aside
+        className={`${collapsed ? 'w-14 cursor-pointer' : 'w-52'} shrink-0 bg-zinc-900 border-r border-zinc-800 flex flex-col transition-[width] duration-200 overflow-hidden`}
+        // Vue élargie d'un simple clic : quand la sidebar est réduite, cliquer
+        // n'importe où (hors lien/bouton, qui gardent leur action) la développe.
+        onClick={e => {
+          if (collapsed && !(e.target as HTMLElement).closest('a, button')) setCollapsed(false)
+        }}
+      >
         {/* Header */}
         <div className="h-[53px] shrink-0 border-b border-zinc-800 flex items-center px-3">
           {collapsed
@@ -76,10 +83,6 @@ export default function Layout() {
               </div>
           }
 
-          <NavLink to="/catalog" end title={collapsed ? 'Local' : undefined} className={subLinkClass}>
-            <FolderOpen size={collapsed ? 15 : 12} strokeWidth={1.8} />
-            {!collapsed && 'Local'}
-          </NavLink>
           {modules.discover && (
             <NavLink to="/catalog/discover" title={collapsed ? 'Discover' : undefined} className={subLinkClass}>
               <Compass size={collapsed ? 15 : 12} strokeWidth={1.8} />

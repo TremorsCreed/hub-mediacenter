@@ -28,6 +28,7 @@ const MEDIA_TYPES = [
 
 export default function Iptv() {
   const [creds, setCreds] = useState<{ id: number; name: string }[]>([])
+  const [credsLoading, setCredsLoading] = useState(true)
   const [credId, setCredId] = useState<number | null>(null)
   const [type, setType] = useState<'live' | 'vod' | 'series'>('live')
   const [selectedSeries, setSelectedSeries] = useState<IptvStream | null>(null)
@@ -63,7 +64,7 @@ export default function Iptv() {
     api.iptv.credentials().then(c => {
       setCreds(c)
       if (c.length) setCredId(c[0].id)
-    })
+    }).finally(() => setCredsLoading(false))
     api.devices.list().then(ds => {
       setDevices(ds)
       reconcile(ds)
@@ -213,6 +214,19 @@ export default function Iptv() {
   const toggleSeason = (n: number) =>
     setOpenSeasons(prev => { const s = new Set(prev); s.has(n) ? s.delete(n) : s.add(n); return s })
 
+  // Tant que les credentials chargent, on affiche un loader — pas le faux
+  // « Aucun profil IPTV » qui induisait en erreur le temps de la requête.
+  if (credsLoading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-zinc-500">
+          <Loader2 size={28} className="animate-spin" />
+          <div className="text-sm">Chargement de la liste IPTV…</div>
+        </div>
+      </div>
+    )
+  }
+
   if (creds.length === 0) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -230,7 +244,14 @@ export default function Iptv() {
     <div className="flex h-full">
 
       {/* ── Sidebar type de média (collapsible) ───────────────────── */}
-      <aside className={`${mediaCollapsed ? 'w-14' : 'w-36'} shrink-0 bg-zinc-950/60 border-r border-zinc-800 flex flex-col transition-[width] duration-200 overflow-hidden`}>
+      <aside
+        className={`${mediaCollapsed ? 'w-14 cursor-pointer' : 'w-36'} shrink-0 bg-zinc-950/60 border-r border-zinc-800 flex flex-col transition-[width] duration-200 overflow-hidden`}
+        // Vue élargie d'un simple clic n'importe où sur la sidebar réduite
+        // (hors boutons, qui gardent leur action).
+        onClick={e => {
+          if (mediaCollapsed && !(e.target as HTMLElement).closest('button')) setMediaCollapsed(false)
+        }}
+      >
         <div className="h-[53px] shrink-0 border-b border-zinc-800 flex items-center px-3">
           {mediaCollapsed
             ? <Tv size={16} strokeWidth={1.8} className="mx-auto text-zinc-500" />
@@ -394,9 +415,17 @@ export default function Iptv() {
             />
           </div>
 
-          {!loading && total > 0 && (
-            <span className="text-xs text-zinc-500 shrink-0">{total.toLocaleString()} résultats</span>
-          )}
+          {loading
+            ? <span className="flex items-center gap-1.5 text-xs text-amber-400/80 shrink-0">
+                <Loader2 size={12} className="animate-spin" /> Chargement de la liste…
+              </span>
+            : total > 0 && (
+              <span className="text-xs text-zinc-500 shrink-0">
+                {streams.length < total
+                  ? `${streams.length.toLocaleString()} / ${total.toLocaleString()} flux`
+                  : `${total.toLocaleString()} flux`}
+              </span>
+            )}
         </div>
 
         {/* Grille de streams / Guide EPG */}
@@ -496,7 +525,7 @@ export default function Iptv() {
           {streams.length < total && (
             <div ref={sentinelRef} className="flex items-center justify-center py-6 text-xs text-zinc-500 gap-2">
               {loadingMore
-                ? <><Loader2 size={14} className="animate-spin" /> Chargement…</>
+                ? <><Loader2 size={14} className="animate-spin" /> {streams.length.toLocaleString()} / {total.toLocaleString()} flux…</>
                 : `${streams.length.toLocaleString()} / ${total.toLocaleString()}`}
             </div>
           )}

@@ -455,12 +455,6 @@ export const api = {
     getConfig: (id: string) => get<DeviceConfig>(`/devices/${id}/config`),
     saveConfig: (id: string, cfg: DeviceConfig) => put<{ ok: boolean }>(`/devices/${id}/config`, cfg)
   },
-  catalog: {
-    search: (q: string) => get<CatalogEntry[]>(`/catalog/search?q=${encodeURIComponent(q)}`),
-    create: (entry: Omit<CatalogEntry, 'id'>) => post<{ ok: boolean; id: string }>('/catalog', entry),
-    remove: (id: string) => del<{ ok: boolean }>(`/catalog/${id}`),
-    mapEan: (ean: string, catalog_id: string) => post('/catalog/ean', { ean, catalog_id })
-  },
   state: {
     all: () => get<PlaybackState[]>('/state'),
     history: (userFilter?: string) => get<HistoryEntry[]>(`/state/history${userFilter ? `?user_id=${userFilter}` : ''}`),

@@ -308,7 +308,13 @@ export default function Plex() {
     <div className="flex h-full">
 
       {/* ── Sidebar bibliothèques (collapsible) ───────────────────── */}
-      <aside className={`${sectionsCollapsed ? 'w-14' : 'w-52'} shrink-0 bg-zinc-950/60 border-r border-zinc-800 flex flex-col transition-[width] duration-200 overflow-hidden`}>
+      <aside
+        className={`${sectionsCollapsed ? 'w-14 cursor-pointer' : 'w-52'} shrink-0 bg-zinc-950/60 border-r border-zinc-800 flex flex-col transition-[width] duration-200 overflow-hidden`}
+        // Vue élargie d'un simple clic n'importe où sur la sidebar réduite
+        onClick={e => {
+          if (sectionsCollapsed && !(e.target as HTMLElement).closest('button')) setSectionsCollapsed(false)
+        }}
+      >
         <div className="h-[53px] shrink-0 border-b border-zinc-800 flex items-center px-3">
           {sectionsCollapsed
             ? <Library size={16} strokeWidth={1.8} className="mx-auto text-zinc-500" />

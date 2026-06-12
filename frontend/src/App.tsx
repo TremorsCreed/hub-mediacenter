@@ -7,8 +7,6 @@ import ProfileSelect from './pages/ProfileSelect'
 import UserDashboard from './pages/UserDashboard'
 import Dashboard from './pages/Dashboard'
 import Devices from './pages/Devices'
-import Catalog from './pages/Catalog'
-import PlayPage from './pages/PlayPage'
 import History from './pages/History'
 import Settings from './pages/Settings'
 import Plex from './pages/Plex'
@@ -32,7 +30,7 @@ export default function App() {
       <Route element={<Layout />}>
         {/* Espace membre */}
         <Route index element={<UserDashboard />} />
-        <Route path="catalog" element={<Catalog />} />
+        <Route path="catalog" element={<Navigate to="/catalog/iptv" replace />} />
         <Route path="catalog/plex" element={<Plex />} />
         <Route path="catalog/iptv" element={<Iptv />} />
         <Route path="catalog/discover" element={<Discover />} />
@@ -41,7 +39,6 @@ export default function App() {
         <Route path="playlists/import" element={<ImportPlaylist />} />
         <Route path="playlists/:id" element={<PlaylistDetail />} />
         <Route path="history" element={<History />} />
-        <Route path="play" element={<PlayPage />} />
 
         {/* Section Admin (protégée par PIN) */}
         <Route path="admin" element={<AdminGate><AdminSection /></AdminGate>}>

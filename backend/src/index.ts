@@ -4,7 +4,6 @@ import http from 'http'
 import { initDb } from './db'
 import { setupWebSocket } from './ws'
 import devicesRouter from './routes/devices'
-import catalogRouter from './routes/catalog'
 import playRouter from './routes/play'
 import stateRouter from './routes/state'
 import zaparooRouter from './routes/zaparoo'
@@ -37,7 +36,6 @@ app.use('/api/senscritique', senscritiqueRouter)
 app.use('/api/spotify', spotifyRouter)
 app.use('/api/devices/:id/config', requireAdmin, configRouter)
 app.use('/api/devices', devicesRouter)
-app.use('/api/catalog', catalogRouter)
 app.use('/api/play', playRouter)
 app.use('/api/state', stateRouter)
 app.use('/api/zaparoo', zaparooRouter)

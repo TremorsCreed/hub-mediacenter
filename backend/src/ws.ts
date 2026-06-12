@@ -6,6 +6,7 @@ import { WsMessage, WsPlayCommand, DeviceCapability } from './types'
 interface ConnectedAgent {
   ws: WebSocket
   device_id: string
+  isAlive: boolean
 }
 
 export const agents = new Map<string, ConnectedAgent>()
@@ -19,10 +20,24 @@ export function setupWebSocket(server: Server) {
 
     if (!device_id) { ws.close(1008, 'device_id required'); return }
 
-    agents.set(device_id, { ws, device_id })
+    // Un agent qui se reconnecte (redémarrage, réinstall) remplace sa connexion
+    // précédente : on termine l'ancienne socket explicitement pour ne pas garder
+    // un zombie dans la map (vécu : overlay envoyé dans le vide, sent=true).
+    const prev = agents.get(device_id)
+    if (prev && prev.ws !== ws) {
+      console.log(`[ws] ${device_id} reconnecte — terminaison de l'ancienne socket`)
+      try { prev.ws.terminate() } catch { /* */ }
+    }
+
+    const agent: ConnectedAgent = { ws, device_id, isAlive: true }
+    agents.set(device_id, agent)
     console.log(`[ws] agent connected: ${device_id}`)
 
+    // Pong protocolaire (réponse au ws.ping() du heartbeat) = preuve de vie
+    ws.on('pong', () => { agent.isAlive = true })
+
     ws.on('message', (raw) => {
+      agent.isAlive = true // tout trafic applicatif vaut preuve de vie
       try {
         const msg: WsMessage = JSON.parse(raw.toString())
         handleAgentMessage(device_id, msg)
@@ -31,10 +46,31 @@ export function setupWebSocket(server: Server) {
       }
     })
 
-    ws.on('close', () => { agents.delete(device_id); console.log(`[ws] disconnected: ${device_id}`) })
-    ws.on('error', () => agents.delete(device_id))
+    ws.on('close', () => {
+      // Ne retirer de la map que si c'est bien CETTE connexion qui y est encore
+      // (une reconnexion a pu déjà la remplacer).
+      if (agents.get(device_id)?.ws === ws) { agents.delete(device_id); console.log(`[ws] disconnected: ${device_id}`) }
+    })
+    ws.on('error', () => { if (agents.get(device_id)?.ws === ws) agents.delete(device_id) })
     ws.send(JSON.stringify({ type: 'pong' }))
   })
+
+  // Heartbeat : un agent qui n'a donné aucun signe de vie (ni pong protocolaire,
+  // ni message) depuis le dernier passage est considéré mort → terminate, ce qui
+  // déclenche 'close' et purge la map. Sans ça, un process tué sans FIN/RST reste
+  // « connecté » indéfiniment et les commandes partent dans le vide.
+  const heartbeat = setInterval(() => {
+    for (const agent of agents.values()) {
+      if (!agent.isAlive) {
+        console.log(`[ws] ${agent.device_id} ne répond plus — terminaison (zombie)`)
+        try { agent.ws.terminate() } catch { /* */ }
+        continue
+      }
+      agent.isAlive = false
+      try { agent.ws.ping() } catch { /* */ }
+    }
+  }, 30000)
+  wss.on('close', () => clearInterval(heartbeat))
 
   return wss
 }

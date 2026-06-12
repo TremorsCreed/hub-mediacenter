@@ -209,6 +209,9 @@ export function sendOverlay(device_id: string, payload: {
   image_kind?: 'poster' | 'logo'  // poster=centerCrop 2:3, logo=fitCenter carré
   app_label?: string   // label en haut de la card player (ex "PLEX", "IPTV")
   action?: 'hide'      // si fourni, retire l'overlay au lieu d'afficher
+  interactive?: boolean // rappel EPG : carte avec bouton « Regarder » focusable
+  stream_id?: string    // chaîne à lancer au clic du bouton
+  iptv_type?: string    // 'live' par défaut côté agent
 }): boolean {
   const agent = agents.get(device_id)
   if (!agent || agent.ws.readyState !== WebSocket.OPEN) return false

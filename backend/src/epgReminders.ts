@@ -23,7 +23,9 @@ async function check() {
     const chan = rem.channel_name || 'IPTV'
     const when = mins > 0 ? `commence dans ${mins} min` : 'commence maintenant'
     try { sendNotify(dev, `⏰ « ${rem.title} » sur ${chan} ${when}`) } catch { /* */ }
-    // Carte du bas (style player) avec le logo de la chaîne
+    // Carte du bas (style player) avec le logo + bouton « Regarder » focusable.
+    // force : un rappel est demandé explicitement par l'utilisateur → il s'affiche
+    // même si les overlays automatiques (tvoverlay_enabled) sont désactivés.
     try {
       await notifyOverlayPlayer(dev, {
         title: rem.title || chan,
@@ -31,8 +33,11 @@ async function check() {
         app_label: 'RAPPEL',
         image: rem.logo || undefined,
         image_kind: 'logo',
-        duration: 20,
-      })
+        duration: 25,
+        interactive: true,
+        stream_id: String(rem.stream_id),
+        iptv_type: 'live',
+      }, { force: true })
     } catch { /* */ }
     try { await db.execute({ sql: 'UPDATE epg_reminders SET notified = 1 WHERE id = ?', args: [rem.id] }) } catch { /* */ }
   }

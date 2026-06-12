@@ -170,6 +170,74 @@ class OverlayManager(private val ctx: Context) {
     }
 
     /**
+     * Overlay de rappel EPG interactif : même carte que showPlayer mais avec un
+     * bouton « ▶ Regarder » focusable à la télécommande. La fenêtre prend le focus
+     * (sans NOT_FOCUSABLE/NOT_TOUCHABLE) le temps de l'affichage : OK → lance la
+     * chaîne, Back → ferme. Auto-hide après durationSec dans tous les cas.
+     */
+    fun showReminder(
+        title: String, message: String, appLabel: String?, imageUrl: String?,
+        imageKind: String = "logo", durationSec: Int = 20, onLaunch: () -> Unit,
+    ) = handler.post {
+        if (!hasPermission()) { Log.w(TAG, "no overlay perm"); return@post }
+        hidePlayer(false)
+        val view = try { LayoutInflater.from(ctx).inflate(R.layout.overlay_player, null) }
+                   catch (e: Exception) { Log.e(TAG, "inflate reminder", e); return@post }
+        view.findViewById<TextView>(R.id.overlayPlayerTitle).text = title
+        view.findViewById<TextView>(R.id.overlayPlayerMessage).text = message
+        view.findViewById<TextView>(R.id.overlayPlayerApp).text = (appLabel ?: "RAPPEL").uppercase()
+
+        val img = view.findViewById<ImageView>(R.id.overlayPlayerImage)
+        val frame = view.findViewById<FrameLayout>(R.id.overlayPlayerImageFrame)
+        val isPoster = imageKind == "poster"
+        val w = dp(if (isPoster) 80f else 100f).toInt()
+        val h = dp(if (isPoster) 120f else 100f).toInt()
+        frame.layoutParams = frame.layoutParams.apply { width = w; height = h }
+        if (isPoster) { img.scaleType = ImageView.ScaleType.CENTER_CROP; img.setPadding(0, 0, 0, 0) }
+        else { img.scaleType = ImageView.ScaleType.FIT_CENTER; val p = dp(8f).toInt(); img.setPadding(p, p, p, p) }
+        clipRounded(frame, dp(8f))
+
+        val btn = view.findViewById<TextView>(R.id.overlayPlayerLaunch)
+        btn.visibility = View.VISIBLE
+        // Texte noir quand le fond passe en ambre (focus), blanc sinon
+        btn.setOnFocusChangeListener { v, focused ->
+            (v as TextView).setTextColor(if (focused) 0xFF000000.toInt() else 0xFFFFFFFF.toInt())
+        }
+        btn.setOnClickListener {
+            hidePlayer(true)
+            onLaunch()
+        }
+        // Back (ou n'importe quelle sortie) ferme l'overlay et rend le focus
+        view.findViewById<View>(R.id.overlayPlayerLaunch).setOnKeyListener { _, keyCode, event ->
+            if (keyCode == android.view.KeyEvent.KEYCODE_BACK && event.action == android.view.KeyEvent.ACTION_UP) {
+                hidePlayer(true); true
+            } else false
+        }
+
+        // Fenêtre focusable : on retire NOT_FOCUSABLE/NOT_TOUCHABLE pour que le
+        // bouton reçoive le focus télécommande pendant l'affichage du rappel.
+        val params = baseParams().apply {
+            flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+            gravity = Gravity.BOTTOM or Gravity.START
+            width = WindowManager.LayoutParams.MATCH_PARENT
+        }
+        try {
+            wm.addView(view, params)
+            playerView = view
+            view.alpha = 0f; view.translationY = 60f
+            view.animate().alpha(1f).translationY(0f).setDuration(350).start()
+            btn.requestFocus()
+            if (durationSec > 0) handler.postDelayed(hidePlayerRunnable, (durationSec * 1000L))
+        } catch (e: Exception) { Log.e(TAG, "addView reminder", e); return@post }
+
+        if (!imageUrl.isNullOrEmpty()) {
+            val cached = loadFromCache(imageUrl)
+            if (cached != null) img.setImageBitmap(cached)
+            else loadImageAsync(imageUrl) { bmp -> if (bmp != null) { saveToCache(imageUrl, bmp); img.setImageBitmap(bmp) } }
+        }
+    }
+
+    /**
      * Met à jour l'overlay player en place (sans recréer la view) pour refléter
      * un changement d'état lecture/pause + position/durée.
      *

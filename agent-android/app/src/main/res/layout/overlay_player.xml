@@ -112,4 +112,24 @@
 
     </LinearLayout>
 
+    <!-- Bouton « Regarder » (rappels EPG uniquement — GONE par défaut).
+         Focusable télécommande : le fond passe en ambre quand il a le focus. -->
+    <TextView
+        android:id="@+id/overlayPlayerLaunch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="18dp"
+        android:paddingStart="22dp"
+        android:paddingEnd="22dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:background="@drawable/overlay_launch_btn"
+        android:textColor="#ffffff"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:visibility="gone"
+        android:text="▶  Regarder" />
+
 </LinearLayout>

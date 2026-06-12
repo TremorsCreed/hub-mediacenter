@@ -202,7 +202,25 @@ class HubService : Service() {
                     val image = json.optString("image").ifEmpty { null }
                     val appLabel = json.optString("app_label").ifEmpty { null }
                     val imageKind = json.optString("image_kind").ifEmpty { "poster" }
-                    overlay.showPlayer(title, message, appLabel, image, imageKind, duration)
+                    val streamId = json.optString("stream_id").ifEmpty { null }
+                    if (json.optBoolean("interactive") && streamId != null) {
+                        // Rappel EPG : carte avec bouton « Regarder » focusable. Le clic
+                        // synthétise une commande play locale (même pipeline que le hub :
+                        // kill du lecteur en cours, choix auto du lecteur, etc.).
+                        overlay.showReminder(title, message, appLabel, image, imageKind, duration) {
+                            val play = JSONObject().apply {
+                                put("type", "play")
+                                put("app", "iptv")
+                                put("tivimate_channel", streamId)
+                                put("iptv_type", json.optString("iptv_type").ifEmpty { "live" })
+                                put("title", title)
+                                put("requester", "reminder")
+                            }
+                            cmdHandler.post { try { handlePlay(play) } catch (e: Exception) { Log.e(TAG, "reminder play", e) } }
+                        }
+                    } else {
+                        overlay.showPlayer(title, message, appLabel, image, imageKind, duration)
+                    }
                 } else {
                     overlay.show(title, message, duration)
                 }

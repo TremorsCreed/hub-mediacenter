@@ -299,11 +299,20 @@ router.get('/:credId/streams', async (req, res) => {
     }
     // Tri (avant pagination — la liste est servie par pages). '' = ordre provider.
     const sort = (req.query.sort as string) ?? ''
+    // Le champ year du provider est souvent vide : on retombe sur l'année entre
+    // parenthèses dans le nom (« FR - Film (2024) »). Les items sans année passent
+    // en fin de liste plutôt qu'en tête.
+    const yearOf = (it: { year?: string; name: string }): number => {
+      const y = parseInt(it.year ?? '')
+      if (y) return y
+      const m = it.name.match(/\((\d{4})\)/)
+      return m ? parseInt(m[1]) : 0
+    }
     const comparators: Record<string, (a: typeof items[number], b: typeof items[number]) => number> = {
       name_asc: (a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }),
       name_desc: (a, b) => b.name.localeCompare(a.name, 'fr', { sensitivity: 'base' }),
       added_desc: (a, b) => (parseInt(b.added ?? '0') || 0) - (parseInt(a.added ?? '0') || 0),
-      year_desc: (a, b) => (parseInt(b.year ?? '0') || 0) - (parseInt(a.year ?? '0') || 0),
+      year_desc: (a, b) => yearOf(b) - yearOf(a),
       rating_desc: (a, b) => (parseFloat(b.rating ?? '0') || 0) - (parseFloat(a.rating ?? '0') || 0),
     }
     if (comparators[sort]) items = [...items].sort(comparators[sort])

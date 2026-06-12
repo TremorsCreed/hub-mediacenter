@@ -83,6 +83,17 @@ export default function Iptv() {
     api.iptv.languages(credId, type).then(setAvailableLangs).catch(() => setAvailableLangs([]))
   }, [credId, type])
 
+  // Recharge les catégories au retour de focus : si on vient de masquer/verrouiller
+  // des groupes dans Admin → Catégories IPTV, la sidebar reflète le changement
+  // sans avoir à recharger la page.
+  useEffect(() => {
+    const onFocus = () => {
+      if (credId) api.iptv.categories(credId, type).then(setCategories).catch(() => {})
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [credId, type])
+
   useEffect(() => {
     localStorage.setItem(LANG_PREFS_KEY, JSON.stringify(selectedLangs))
   }, [selectedLangs])

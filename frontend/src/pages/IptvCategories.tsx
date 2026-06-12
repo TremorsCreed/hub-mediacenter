@@ -47,16 +47,21 @@ export default function IptvCategories() {
   const prefFor = (catId: string, sc: string): CatState =>
     prefs.find(p => p.category_id === catId && p.scope === sc)?.state ?? null
 
+  // Après chaque écriture on relit les prefs du serveur : l'état affiché (boutons,
+  // compteurs) reflète toujours la vérité en base, pas un état local optimiste.
+  const reloadPrefs = async () => {
+    if (!credId) return
+    const p = await api.iptv.categoryPrefs(credId, type)
+    setPrefs(p)
+  }
+
   const setState = async (catId: string, state: CatState) => {
     if (!credId) return
     setSaving(catId)
     setError(null)
     try {
       await api.iptv.setCategoryPref(credId, { type, category_id: catId, scope, state })
-      setPrefs(prev => {
-        const rest = prev.filter(p => !(p.category_id === catId && p.scope === scope))
-        return state ? [...rest, { category_id: catId, scope, state }] : rest
-      })
+      await reloadPrefs()
     } catch (e: any) {
       setError(e.message || 'Échec de l\'enregistrement')
     } finally {
@@ -73,10 +78,7 @@ export default function IptvCategories() {
     try {
       const ids = categories.map(c => c.id)
       await api.iptv.setCategoryPrefsBulk(credId, { type, scope, state, category_ids: ids })
-      setPrefs(prev => {
-        const rest = prev.filter(p => p.scope !== scope)
-        return state ? [...rest, ...ids.map(id => ({ category_id: id, scope, state }))] : rest
-      })
+      await reloadPrefs()
     } catch (e: any) {
       setError(e.message || 'Échec de l\'action en masse')
     } finally {

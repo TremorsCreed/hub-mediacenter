@@ -482,6 +482,8 @@ export const api = {
     verifyPin: (pin: string) => post<{ ok: boolean; token: string; admin: { id: number; name: string } }>('/users/verify-pin', { pin }),
     // Vérifie le PIN sans obtenir de droits admin (déverrouillage parental)
     checkPin: (pin: string) => post<{ ok: boolean }>('/users/check-pin', { pin }),
+    // Valide le token admin courant (403 admin_required si mort → re-PIN)
+    adminPing: () => get<{ ok: boolean }>('/users/admin/ping'),
   },
   favorites: {
     list: () => get<Favorite[]>('/favorites'),

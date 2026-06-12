@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react'
+import { ReactNode, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { useUser } from '../UserContext'
@@ -11,6 +11,13 @@ export default function AdminGate({ children }: { children: ReactNode }) {
   const [pin, setPin] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  // Le token vit en mémoire côté serveur : un redéploiement l'invalide alors que
+  // le navigateur garde le sien. On le valide donc à l'entrée de la section —
+  // s'il est mort, le 403 purge le token et re-verrouille → re-saisie du PIN.
+  useEffect(() => {
+    if (adminUnlocked) api.users.adminPing().catch(() => { /* géré par la couche api */ })
+  }, [adminUnlocked])
 
   if (adminUnlocked) return <>{children}</>
 

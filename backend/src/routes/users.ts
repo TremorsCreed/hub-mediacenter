@@ -38,6 +38,11 @@ router.post('/verify-pin', async (req, res) => {
   res.json({ ok: true, token: issueAdminToken(), admin: { id: (match as any).id, name: (match as any).name } })
 })
 
+// Valide le token admin courant (AdminGate l'appelle à l'entrée de la section :
+// un token mort — ex. backend redéployé, tokens en mémoire — déclenche le 403
+// admin_required que le frontend intercepte pour redemander le PIN).
+router.get('/admin/ping', requireAdmin, (_req, res) => res.json({ ok: true }))
+
 // Vérifie le PIN admin SANS émettre de token (déverrouillage parental d'une
 // catégorie : on ne veut pas donner les droits admin au client pour autant).
 router.post('/check-pin', async (req, res) => {

@@ -51,6 +51,44 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
             "ar.tvplayer.tv",
             "com.amazon.firetv.tvplayer",
         )
+
+        // Tous les lecteurs susceptibles d'avoir une lecture en cours, à tuer avant
+        // de relancer un flux (on ne sait pas forcément lequel jouait).
+        private val ALL_PLAYERS = listOf(
+            "com.brouken.player",
+            "org.videolan.vlc",
+            "com.mxtech.videoplayer.pro",
+            "com.mxtech.videoplayer.ad",
+            "ar.tvplayer.tv",
+        )
+
+        // Vrai dès qu'un flux a été lancé dans CE process agent. Sert à ne tuer/flasher
+        // HOME qu'à partir du 2e lancement (le 1er n'a rien à nettoyer).
+        @Volatile private var aStreamWasLaunched = false
+    }
+
+    // Relancer un flux PAR-DESSUS un lecteur déjà actif fige l'image / met en pause
+    // (Just Player, MX, VLC : tous, le décodeur/surface de la session précédente n'est
+    // pas réinitialisé par un simple nouvel intent, même avec CLEAR_TASK). On force donc
+    // une session neuve : on décroche le lecteur du premier plan (HOME) puis on tue son
+    // process. killBackgroundProcesses n'agit que sur un process en arrière-plan, d'où le
+    // passage par HOME au préalable. Validé : équivaut au `am force-stop` testé en adb.
+    private fun killRunningPlayers(ctx: Context) {
+        try {
+            ctx.startActivity(Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+            Thread.sleep(350)
+            val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            for (p in ALL_PLAYERS) {
+                try { am.killBackgroundProcesses(p) } catch (e: Exception) { Log.w(TAG, "kill $p: ${e.message}") }
+            }
+            Thread.sleep(200)
+            Log.i(TAG, "Lecteurs en cours tués avant relance")
+        } catch (e: Exception) {
+            Log.w(TAG, "killRunningPlayers a échoué (on lance quand même): ${e.message}")
+        }
     }
 
     // MIME précis selon le conteneur réel. Indispensable pour MX Player qui, sur une
@@ -107,6 +145,10 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
         val playerPkg = pickPlayer(pm, cmd.player, cmd.iptvType)
         Log.i(TAG, "Préférence='${cmd.player ?: "auto"}' type='${cmd.iptvType}' → lecteur: ${playerPkg ?: "(system chooser)"}")
 
+        // À partir du 2e flux de la session : on tue le lecteur en cours pour repartir
+        // sur un décodeur/surface neufs (sinon image gelée / pause au changement de flux).
+        if (aStreamWasLaunched) killRunningPlayers(ctx)
+
         return try {
             val mime = mimeFor(cmd.iptvContainer, cmd.iptvType)
             Log.i(TAG, "MIME='$mime' (container=${cmd.iptvContainer}, type=${cmd.iptvType})")
@@ -127,6 +169,7 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
                 playerPkg?.let { setPackage(it) }
             }
             ctx.startActivity(intent)
+            aStreamWasLaunched = true
             Log.i(TAG, "Launched stream in ${playerPkg ?: "system player"}")
             LaunchResult.Success
         } catch (e: Exception) {

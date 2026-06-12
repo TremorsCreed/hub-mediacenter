@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, Device, IptvCategory, IptvSeriesInfo, IptvStream } from '../api'
+import { usePersistentDevice } from '../usePersistentDevice'
 import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
 import FavoriteButton from '../components/FavoriteButton'
 import AddToPlaylist from '../components/AddToPlaylist'
@@ -45,7 +46,7 @@ export default function Iptv() {
   const contentRef = useRef<HTMLDivElement | null>(null)
   const fetchedRef = useRef(0)
   const [devices, setDevices] = useState<Device[]>([])
-  const [deviceId, setDeviceId] = useState<string>('')
+  const { deviceId, setDeviceId, reconcile } = usePersistentDevice()
   const [launching, setLaunching] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [availableLangs, setAvailableLangs] = useState<{ code: string; count: number }[]>([])
@@ -65,8 +66,7 @@ export default function Iptv() {
     })
     api.devices.list().then(ds => {
       setDevices(ds)
-      const connectedDev = ds.find(d => d.ws_connected)
-      if (connectedDev) setDeviceId(connectedDev.id)
+      reconcile(ds)
     })
   }, [])
 

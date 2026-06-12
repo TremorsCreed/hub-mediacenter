@@ -6,6 +6,7 @@ import {
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { api, Device, Playlist, PlaylistItem } from '../api'
+import { usePersistentDevice } from '../usePersistentDevice'
 import { useUser } from '../UserContext'
 import {
   ArrowLeft, Play, Loader2, Trash2, GripVertical, Film, Tv, Gamepad2, Radio, MonitorPlay,
@@ -91,7 +92,7 @@ export default function PlaylistDetail() {
   const [pl, setPl] = useState<Playlist | null>(null)
   const [items, setItems] = useState<PlaylistItem[]>([])
   const [devices, setDevices] = useState<Device[]>([])
-  const [deviceId, setDeviceId] = useState('')
+  const { deviceId, setDeviceId, reconcile } = usePersistentDevice()
   const [busy, setBusy] = useState<number | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [played, setPlayed] = useState<Set<string>>(new Set())
@@ -114,8 +115,7 @@ export default function PlaylistDetail() {
   useEffect(() => {
     api.devices.list().then(ds => {
       setDevices(ds)
-      const dev = ds.find(d => d.ws_connected)
-      if (dev) setDeviceId(dev.id)
+      reconcile(ds)
     })
   }, [])
 

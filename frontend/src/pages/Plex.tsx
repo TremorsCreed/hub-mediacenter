@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, Device, PlexItem, PlexOnDeckItem, PlexSection, PlexShowDetail } from '../api'
+import { usePersistentDevice } from '../usePersistentDevice'
 import { Search, Play, Loader2, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, X, ChevronDown, Check, Film, Tv, Music, Image, Library } from 'lucide-react'
 import FavoriteButton from '../components/FavoriteButton'
 import AddToPlaylist from '../components/AddToPlaylist'
@@ -148,7 +149,7 @@ export default function Plex() {
   // Cascade : développée à l'entrée du module (la sidebar système, elle, se réduit)
   const [sectionsCollapsed, setSectionsCollapsed] = useState(false)
   const [devices, setDevices] = useState<Device[]>([])
-  const [deviceId, setDeviceId] = useState<string>('')
+  const { deviceId, setDeviceId, reconcile } = usePersistentDevice()
   const [launching, setLaunching] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [selectedShow, setSelectedShow] = useState<PlexItem | null>(null)
@@ -166,8 +167,7 @@ export default function Plex() {
     })
     api.devices.list().then(ds => {
       setDevices(ds)
-      const connectedDev = ds.find(d => d.ws_connected)
-      if (connectedDev) setDeviceId(connectedDev.id)
+      reconcile(ds)
     })
   }, [])
 

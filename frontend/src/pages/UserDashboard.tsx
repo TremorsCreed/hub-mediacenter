@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, Device, Favorite, HistoryEntry } from '../api'
+import { usePersistentDevice } from '../usePersistentDevice'
 import { useUser, initials } from '../UserContext'
 import { useFavorites } from '../FavoritesContext'
 import { Heart, Play, Loader2, Tv, Film, Gamepad2, MonitorPlay, Radio, History as HistoryIcon } from 'lucide-react'
@@ -19,7 +20,7 @@ export default function UserDashboard() {
   const { favorites, toggle } = useFavorites()
   const navigate = useNavigate()
   const [devices, setDevices] = useState<Device[]>([])
-  const [deviceId, setDeviceId] = useState('')
+  const { deviceId, setDeviceId, reconcile } = usePersistentDevice()
   const [recent, setRecent] = useState<HistoryEntry[]>([])
   const [launching, setLaunching] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
@@ -27,8 +28,7 @@ export default function UserDashboard() {
   useEffect(() => {
     api.devices.list().then(ds => {
       setDevices(ds)
-      const dev = ds.find(d => d.ws_connected)
-      if (dev) setDeviceId(dev.id)
+      reconcile(ds)
     })
   }, [])
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, Device, DiscoverAvailability, DiscoverItem } from '../api'
+import { usePersistentDevice } from '../usePersistentDevice'
 import { Search, Loader2, AlertCircle, Play, X, Languages } from 'lucide-react'
 import IptvSeriesModal from '../components/IptvSeriesModal'
 
@@ -39,7 +40,7 @@ export default function Discover() {
   const [results, setResults] = useState<DiscoverItem[]>([])
   const [loading, setLoading] = useState(false)
   const [devices, setDevices] = useState<Device[]>([])
-  const [deviceId, setDeviceId] = useState<string>('')
+  const { deviceId, setDeviceId, reconcile } = usePersistentDevice()
   const [selected, setSelected] = useState<DiscoverItem | null>(null)
   const [availabilities, setAvailabilities] = useState<DiscoverAvailability[] | null>(null)
   const [loadingAv, setLoadingAv] = useState(false)
@@ -82,8 +83,7 @@ export default function Discover() {
   useEffect(() => {
     api.devices.list().then(ds => {
       setDevices(ds)
-      const cd = ds.find(d => d.ws_connected)
-      if (cd) setDeviceId(cd.id)
+      reconcile(ds)
     })
   }, [])
 

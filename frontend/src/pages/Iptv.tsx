@@ -44,6 +44,7 @@ export default function Iptv() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [sort, setSort] = useState('') // '' = ordre provider
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
   const fetchedRef = useRef(0)
@@ -118,6 +119,7 @@ export default function Iptv() {
       languages: selectedLangs.length > 0 ? selectedLangs : undefined,
       start: 0,
       limit: PAGE_SIZE,
+      sort: sort || undefined,
     })
       .then(r => {
         setStreams(r.items)
@@ -126,7 +128,7 @@ export default function Iptv() {
       })
       .catch(() => { setStreams([]); setTotal(0); fetchedRef.current = 0 })
       .finally(() => setLoading(false))
-  }, [credId, type, categoryId, debouncedSearch, selectedLangs])
+  }, [credId, type, categoryId, debouncedSearch, selectedLangs, sort])
 
   const loadMore = async () => {
     if (!credId || loadingMore || loading) return
@@ -140,6 +142,7 @@ export default function Iptv() {
         languages: selectedLangs.length > 0 ? selectedLangs : undefined,
         start: fetchedRef.current,
         limit: PAGE_SIZE,
+        sort: sort || undefined,
       })
       setStreams(prev => [...prev, ...r.items])
       fetchedRef.current += r.items.length
@@ -156,7 +159,7 @@ export default function Iptv() {
     }, { root: contentRef.current, rootMargin: '200px' })
     obs.observe(el)
     return () => obs.disconnect()
-  }, [credId, type, categoryId, debouncedSearch, selectedLangs, total, loadingMore, loading])
+  }, [credId, type, categoryId, debouncedSearch, selectedLangs, sort, total, loadingMore, loading])
 
   const play = async (s: IptvStream) => {
     if (s.type === 'series') {
@@ -368,6 +371,21 @@ export default function Iptv() {
                 {d.name} {d.ws_connected ? '' : '(offline)'}
               </option>
             ))}
+          </select>
+
+          {/* Tri (serveur : la liste est paginée) */}
+          <select
+            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
+            value={sort}
+            onChange={e => setSort(e.target.value)}
+            title="Tri"
+          >
+            <option value="">Tri : par défaut</option>
+            <option value="name_asc">Nom A → Z</option>
+            <option value="name_desc">Nom Z → A</option>
+            <option value="added_desc">Plus récents</option>
+            {type !== 'live' && <option value="year_desc">Année</option>}
+            {type !== 'live' && <option value="rating_desc">Note</option>}
           </select>
 
           {/* Toggle Liste / Guide (TV uniquement) */}

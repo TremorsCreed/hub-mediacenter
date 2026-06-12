@@ -31,12 +31,14 @@ async function fetchGames(opts: {
   q?: string
   start?: number
   limit?: number
+  sort?: string
 }): Promise<GamesPage> {
   const p = new URLSearchParams()
   if (opts.platform) p.set('platform', opts.platform)
   if (opts.q) p.set('q', opts.q)
   if (opts.start !== undefined) p.set('start', String(opts.start))
   if (opts.limit) p.set('limit', String(opts.limit))
+  if (opts.sort) p.set('sort', opts.sort)
   const r = await fetch(`${BASE}/games?${p}`)
   if (!r.ok) throw new Error('Impossible de charger les jeux')
   return r.json()
@@ -141,6 +143,7 @@ export default function Launchbox() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [sort, setSort] = useState('') // '' = ordre LaunchBox
   const [error, setError] = useState<string | null>(null)
   const [launching, setLaunching] = useState<string | null>(null)
   const [launchMsg, setLaunchMsg] = useState<string | null>(null)
@@ -175,7 +178,7 @@ export default function Launchbox() {
     setItems([])
     setTotal(0)
     fetchedRef.current = 0
-    fetchGames({ platform: selectedPlatform || undefined, q: debouncedQ || undefined, start: 0, limit: PAGE_SIZE })
+    fetchGames({ platform: selectedPlatform || undefined, q: debouncedQ || undefined, start: 0, limit: PAGE_SIZE, sort: sort || undefined })
       .then(r => {
         setTotal(r.total)
         setItems(r.items)
@@ -183,7 +186,7 @@ export default function Launchbox() {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [platforms.length, selectedPlatform, debouncedQ])
+  }, [platforms.length, selectedPlatform, debouncedQ, sort])
 
   // Charger la page suivante
   const hasMore = items.length < total
@@ -191,14 +194,14 @@ export default function Launchbox() {
     if (loadingMore || loading || !hasMore) return
     const offset = fetchedRef.current
     setLoadingMore(true)
-    fetchGames({ platform: selectedPlatform || undefined, q: debouncedQ || undefined, start: offset, limit: PAGE_SIZE })
+    fetchGames({ platform: selectedPlatform || undefined, q: debouncedQ || undefined, start: offset, limit: PAGE_SIZE, sort: sort || undefined })
       .then(r => {
         setItems(prev => [...prev, ...r.items])
         fetchedRef.current = offset + r.items.length
       })
       .catch(console.error)
       .finally(() => setLoadingMore(false))
-  }, [loadingMore, loading, hasMore, selectedPlatform, debouncedQ])
+  }, [loadingMore, loading, hasMore, selectedPlatform, debouncedQ, sort])
 
   // IntersectionObserver sur le sentinel
   useEffect(() => {
@@ -340,6 +343,18 @@ export default function Launchbox() {
               className="w-full bg-zinc-900 border border-zinc-800 rounded pl-8 pr-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-600"
             />
           </div>
+
+          {/* Tri (serveur : liste paginée) */}
+          <select
+            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600 shrink-0"
+            value={sort}
+            onChange={e => setSort(e.target.value)}
+            title="Tri"
+          >
+            <option value="">Tri : par défaut</option>
+            <option value="title_asc">Titre A → Z</option>
+            <option value="title_desc">Titre Z → A</option>
+          </select>
 
           {total > 0 && (
             <span className="text-xs text-zinc-500 shrink-0">{total} jeu{total !== 1 ? 'x' : ''}</span>

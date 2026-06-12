@@ -555,13 +555,14 @@ export const api = {
     setCategoryPrefsBulk: (credId: number, bulk: { type: 'live' | 'vod' | 'series'; scope: string; state: 'hidden' | 'locked' | 'visible' | null; category_ids: string[] }) =>
       put<{ ok: boolean; count: number }>(`/iptv/${credId}/category-prefs/bulk`, bulk),
     languages: (credId: number, type: 'live' | 'vod' | 'series') => get<{ code: string; count: number }[]>(`/iptv/${credId}/languages?type=${type}`),
-    streams: (credId: number, opts: { type: 'live' | 'vod' | 'series'; category?: string; search?: string; languages?: string[]; start?: number; limit?: number }) => {
+    streams: (credId: number, opts: { type: 'live' | 'vod' | 'series'; category?: string; search?: string; languages?: string[]; start?: number; limit?: number; sort?: string }) => {
       const p = new URLSearchParams({ type: opts.type })
       if (opts.category) p.set('category', opts.category)
       if (opts.search) p.set('search', opts.search)
       if (opts.languages && opts.languages.length) p.set('languages', opts.languages.join(','))
       if (opts.start !== undefined) p.set('start', String(opts.start))
       if (opts.limit) p.set('limit', String(opts.limit))
+      if (opts.sort) p.set('sort', opts.sort)
       return get<{ total: number; start: number; size: number; items: IptvStream[] }>(`/iptv/${credId}/streams?${p}`)
     },
     seriesInfo: (credId: number, seriesId: string) => get<IptvSeriesInfo>(`/iptv/${credId}/series/${seriesId}`),

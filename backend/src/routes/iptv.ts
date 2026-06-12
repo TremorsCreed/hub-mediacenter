@@ -297,6 +297,16 @@ router.get('/:credId/streams', async (req, res) => {
       const needle = normalizeTitle(searchRaw)
       items = items.filter(it => normalizeTitle(it.name).includes(needle))
     }
+    // Tri (avant pagination — la liste est servie par pages). '' = ordre provider.
+    const sort = (req.query.sort as string) ?? ''
+    const comparators: Record<string, (a: typeof items[number], b: typeof items[number]) => number> = {
+      name_asc: (a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }),
+      name_desc: (a, b) => b.name.localeCompare(a.name, 'fr', { sensitivity: 'base' }),
+      added_desc: (a, b) => (parseInt(b.added ?? '0') || 0) - (parseInt(a.added ?? '0') || 0),
+      year_desc: (a, b) => (parseInt(b.year ?? '0') || 0) - (parseInt(a.year ?? '0') || 0),
+      rating_desc: (a, b) => (parseFloat(b.rating ?? '0') || 0) - (parseFloat(a.rating ?? '0') || 0),
+    }
+    if (comparators[sort]) items = [...items].sort(comparators[sort])
     const total = items.length
     const page = items.slice(start, start + limit)
     res.json({

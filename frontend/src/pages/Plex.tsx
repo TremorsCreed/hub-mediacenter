@@ -150,6 +150,7 @@ export default function Plex() {
   const [sectionsCollapsed, setSectionsCollapsed] = useState(false)
   const [devices, setDevices] = useState<Device[]>([])
   const { deviceId, setDeviceId, reconcile } = usePersistentDevice()
+  const [sort, setSort] = useState('titleSort') // tri natif Plex
   const [launching, setLaunching] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [selectedShow, setSelectedShow] = useState<PlexItem | null>(null)
@@ -187,10 +188,10 @@ export default function Plex() {
     setItems([])
     setTotal(0)
     fetchedRef.current = 0
-    api.plex.sectionItems(sectionId, { start: 0, size: PAGE_SIZE, search: debouncedSearch || undefined })
+    api.plex.sectionItems(sectionId, { start: 0, size: PAGE_SIZE, search: debouncedSearch || undefined, sort })
       .then(r => { setItems(r.items); setTotal(r.total); fetchedRef.current = r.items.length })
       .finally(() => setLoading(false))
-  }, [sectionId, debouncedSearch])
+  }, [sectionId, debouncedSearch, sort])
 
   // Charger la page suivante
   const hasMore = items.length < total
@@ -198,11 +199,11 @@ export default function Plex() {
     if (loadingMore || loading || !hasMore || !sectionId) return
     const offset = fetchedRef.current
     setLoadingMore(true)
-    api.plex.sectionItems(sectionId, { start: offset, size: PAGE_SIZE, search: debouncedSearch || undefined })
+    api.plex.sectionItems(sectionId, { start: offset, size: PAGE_SIZE, search: debouncedSearch || undefined, sort })
       .then(r => { setItems(prev => [...prev, ...r.items]); fetchedRef.current = offset + r.items.length })
       .catch(console.error)
       .finally(() => setLoadingMore(false))
-  }, [loadingMore, loading, hasMore, sectionId, debouncedSearch])
+  }, [loadingMore, loading, hasMore, sectionId, debouncedSearch, sort])
 
   // IntersectionObserver sur le sentinel
   useEffect(() => {
@@ -370,6 +371,22 @@ export default function Plex() {
                 {d.name} {d.ws_connected ? '' : '(offline)'}
               </option>
             ))}
+          </select>
+
+          {/* Tri (natif Plex, appliqué côté serveur) */}
+          <select
+            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
+            value={sort}
+            onChange={e => setSort(e.target.value)}
+            title="Tri"
+          >
+            <option value="titleSort">Titre A → Z</option>
+            <option value="titleSort:desc">Titre Z → A</option>
+            <option value="addedAt:desc">Ajoutés récemment</option>
+            <option value="year:desc">Année (récent d'abord)</option>
+            <option value="year">Année (ancien d'abord)</option>
+            <option value="rating:desc">Note</option>
+            <option value="lastViewedAt:desc">Vus récemment</option>
           </select>
 
           <div className="relative flex-1 min-w-[200px]">

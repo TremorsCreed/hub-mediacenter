@@ -173,6 +173,11 @@ router.get('/games', async (req, res) => {
   if (platform) items = items.filter(g => g.platform === platform)
   if (q) items = items.filter(g => g.title.toLowerCase().includes(q))
 
+  // Tri (avant pagination). '' = ordre du cache (LaunchBox).
+  const sort = (req.query.sort as string) ?? ''
+  if (sort === 'title_asc') items = [...items].sort((a, b) => a.title.localeCompare(b.title, 'fr', { sensitivity: 'base' }))
+  else if (sort === 'title_desc') items = [...items].sort((a, b) => b.title.localeCompare(a.title, 'fr', { sensitivity: 'base' }))
+
   res.json({ total: items.length, start, size: limit, items: items.slice(start, start + limit) })
 })
 

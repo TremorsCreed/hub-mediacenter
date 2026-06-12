@@ -37,6 +37,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
     refresh().finally(() => setLoading(false))
   }, [refresh])
 
+  // Le backend a rejeté le token admin (expiré / redéployé) : la couche api a
+  // déjà purgé le token, on re-verrouille l'UI → AdminGate redemande le PIN.
+  useEffect(() => {
+    const onExpired = () => setAdminUnlocked(false)
+    window.addEventListener('hub:admin-expired', onExpired)
+    return () => window.removeEventListener('hub:admin-expired', onExpired)
+  }, [])
+
   const selectUser = useCallback((u: User) => {
     setCurrentUserId(u.id)
     setCurrentUser(u)

@@ -414,6 +414,14 @@ async function extractError(r: Response): Promise<Error> {
   const text = await r.text()
   try {
     const j = JSON.parse(text)
+    // Token admin invalide/expiré (ex. backend redéployé : les tokens sont en
+    // mémoire serveur). On purge le token local et on re-verrouille la section
+    // Admin (UserContext écoute cet événement) → re-saisie du PIN.
+    if (r.status === 403 && j.error === 'admin_required') {
+      setAdminToken(null)
+      window.dispatchEvent(new Event('hub:admin-expired'))
+      return new Error('Session admin expirée — re-saisis le PIN')
+    }
     return new Error(typeof j.error === 'string' ? j.error : text)
   } catch {
     return new Error(text || `HTTP ${r.status}`)
@@ -541,6 +549,8 @@ export const api = {
     categoryPrefs: (credId: number, type: 'live' | 'vod' | 'series') => get<IptvCategoryPref[]>(`/iptv/${credId}/category-prefs?type=${type}`),
     setCategoryPref: (credId: number, pref: { type: 'live' | 'vod' | 'series'; category_id: string; scope: string; state: 'hidden' | 'locked' | null }) =>
       put<{ ok: boolean }>(`/iptv/${credId}/category-prefs`, pref),
+    setCategoryPrefsBulk: (credId: number, bulk: { type: 'live' | 'vod' | 'series'; scope: string; state: 'hidden' | 'locked' | null; category_ids: string[] }) =>
+      put<{ ok: boolean; count: number }>(`/iptv/${credId}/category-prefs/bulk`, bulk),
     languages: (credId: number, type: 'live' | 'vod' | 'series') => get<{ code: string; count: number }[]>(`/iptv/${credId}/languages?type=${type}`),
     streams: (credId: number, opts: { type: 'live' | 'vod' | 'series'; category?: string; search?: string; languages?: string[]; start?: number; limit?: number }) => {
       const p = new URLSearchParams({ type: opts.type })

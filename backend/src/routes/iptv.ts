@@ -194,6 +194,35 @@ router.put('/:credId/category-prefs', requireAdmin, async (req, res) => {
   res.json({ ok: true })
 })
 
+// PUT /api/iptv/:credId/category-prefs/bulk (admin) — pose un état sur PLUSIEURS
+// catégories d'un coup (« tout masquer puis n'autoriser que… »). state null = reset.
+const CatPrefBulkSchema = z.object({
+  type: z.enum(['live', 'vod', 'series']),
+  scope: z.string().min(1),
+  state: z.enum(['hidden', 'locked']).nullable(),
+  category_ids: z.array(z.string().min(1)).min(1).max(2000),
+})
+router.put('/:credId/category-prefs/bulk', requireAdmin, async (req, res) => {
+  const credId = parseInt(req.params.credId)
+  if (!credId) return res.status(404).json({ error: 'invalid credential id' })
+  const parsed = CatPrefBulkSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.message })
+  const { type, scope, state, category_ids } = parsed.data
+  const stmts = category_ids.map(catId => state === null
+    ? {
+        sql: 'DELETE FROM iptv_category_prefs WHERE cred_id = ? AND content_type = ? AND category_id = ? AND scope = ?',
+        args: [credId, type, catId, scope] as any[],
+      }
+    : {
+        sql: `INSERT INTO iptv_category_prefs (cred_id, content_type, category_id, scope, state)
+              VALUES (?, ?, ?, ?, ?)
+              ON CONFLICT(cred_id, content_type, category_id, scope) DO UPDATE SET state = excluded.state`,
+        args: [credId, type, catId, scope, state] as any[],
+      })
+  await db.batch(stmts, 'write')
+  res.json({ ok: true, count: category_ids.length })
+})
+
 // GET /api/iptv/:credId/categories?type=live|vod|series[&all=1]
 // Par défaut : catégories masquées exclues, verrouillées marquées state='locked'
 // (état effectif pour le profil courant). all=1 (UI admin) = tout, sans filtrage.

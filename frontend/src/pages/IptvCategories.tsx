@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api, IptvCategory, IptvCategoryPref, User } from '../api'
-import { Eye, EyeOff, Lock, Loader2, Tv, Film, MonitorPlay, Globe } from 'lucide-react'
+import { Eye, EyeOff, Lock, Loader2, Tv, Film, MonitorPlay, Globe, AlertCircle } from 'lucide-react'
 
 const TYPES = [
   { key: 'live' as const, label: 'TV', icon: Tv },
@@ -24,6 +24,8 @@ export default function IptvCategories() {
   const [prefs, setPrefs] = useState<IptvCategoryPref[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState<string | null>(null)
+  const [bulkSaving, setBulkSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     api.iptv.credentials().then(c => { setCreds(c); if (c.length) setCredId(c[0].id) })
@@ -48,14 +50,37 @@ export default function IptvCategories() {
   const setState = async (catId: string, state: CatState) => {
     if (!credId) return
     setSaving(catId)
+    setError(null)
     try {
       await api.iptv.setCategoryPref(credId, { type, category_id: catId, scope, state })
       setPrefs(prev => {
         const rest = prev.filter(p => !(p.category_id === catId && p.scope === scope))
         return state ? [...rest, { category_id: catId, scope, state }] : rest
       })
+    } catch (e: any) {
+      setError(e.message || 'Échec de l\'enregistrement')
     } finally {
       setSaving(null)
+    }
+  }
+
+  // Action en masse sur toutes les catégories du type/scope courant.
+  // « Tout masquer » → ne reste plus qu'à rendre visibles celles qu'on veut.
+  const setAll = async (state: CatState) => {
+    if (!credId || !categories.length || bulkSaving) return
+    setBulkSaving(true)
+    setError(null)
+    try {
+      const ids = categories.map(c => c.id)
+      await api.iptv.setCategoryPrefsBulk(credId, { type, scope, state, category_ids: ids })
+      setPrefs(prev => {
+        const rest = prev.filter(p => p.scope !== scope)
+        return state ? [...rest, ...ids.map(id => ({ category_id: id, scope, state }))] : rest
+      })
+    } catch (e: any) {
+      setError(e.message || 'Échec de l\'action en masse')
+    } finally {
+      setBulkSaving(false)
     }
   }
 
@@ -119,6 +144,33 @@ export default function IptvCategories() {
           {counts.hidden} masquée{counts.hidden > 1 ? 's' : ''} · {counts.locked} verrouillée{counts.locked > 1 ? 's' : ''}
         </span>
       </div>
+
+      {/* Actions en masse : masquer tout puis n'autoriser que ce qu'on veut */}
+      <div className="flex items-center gap-2 mb-4">
+        <button
+          onClick={() => setAll('hidden')}
+          disabled={bulkSaving || loading || !categories.length}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-zinc-800 text-zinc-400 hover:text-red-400 hover:border-red-900/60 disabled:opacity-50 transition-colors"
+        >
+          {bulkSaving ? <Loader2 size={12} className="animate-spin" /> : <EyeOff size={12} />}
+          Tout masquer
+        </button>
+        <button
+          onClick={() => setAll(null)}
+          disabled={bulkSaving || loading || !categories.length}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-zinc-800 text-zinc-400 hover:text-emerald-400 hover:border-emerald-900/60 disabled:opacity-50 transition-colors"
+        >
+          {bulkSaving ? <Loader2 size={12} className="animate-spin" /> : <Eye size={12} />}
+          Tout réinitialiser (visible)
+        </button>
+        <span className="text-[11px] text-zinc-600">Astuce : masque tout, puis ré-affiche juste ce dont tu as besoin.</span>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 text-sm text-red-400 bg-red-950/30 border border-red-900/50 rounded-lg px-3 py-2 mb-4">
+          <AlertCircle size={14} className="shrink-0" /> {error}
+        </div>
+      )}
 
       {loading && (
         <div className="flex items-center gap-2 text-sm text-zinc-500 py-10 justify-center">

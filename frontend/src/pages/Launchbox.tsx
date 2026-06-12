@@ -3,6 +3,7 @@ import { Gamepad2, Search, RefreshCw, Play, Loader2, AlertCircle, RotateCcw, Lib
 import FavoriteButton from '../components/FavoriteButton'
 import AddToPlaylist from '../components/AddToPlaylist'
 import { CatalogDndProvider, DraggableMedia } from '../components/CatalogDnd'
+import { usePersistedState } from '../usePersistedState'
 
 const BASE = '/api/launchbox'
 
@@ -136,14 +137,14 @@ function GameCard({ game, launching, onLaunch }: {
 
 export default function Launchbox() {
   const [platforms, setPlatforms] = useState<string[]>([])
-  const [selectedPlatform, setSelectedPlatform] = useState<string>('')
+  const [selectedPlatform, setSelectedPlatform] = usePersistedState<string>('hub.lb.platform', '')
   const [q, setQ] = useState('')
   const [debouncedQ, setDebouncedQ] = useState('')
   const [items, setItems] = useState<LbGame[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [sort, setSort] = useState('') // '' = ordre LaunchBox
+  const [sort, setSort] = usePersistedState('hub.lb.sort', '') // '' = ordre LaunchBox
   const [error, setError] = useState<string | null>(null)
   const [launching, setLaunching] = useState<string | null>(null)
   const [launchMsg, setLaunchMsg] = useState<string | null>(null)
@@ -159,7 +160,11 @@ export default function Launchbox() {
   // Charger les plateformes au montage
   useEffect(() => {
     fetchPlatforms()
-      .then(p => { setPlatforms(p); if (p.length) setSelectedPlatform(p[0]) })
+      .then(p => {
+        setPlatforms(p)
+        // Garde la dernière plateforme active (persistée) si elle existe encore.
+        if (p.length && !p.includes(selectedPlatform)) setSelectedPlatform(p[0])
+      })
       .catch(e => setError(e.message))
   }, [])
 

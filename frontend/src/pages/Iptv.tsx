@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, Device, IptvCategory, IptvSeriesInfo, IptvStream } from '../api'
 import { usePersistentDevice } from '../usePersistentDevice'
+import { usePersistedState } from '../usePersistedState'
+
+// Dernière catégorie active mémorisée par type (live/vod/series)
+const catKey = (type: string) => `hub.iptv.cat.${type}`
+const saveCat = (type: string, id: string) => { try { localStorage.setItem(catKey(type), id) } catch { /* */ } }
 import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight, ChevronLeft, Lock } from 'lucide-react'
 import FavoriteButton from '../components/FavoriteButton'
 import AddToPlaylist from '../components/AddToPlaylist'
@@ -44,7 +49,7 @@ export default function Iptv() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [sort, setSort] = useState('') // '' = ordre provider
+  const [sort, setSort] = usePersistedState('hub.iptv.sort', '') // '' = ordre provider
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
   const fetchedRef = useRef(0)
@@ -80,7 +85,18 @@ export default function Iptv() {
   useEffect(() => {
     if (!credId) return
     setCategoryId('')
-    api.iptv.categories(credId, type).then(setCategories).catch(() => setCategories([]))
+    api.iptv.categories(credId, type).then(cats => {
+      setCategories(cats)
+      // Restaure la dernière catégorie active de ce type — mais JAMAIS une catégorie
+      // verrouillée sans PIN (sinon refresh = contournement du contrôle parental).
+      try {
+        const saved = localStorage.getItem(catKey(type))
+        if (saved) {
+          const c = cats.find(x => x.id === saved)
+          if (c && c.state !== 'locked') setCategoryId(saved)
+        }
+      } catch { /* */ }
+    }).catch(() => setCategories([]))
     api.iptv.languages(credId, type).then(setAvailableLangs).catch(() => setAvailableLangs([]))
   }, [credId, type])
 
@@ -107,6 +123,12 @@ export default function Iptv() {
     const t = setTimeout(() => setDebouncedSearch(search), 350)
     return () => clearTimeout(t)
   }, [search])
+
+  // Année/Note n'existent pas pour les chaînes : si un tri VOD persisté est actif
+  // quand on passe en live, on retombe sur l'ordre par défaut.
+  useEffect(() => {
+    if (type === 'live' && (sort === 'year_desc' || sort === 'rating_desc')) setSort('')
+  }, [type, sort])
 
   useEffect(() => {
     if (!credId) return
@@ -314,7 +336,7 @@ export default function Iptv() {
         </div>
         <div className="flex-1 overflow-y-auto py-1">
           <button
-            onClick={() => { setCategoryId(''); setUnlockedCat(null) }}
+            onClick={() => { setCategoryId(''); setUnlockedCat(null); saveCat(type, '') }}
             className={`w-full px-3 py-2 text-xs text-left transition-colors truncate ${
               categoryId === ''
                 ? 'bg-zinc-800 text-white'
@@ -329,6 +351,7 @@ export default function Iptv() {
               onClick={() => {
                 if (c.state === 'locked' && unlockedCat !== c.id) { setPinPrompt({ catId: c.id, name: c.name }); return }
                 setCategoryId(c.id)
+                saveCat(type, c.id)
                 // Sortir d'un groupe verrouillé le re-verrouille
                 if (unlockedCat && unlockedCat !== c.id) setUnlockedCat(null)
               }}
@@ -693,7 +716,7 @@ export default function Iptv() {
       {pinPrompt && (
         <PinDialog
           title={pinPrompt.name}
-          onSuccess={() => { setUnlockedCat(pinPrompt.catId); setCategoryId(pinPrompt.catId); setPinPrompt(null) }}
+          onSuccess={() => { setUnlockedCat(pinPrompt.catId); setCategoryId(pinPrompt.catId); saveCat(type, pinPrompt.catId); setPinPrompt(null) }}
           onCancel={() => setPinPrompt(null)}
         />
       )}

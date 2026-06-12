@@ -184,7 +184,7 @@ export interface DeviceConfig {
   xtream_credential_id: number | null
   tvoverlay_enabled: boolean
   overlay_player_duration: number  // secondes, 0 = persistant
-  iptv_player?: 'auto' | 'mxplayer' | 'vlc' | 'tivimate'
+  iptv_player?: 'auto' | 'justplayer' | 'mxplayer' | 'vlc' | 'tivimate'
 }
 
 export interface Credential {

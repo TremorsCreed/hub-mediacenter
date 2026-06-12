@@ -15,7 +15,7 @@ const ConfigSchema = z.object({
   xtream_credential_id: z.number().nullable().optional(),
   tvoverlay_enabled: z.boolean().default(false),
   overlay_player_duration: z.number().int().min(0).max(600).default(0),
-  iptv_player: z.enum(['auto', 'mxplayer', 'vlc', 'tivimate']).default('auto')
+  iptv_player: z.enum(['auto', 'justplayer', 'mxplayer', 'vlc', 'tivimate']).default('auto')
 })
 
 async function resolveXtream(credId: number | null | undefined, fallback: { xtream_server: string; xtream_user: string; xtream_pass: string; xtream_ext: string }) {

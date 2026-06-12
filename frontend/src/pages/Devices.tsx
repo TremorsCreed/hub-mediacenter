@@ -180,7 +180,8 @@ function ConfigPanel({ deviceId, capabilities, credentials }: { deviceId: string
             value={cfg.iptv_player ?? 'auto'}
             onChange={e => setCfg(prev => ({ ...prev, iptv_player: e.target.value as DeviceConfig['iptv_player'] }))}
           >
-            <option value="auto">Auto (live: MX Player · VOD: VLC)</option>
+            <option value="auto">Auto (live: MX Player · VOD: Just Player)</option>
+            <option value="justplayer">Just Player</option>
             <option value="mxplayer">MX Player</option>
             <option value="vlc">VLC</option>
             <option value="tivimate">TiviMate</option>

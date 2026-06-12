@@ -22,23 +22,29 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
 
         // Packages par lecteur (plusieurs variantes possibles)
         private val PKGS_BY_PLAYER = mapOf(
+            "justplayer" to listOf("com.brouken.player"),
             "mxplayer" to listOf("com.mxtech.videoplayer.pro", "com.mxtech.videoplayer.ad"),
             "vlc" to listOf("org.videolan.vlc"),
             "tivimate" to listOf("ar.tvplayer.tv"),
         )
 
-        // Auto LIVE : MX Player préféré (robuste sur le TS, pas de gel image)
+        // Auto LIVE : MX Player préféré (robuste sur le TS, pas de gel image),
+        // puis Just Player (ExoPlayer, gère le TS aussi), puis le reste.
         private val AUTO_LIVE = listOf(
             "com.mxtech.videoplayer.pro",
             "com.mxtech.videoplayer.ad",
+            "com.brouken.player",
             "org.videolan.vlc",
             "ar.tvplayer.tv",
             "com.amazon.firetv.tvplayer",
         )
 
-        // Auto VOD/SÉRIES : VLC préféré (codecs E-AC3/AC3/DTS que MX Player free ne
-        // décode pas), puis MX Player Pro qui les a, puis le reste.
+        // Auto VOD/SÉRIES : Just Player préféré. Basé sur ExoPlayer → l'image passe
+        // par le décodeur de la plateforme (pas de gel comme VLC sur le Shield) et
+        // l'E-AC3/AC3/DTS part en passthrough vers l'ampli (ou décodage FFmpeg).
+        // VLC et MX Player free derrière en repli.
         private val AUTO_VOD = listOf(
+            "com.brouken.player",
             "org.videolan.vlc",
             "com.mxtech.videoplayer.pro",
             "com.mxtech.videoplayer.ad",

@@ -81,6 +81,6 @@ export interface WsPlayCommand extends WsMessage {
   iptv_container?: string     // conteneur réel (mkv/mp4/ts...) pour poser le bon MIME côté player
   external_url?: string       // deep link Netflix/Disney+/etc.
   external_platform?: string  // "netflix" | "disney+" | "primevideo" | "appletvplus" | "web"
-  player?: string             // lecteur IPTV préféré : 'auto' | 'mxplayer' | 'vlc' | 'tivimate'
+  player?: string             // lecteur IPTV préféré : 'auto' | 'justplayer' | 'mxplayer' | 'vlc' | 'tivimate'
   requester: RequesterType
 }

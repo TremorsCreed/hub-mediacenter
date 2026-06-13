@@ -568,6 +568,17 @@ export const api = {
   },
   discover: {
     scan: (subnet?: string) => get<DiscoverResult>(`/discover${subnet ? `?subnet=${subnet}` : ''}`),
+    apkStatus: () => get<{ present: boolean; size?: number }>(`/discover/agent-apk`),
+    uploadApk: async (file: File) => {
+      const r = await fetch(`${BASE}/discover/agent-apk`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/octet-stream' },
+        body: file,
+      })
+      if (!r.ok) throw await extractError(r)
+      return r.json() as Promise<{ ok: boolean; size: number }>
+    },
+    deploy: (ip: string) => post<{ status: 'ok' | 'authorize'; message: string }>(`/discover/${ip}/deploy`, {}),
   },
   control: {
     send: (deviceId: string, action: 'play_pause' | 'play' | 'pause' | 'stop' | 'next' | 'previous' | 'volume_up' | 'volume_down' | 'mute') =>

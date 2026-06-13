@@ -14,6 +14,8 @@ services:
       - MARQUESAS_URL=${MARQUESAS_URL:-http://192.168.1.223:8090}
     volumes:
       - hub_data:/data
+      - hub_adb:/root/.android      # clé adb du backend (persistée → 1 autorisation/device)
+      - hub_agent_apk:/apk          # APK de l'agent à déployer
     ports:
       - "8020:8020"
 
@@ -30,3 +32,5 @@ services:
 
 volumes:
   hub_data:
+  hub_adb:
+  hub_agent_apk:

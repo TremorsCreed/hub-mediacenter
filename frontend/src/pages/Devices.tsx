@@ -210,8 +210,13 @@ export default function Devices() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [scan, setScan] = useState<DiscoverResult | null>(null)
   const [scanning, setScanning] = useState(false)
+  const [apkPresent, setApkPresent] = useState<boolean | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [deploying, setDeploying] = useState<string | null>(null)
+  const [deployMsg, setDeployMsg] = useState<{ ip: string; ok: boolean; text: string } | null>(null)
 
   const load = async () => setDevices(await api.devices.list())
+  const refreshApk = () => api.discover.apkStatus().then(s => setApkPresent(s.present)).catch(() => setApkPresent(null))
 
   const runScan = async () => {
     setScanning(true)
@@ -220,9 +225,29 @@ export default function Devices() {
     finally { setScanning(false) }
   }
 
+  const uploadApk = async (file?: File) => {
+    if (!file) return
+    setUploading(true)
+    try { await api.discover.uploadApk(file); await refreshApk() }
+    catch (e: any) { alert(e.message || 'Échec de l\'upload') }
+    finally { setUploading(false) }
+  }
+
+  const deploy = async (ip: string) => {
+    setDeploying(ip); setDeployMsg(null)
+    try {
+      const r = await api.discover.deploy(ip)
+      setDeployMsg({ ip, ok: r.status === 'ok', text: r.message })
+      if (r.status === 'ok') { setTimeout(load, 3000); setTimeout(runScan, 4000) }
+    } catch (e: any) {
+      setDeployMsg({ ip, ok: false, text: e.message || 'Échec du déploiement' })
+    } finally { setDeploying(null) }
+  }
+
   useEffect(() => {
     load()
     api.credentials.list().then(setCredentials).catch(() => {})
+    refreshApk()
     const t = setInterval(load, 5000)
     return () => clearInterval(t)
   }, [])
@@ -257,30 +282,53 @@ export default function Devices() {
       {/* Résultats du scan réseau ADB */}
       {scan && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-2">
-          <div className="text-xs text-zinc-500">
-            Sous-réseau {scan.subnet}.0/24 · {scan.devices.length} lecteur(s) ADB trouvé(s) sur {scan.scanned} adresses
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="text-xs text-zinc-500">
+              Sous-réseau {scan.subnet}.0/24 · {scan.devices.length} lecteur(s) ADB trouvé(s) sur {scan.scanned} adresses
+            </div>
+            {/* État de l'APK agent (requis pour déployer) */}
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer text-zinc-400 hover:text-zinc-200">
+              {uploading
+                ? <Loader2 size={12} className="animate-spin" />
+                : apkPresent
+                  ? <CheckCircle2 size={12} className="text-emerald-500" />
+                  : <Download size={12} className="text-amber-400" />}
+              {uploading ? 'Envoi…' : apkPresent ? 'APK agent prêt — remplacer' : 'Uploader l\'APK de l\'agent'}
+              <input type="file" accept=".apk" className="hidden"
+                onChange={e => uploadApk(e.target.files?.[0])} disabled={uploading} />
+            </label>
           </div>
+
           {scan.devices.length === 0 && (
             <div className="text-sm text-zinc-600 py-2">
               Aucun appareil avec ADB (port 5555) détecté. Active le « débogage réseau / ADB sur TCP » sur tes Android TV.
             </div>
           )}
           {scan.devices.map(d => (
-            <div key={d.ip} className="flex items-center gap-3 py-2 border-t border-zinc-800/60 first:border-t-0">
-              <Radar size={14} className="text-zinc-500 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm text-zinc-200">{d.ip}<span className="text-zinc-600">:{d.adb_port}</span></div>
-                {d.agent && <div className="text-[11px] text-emerald-500 flex items-center gap-1"><CheckCircle2 size={11} /> Agent installé : {d.agent.name}</div>}
+            <div key={d.ip} className="py-2 border-t border-zinc-800/60 first:border-t-0">
+              <div className="flex items-center gap-3">
+                <Radar size={14} className="text-zinc-500 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-zinc-200">{d.ip}<span className="text-zinc-600">:{d.adb_port}</span></div>
+                  {d.agent && <div className="text-[11px] text-emerald-500 flex items-center gap-1"><CheckCircle2 size={11} /> Agent installé : {d.agent.name}</div>}
+                </div>
+                {d.agent
+                  ? <span className="text-xs text-zinc-500 shrink-0">déjà géré</span>
+                  : <button
+                      onClick={() => deploy(d.ip)}
+                      disabled={deploying === d.ip || !apkPresent}
+                      title={apkPresent ? 'Installer et lancer l\'agent Hub' : 'Uploade d\'abord l\'APK de l\'agent'}
+                      className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 border border-amber-900/50 hover:border-amber-700 disabled:opacity-40 disabled:cursor-not-allowed rounded px-2 py-1 shrink-0 transition-colors"
+                    >
+                      {deploying === d.ip ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                      {deploying === d.ip ? 'Déploiement…' : 'Déployer l\'agent'}
+                    </button>}
               </div>
-              {d.agent
-                ? <span className="text-xs text-zinc-500 shrink-0">déjà géré</span>
-                : <button
-                    disabled
-                    title="Déploiement de l'agent — bientôt (brique 2)"
-                    className="flex items-center gap-1.5 text-xs text-amber-400/60 border border-amber-900/40 rounded px-2 py-1 cursor-not-allowed shrink-0"
-                  >
-                    <Download size={12} /> Déployer l'agent
-                  </button>}
+              {deployMsg?.ip === d.ip && (
+                <div className={`mt-2 text-xs rounded px-2 py-1.5 ${deployMsg.ok ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-900/50' : 'bg-amber-950/30 text-amber-300 border border-amber-900/40'}`}>
+                  {deployMsg.text}
+                </div>
+              )}
             </div>
           ))}
         </div>

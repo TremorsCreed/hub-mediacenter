@@ -46,12 +46,22 @@ function adb(args: string[], timeoutMs = 30000): Promise<{ code: number; out: st
 }
 
 // Installe une app du magasin (1 APK → install, plusieurs → install-multiple).
-async function installApp(serial: string, app: StoreApp): Promise<boolean> {
-  const args = app.files.length > 1
-    ? ['-s', serial, 'install-multiple', '-r', '-g', ...app.files]
-    : ['-s', serial, 'install', '-r', '-g', app.files[0]]
+// base.apk en premier (certaines cibles l'exigent). Renvoie l'erreur adb si échec.
+async function installApp(serial: string, app: StoreApp): Promise<{ ok: boolean; error?: string }> {
+  const files = [...app.files].sort((a) => (/base\.apk$/i.test(a) ? -1 : 1))
+  const args = files.length > 1
+    ? ['-s', serial, 'install-multiple', '-r', '-g', ...files]
+    : ['-s', serial, 'install', '-r', '-g', files[0]]
   const r = await adb(args, 240000)
-  return /Success/i.test(r.out)
+  if (/Success/i.test(r.out)) return { ok: true }
+  // Splits incompatibles avec l'archi/densité de la cible → repli sur le base seul.
+  if (files.length > 1 && /NO_MATCHING_ABIS|INVALID_APK|split/i.test(r.out)) {
+    const base = files.find(f => /base\.apk$/i.test(f)) || files[0]
+    const r2 = await adb(['-s', serial, 'install', '-r', '-g', base], 240000)
+    if (/Success/i.test(r2.out)) return { ok: true }
+    return { ok: false, error: r2.out.trim().slice(0, 200) }
+  }
+  return { ok: false, error: r.out.trim().replace(/\s+/g, ' ').slice(0, 200) }
 }
 
 // connect + vérifie l'autorisation ADB. Renvoie ok, ou un statut à relayer.
@@ -240,7 +250,7 @@ router.post('/:ip/install-players', requireAdmin, async (req, res) => {
 
   const installed: string[] = [], failed: string[] = []
   for (const app of store) {
-    if (await installApp(serial, app)) installed.push(app.label); else failed.push(app.label)
+    const ir = await installApp(serial, app); if (ir.ok) installed.push(app.label); else failed.push(`${app.label}${ir.error ? ` (${ir.error})` : ``}`)
   }
   let msg = installed.length ? `Lecteurs installés : ${installed.join(', ')}.` : 'Aucun lecteur installé.'
   if (failed.length) msg += ` Échec : ${failed.join(', ')}.`
@@ -275,7 +285,7 @@ router.post('/:ip/deploy', requireAdmin, async (req, res) => {
   const store = readStore().filter(a => !players || players.includes(a.id))
   const installed: string[] = [], failed: string[] = []
   for (const app of store) {
-    if (await installApp(serial, app)) installed.push(app.label); else failed.push(app.label)
+    const ir = await installApp(serial, app); if (ir.ok) installed.push(app.label); else failed.push(`${app.label}${ir.error ? ` (${ir.error})` : ``}`)
   }
 
   // Lancement de l'agent

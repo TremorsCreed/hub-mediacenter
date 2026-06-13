@@ -63,32 +63,46 @@ export default function RemoteScreen() {
     </header>
   )
 
-  const Frame = (
-    <iframe
-      key={`${open.ip}-${player}-${reloadKey}`}
-      src={src}
-      title="Miroir d'écran"
-      className="flex-1 w-full bg-black min-h-0"
-      allow="autoplay; fullscreen"
-    />
-  )
-
   if (full) {
+    // Plein écran : ws-scrcpy a la place, iframe normale (rendu OK).
     return createPortal(
       <div className="fixed inset-0 z-[200] bg-black/85 flex items-center justify-center p-4" onClick={() => setFull(false)}>
         <div className="w-full max-w-5xl h-[85vh] bg-zinc-950 border border-zinc-800 rounded-xl flex flex-col overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
           {Header}
-          {Frame}
+          <iframe
+            key={`full-${open.ip}-${player}-${reloadKey}`}
+            src={src}
+            title="Miroir d'écran"
+            className="flex-1 w-full bg-black min-h-0"
+            allow="autoplay; fullscreen"
+          />
         </div>
       </div>,
       document.body
     )
   }
 
+  // PIP : ws-scrcpy dimensionne son canvas selon la taille de la fenêtre au
+  // chargement → dans un petit cadre, rien ne s'affiche. On rend donc l'iframe à
+  // une grande taille logique puis on la réduit en CSS (transform: scale). Les
+  // clics restent correctement mappés (mise à l'échelle uniforme).
+  const LOGICAL_W = 1024, LOGICAL_H = 576
+  const PIP_W = 400
+  const scale = PIP_W / LOGICAL_W
+  const dispH = Math.round(LOGICAL_H * scale)
+
   return createPortal(
-    <div className="fixed bottom-[72px] right-4 z-[150] w-[400px] bg-zinc-950 border border-zinc-700 rounded-lg shadow-2xl flex flex-col overflow-hidden">
+    <div className="fixed bottom-[72px] right-4 z-[150] bg-zinc-950 border border-zinc-700 rounded-lg shadow-2xl flex flex-col overflow-hidden" style={{ width: PIP_W }}>
       {Header}
-      <div className="h-[225px] flex flex-col">{Frame}</div>
+      <div style={{ width: PIP_W, height: dispH, overflow: 'hidden', position: 'relative', background: '#000' }}>
+        <iframe
+          key={`pip-${open.ip}-${player}-${reloadKey}`}
+          src={src}
+          title="Miroir d'écran"
+          allow="autoplay; fullscreen"
+          style={{ width: LOGICAL_W, height: LOGICAL_H, border: 0, transform: `scale(${scale})`, transformOrigin: 'top left' }}
+        />
+      </div>
     </div>,
     document.body
   )

@@ -189,7 +189,7 @@ class HubService : Service() {
                 Log.i(TAG, "Notify: $text")
                 updateNotification(text)
             }
-            "control" -> cmdHandler.post { try { handleControl(json.optString("action")) } catch (e: Exception) { Log.e(TAG, "handleControl", e) } }
+            "control" -> cmdHandler.post { try { handleControl(json) } catch (e: Exception) { Log.e(TAG, "handleControl", e) } }
             "overlay" -> {
                 val action = json.optString("action")
                 if (action == "hide") { overlay.hideAll(); return }
@@ -230,10 +230,16 @@ class HubService : Service() {
         }
     }
 
-    private fun handleControl(action: String) {
+    private fun handleControl(json: JSONObject) {
+        val action = json.optString("action")
         Log.i(TAG, "Control: $action")
         val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         when (action) {
+            // Saut à une position absolue (ms) — VOD/séries seekable uniquement.
+            "seek" -> {
+                val pos = json.optLong("position", -1L)
+                if (pos >= 0) activeMediaController()?.transportControls?.seekTo(pos)
+            }
             "play_pause" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
             "play" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PLAY)
             "pause" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PAUSE)
@@ -257,6 +263,9 @@ class HubService : Service() {
             "mute" -> am.adjustVolume(AudioManager.ADJUST_TOGGLE_MUTE, AudioManager.FLAG_SHOW_UI)
             else -> Log.w(TAG, "Unknown control action: $action")
         }
+        // Feedback rapide : on re-rapporte l'état ~400ms après l'action (sans attendre
+        // le prochain tick de 4s) pour que la barre du Hub réagisse vite.
+        if (action != "stop") cmdHandler.postDelayed({ try { reportActiveSession() } catch (_: Exception) {} }, 400L)
     }
 
     private fun stopAllActiveMediaSessions() {
@@ -362,6 +371,7 @@ class HubService : Service() {
                 lastReportedSessionState = "stopped"
                 overlay.hidePlayer()
                 sendState("stopped")
+                webSocket?.send(buildMediaUpdate("stopped", null, null, 0, 0, false, null))
             }
             return
         }
@@ -384,17 +394,36 @@ class HubService : Service() {
             rawPosition + (android.os.SystemClock.elapsedRealtime() - positionUpdatedAt)
         else rawPosition
         val duration = active.metadata?.getLong(android.media.MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+        // Seekable = la session expose ACTION_SEEK_TO (faux pour le live TV → pas de
+        // scrubber côté Hub, juste play/pause/stop).
+        val seekable = ((playbackState?.actions ?: 0L) and PlaybackState.ACTION_SEEK_TO) != 0L
 
         // Toujours update l'overlay à chaque tick (sinon la barre de progression ne bouge
         // pas et le badge ⏸/▶ ne reflète pas le state).
         overlay.updatePlayerStatus(isPlaying, isPaused, position, duration, appLabel)
 
-        // Anti-spam WS : on n'envoie state_update que si état/title/app ont changé.
+        // Barre « lecture en cours » du Hub : envoyée à CHAQUE tick (la position avance).
+        webSocket?.send(buildMediaUpdate(state, appLabel, title, position, duration, seekable, pkg))
+
+        // Anti-spam WS : on n'envoie state_update (notif/dashboard) que si état/title/app
+        // ont changé.
         val snapshot = "$state|$pkg|$title"
         if (snapshot == lastReportedSessionState) return
         lastReportedSessionState = snapshot
         Log.i(TAG, "Active session changed: $appLabel ($pkg) — $title — $state")
         sendState(state, null, appLabel, title)
+    }
+
+    // MediaController de la session active (pour seek/play/pause ciblés).
+    private fun activeMediaController(): android.media.session.MediaController? {
+        return try {
+            val mgr = getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager ?: return null
+            val component = ComponentName(this, HubNotificationListener::class.java)
+            mgr.getActiveSessions(component).firstOrNull {
+                val s = it.playbackState?.state
+                s == PlaybackState.STATE_PLAYING || s == PlaybackState.STATE_PAUSED || s == PlaybackState.STATE_BUFFERING
+            }
+        } catch (e: Exception) { Log.w(TAG, "activeMediaController: ${e.message}"); null }
     }
 
     private fun packageToAppLabel(pkg: String): String = when {

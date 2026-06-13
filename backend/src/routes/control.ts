@@ -7,7 +7,7 @@ const router = Router()
 
 const ALLOWED_ACTIONS = new Set([
   'play_pause', 'play', 'pause', 'stop', 'next', 'previous',
-  'volume_up', 'volume_down', 'mute'
+  'volume_up', 'volume_down', 'mute', 'seek'
 ])
 
 router.post('/:deviceId/:action', async (req, res) => {
@@ -15,7 +15,15 @@ router.post('/:deviceId/:action', async (req, res) => {
   if (!ALLOWED_ACTIONS.has(action)) return res.status(400).json({ error: 'unknown action', action })
   if (!isConnected(deviceId)) return res.status(503).json({ error: 'device not connected', device_id: deviceId })
 
-  const ok = sendControl(deviceId, action)
+  // seek : position absolue en ms (?position=...), transmise à la session active.
+  let extra: Record<string, unknown> | undefined
+  if (action === 'seek') {
+    const position = parseInt((req.query.position as string) ?? '')
+    if (!Number.isFinite(position) || position < 0) return res.status(400).json({ error: 'position (ms) requise' })
+    extra = { position }
+  }
+
+  const ok = sendControl(deviceId, action, extra)
   if (!ok) return res.status(503).json({ error: 'failed to send control to device' })
 
   const overlayLabels: Record<string, string> = {

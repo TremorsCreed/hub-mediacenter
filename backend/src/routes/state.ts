@@ -1,10 +1,17 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db'
-import { isConnected } from '../ws'
+import { isConnected, mediaStates } from '../ws'
 import { isValidAdminToken } from '../auth'
 
 const router = Router()
+
+// GET /now/:deviceId — état de lecture temps réel (barre « lecture en cours »).
+// null si rien ne joue. La position est un instantané + updated_at pour que le
+// client l'extrapole pendant la lecture.
+router.get('/now/:deviceId', (req, res) => {
+  res.json(mediaStates.get(req.params.deviceId) ?? null)
+})
 
 router.get('/', async (_req, res) => {
   // Title : prefer playback_state.title (rempli pour les plays directs Plex/IPTV),

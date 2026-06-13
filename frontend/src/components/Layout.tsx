@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { Library, History, Film, Radio, Compass, Gamepad2, ChevronLeft, ChevronRight, ShieldCheck, Home, ListVideo } from 'lucide-react'
 import { api } from '../api'
 import { useUser, initials } from '../UserContext'
+import NowPlayingBar from './NowPlayingBar'
 
 export default function Layout() {
   const [modules, setModules] = useState<{ plex: boolean; iptv: boolean; discover: boolean; launchbox: boolean }>({ plex: false, iptv: false, discover: false, launchbox: false })
@@ -51,7 +52,8 @@ export default function Layout() {
     }`
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex flex-col h-screen overflow-hidden">
+      <div className="flex flex-1 min-h-0">
       <aside
         className={`${collapsed ? 'w-14 cursor-pointer' : 'w-52'} shrink-0 bg-zinc-900 border-r border-zinc-800 flex flex-col transition-[width] duration-200 overflow-hidden`}
         // Vue élargie d'un simple clic : quand la sidebar est réduite, cliquer
@@ -161,6 +163,10 @@ export default function Layout() {
       <main className={`flex-1 ${isImmersive ? 'overflow-hidden' : 'overflow-y-auto p-6'}`}>
         <Outlet />
       </main>
+      </div>
+
+      {/* Barre globale « lecture en cours » (se masque si rien ne joue) */}
+      <NowPlayingBar />
     </div>
   )
 }

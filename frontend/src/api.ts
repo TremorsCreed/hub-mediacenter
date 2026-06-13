@@ -272,6 +272,18 @@ export interface DiscoverAvailability {
   iptv_language?: string           // "FR", "EN", ... — undefined si non détectée
 }
 
+// État de lecture temps réel d'un device (barre « lecture en cours »)
+export interface MediaNow {
+  state: 'playing' | 'paused' | 'stopped'
+  app?: string
+  title?: string
+  position: number   // ms (instantané au moment de updated_at)
+  duration: number   // ms (0 = inconnu / live)
+  seekable: boolean
+  package?: string
+  updated_at: number // ms epoch — pour extrapoler la position pendant la lecture
+}
+
 export interface IptvCategory { id: string; name: string; state?: 'hidden' | 'locked' }
 // Préférence de catégorie posée par l'admin : scope 'global' ou un user_id (texte).
 // 'visible' (scope profil) = ré-affiche un groupe masqué/verrouillé globalement.
@@ -545,6 +557,9 @@ export const api = {
   control: {
     send: (deviceId: string, action: 'play_pause' | 'play' | 'pause' | 'stop' | 'next' | 'previous' | 'volume_up' | 'volume_down' | 'mute') =>
       post<{ ok: boolean; action: string }>(`/control/${deviceId}/${action}`, {}),
+    seek: (deviceId: string, positionMs: number) =>
+      post<{ ok: boolean; action: string }>(`/control/${deviceId}/seek?position=${Math.max(0, Math.round(positionMs))}`, {}),
+    now: (deviceId: string) => get<MediaNow | null>(`/state/now/${deviceId}`),
   },
   iptv: {
     credentials: () => get<{ id: number; name: string }[]>('/iptv/credentials'),

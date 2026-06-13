@@ -101,4 +101,21 @@ data class HubConfig(
     }
 }
 
+// État de lecture détaillé pour la barre « lecture en cours » du Hub. Envoyé à
+// chaque tick du monitor de session (position qui avance), contrairement au
+// state_update (anti-spam, seulement sur changement).
+fun buildMediaUpdate(
+    state: String, app: String?, title: String?,
+    positionMs: Long, durationMs: Long, seekable: Boolean, pkg: String?,
+): String = JSONObject().apply {
+    put("type", "media")
+    put("state", state)
+    app?.let { put("app", it) }
+    title?.let { put("title", it) }
+    put("position", positionMs)
+    put("duration", durationMs)
+    put("seekable", seekable)
+    pkg?.let { put("package", it) }
+}.toString()
+
 fun buildPing(): String = JSONObject().apply { put("type", "ping") }.toString()

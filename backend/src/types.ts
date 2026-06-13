@@ -55,6 +55,7 @@ export interface PlaybackState {
 export type WsMessageType =
   | 'register'
   | 'state_update'
+  | 'media'
   | 'ping'
   | 'pong'
   | 'play'

@@ -11,6 +11,20 @@ interface ConnectedAgent {
 
 export const agents = new Map<string, ConnectedAgent>()
 
+// Dernier état de lecture détaillé par device (barre « lecture en cours » du Hub).
+// En mémoire : reflète l'instant, pas besoin de persister. position/duration en ms.
+export interface MediaState {
+  state: string            // 'playing' | 'paused' | 'stopped'
+  app?: string
+  title?: string
+  position: number
+  duration: number
+  seekable: boolean
+  package?: string
+  updated_at: number       // pour extrapoler la position côté client
+}
+export const mediaStates = new Map<string, MediaState>()
+
 export function setupWebSocket(server: Server) {
   const wss = new WebSocketServer({ server, path: '/ws' })
 
@@ -49,7 +63,7 @@ export function setupWebSocket(server: Server) {
     ws.on('close', () => {
       // Ne retirer de la map que si c'est bien CETTE connexion qui y est encore
       // (une reconnexion a pu déjà la remplacer).
-      if (agents.get(device_id)?.ws === ws) { agents.delete(device_id); console.log(`[ws] disconnected: ${device_id}`) }
+      if (agents.get(device_id)?.ws === ws) { agents.delete(device_id); mediaStates.delete(device_id); console.log(`[ws] disconnected: ${device_id}`) }
     })
     ws.on('error', () => { if (agents.get(device_id)?.ws === ws) agents.delete(device_id) })
     ws.send(JSON.stringify({ type: 'pong' }))
@@ -203,6 +217,25 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
       })
       break
     }
+    case 'media': {
+      // État de lecture temps réel poussé par l'agent à chaque tick (la position
+      // avance). Stocké en mémoire, lu par la barre du Hub via /api/state/now.
+      if (msg.state === 'stopped') {
+        mediaStates.delete(device_id)
+      } else {
+        mediaStates.set(device_id, {
+          state: String(msg.state),
+          app: (msg.app as string) || undefined,
+          title: (msg.title as string) || undefined,
+          position: Number(msg.position ?? 0),
+          duration: Number(msg.duration ?? 0),
+          seekable: !!msg.seekable,
+          package: (msg.package as string) || undefined,
+          updated_at: Date.now(),
+        })
+      }
+      break
+    }
     case 'ping': {
       agents.get(device_id)?.ws.send(JSON.stringify({ type: 'pong' }))
       await db.execute({ sql: 'UPDATE devices SET last_seen = ? WHERE id = ?', args: [Date.now(), device_id] })
@@ -229,10 +262,10 @@ export function sendNotify(device_id: string, text: string): boolean {
   return true
 }
 
-export function sendControl(device_id: string, action: string): boolean {
+export function sendControl(device_id: string, action: string, extra?: Record<string, unknown>): boolean {
   const agent = agents.get(device_id)
   if (!agent || agent.ws.readyState !== WebSocket.OPEN) return false
-  agent.ws.send(JSON.stringify({ type: 'control', action }))
+  agent.ws.send(JSON.stringify({ type: 'control', action, ...extra }))
   return true
 }
 

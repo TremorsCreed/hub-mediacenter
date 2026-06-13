@@ -4,6 +4,7 @@ import { Library, History, Film, Radio, Compass, Gamepad2, ChevronLeft, ChevronR
 import { api } from '../api'
 import { useUser, initials } from '../UserContext'
 import NowPlayingBar from './NowPlayingBar'
+import RemoteScreen from './RemoteScreen'
 
 export default function Layout() {
   const [modules, setModules] = useState<{ plex: boolean; iptv: boolean; discover: boolean; launchbox: boolean }>({ plex: false, iptv: false, discover: false, launchbox: false })
@@ -167,6 +168,9 @@ export default function Layout() {
 
       {/* Barre globale « lecture en cours » (se masque si rien ne joue) */}
       <NowPlayingBar />
+
+      {/* Modale miroir d'écran (ws-scrcpy), ouverte par les boutons « Remote » */}
+      <RemoteScreen />
     </div>
   )
 }

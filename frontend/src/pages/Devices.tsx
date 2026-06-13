@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, Credential, Device, DeviceConfig } from '../api'
-import { Wifi, WifiOff, Trash2, ChevronDown, ChevronUp, Save, KeyRound, MonitorPlay, Radar, Loader2, CheckCircle2, Download } from 'lucide-react'
+import { Wifi, WifiOff, Trash2, ChevronDown, ChevronUp, Save, KeyRound, MonitorPlay, Radar, Loader2, CheckCircle2, Download, Upload } from 'lucide-react'
 import { launchRemote, canRemote } from '../remote'
 import type { DiscoverResult } from '../api'
 
@@ -241,6 +241,21 @@ export default function Devices() {
     try { await api.discover.removePlayer(id); await refreshPlayers() } catch (e: any) { alert(e.message) }
   }
 
+  // Extrait une app déjà installée (ex. MX Player) depuis un appareil → magasin
+  const pullApp = async (ip: string) => {
+    const pkg = prompt('Package de l\'app à extraire depuis cet appareil :', 'com.mxtech.videoplayer.ad')
+    if (!pkg) return
+    const label = prompt('Nom dans le magasin :', 'MX Player')
+    if (!label) return
+    setDeploying(ip); setDeployMsg(null)
+    try {
+      const r = await api.discover.pullPlayer(ip, pkg.trim(), label)
+      if (r.status === 'authorize') setDeployMsg({ ip, ok: false, text: r.message || '' })
+      else { await refreshPlayers(); setDeployMsg({ ip, ok: true, text: `« ${label} » extrait (${r.files} fichier(s)) et ajouté au magasin.` }) }
+    } catch (e: any) { setDeployMsg({ ip, ok: false, text: e.message || 'Échec de l\'extraction' }) }
+    finally { setDeploying(null) }
+  }
+
   const runScan = async () => {
     setScanning(true)
     try { setScan(await api.discover.scan()) }
@@ -374,15 +389,25 @@ export default function Devices() {
                   {d.agent && <div className="text-[11px] text-emerald-500 flex items-center gap-1"><CheckCircle2 size={11} /> Agent installé : {d.agent.name}</div>}
                 </div>
                 {d.agent
-                  ? <button
-                      onClick={() => installPlayers(d.ip)}
-                      disabled={deploying === d.ip || players.length === 0}
-                      title={players.length ? 'Pousser les lecteurs du magasin sur cet appareil' : 'Magasin de lecteurs vide'}
-                      className="flex items-center gap-1.5 text-xs text-sky-400 hover:text-sky-300 border border-sky-900/50 hover:border-sky-700 disabled:opacity-40 disabled:cursor-not-allowed rounded px-2 py-1 shrink-0 transition-colors"
-                    >
-                      {deploying === d.ip ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-                      {deploying === d.ip ? 'Installation…' : 'Installer les lecteurs'}
-                    </button>
+                  ? <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => pullApp(d.ip)}
+                        disabled={deploying === d.ip}
+                        title="Extraire une app installée (ex. MX Player) vers le magasin"
+                        className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 hover:border-zinc-500 disabled:opacity-40 rounded px-2 py-1 transition-colors"
+                      >
+                        <Upload size={12} /> Extraire une app
+                      </button>
+                      <button
+                        onClick={() => installPlayers(d.ip)}
+                        disabled={deploying === d.ip || players.length === 0}
+                        title={players.length ? 'Pousser les lecteurs du magasin sur cet appareil' : 'Magasin de lecteurs vide'}
+                        className="flex items-center gap-1.5 text-xs text-sky-400 hover:text-sky-300 border border-sky-900/50 hover:border-sky-700 disabled:opacity-40 disabled:cursor-not-allowed rounded px-2 py-1 transition-colors"
+                      >
+                        {deploying === d.ip ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                        {deploying === d.ip ? 'Installation…' : 'Installer les lecteurs'}
+                      </button>
+                    </div>
                   : <button
                       onClick={() => deploy(d.ip)}
                       disabled={deploying === d.ip || !apkPresent}

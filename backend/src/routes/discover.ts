@@ -1,7 +1,7 @@
 import { Router, raw } from 'express'
 import net from 'node:net'
 import { execFile } from 'node:child_process'
-import { existsSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, statSync } from 'node:fs'
+import { existsSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { db } from '../db'
 import { requireAdmin } from '../auth'
@@ -14,14 +14,22 @@ const APK_PATH = '/apk/app-debug.apk'
 
 // ── Magasin de lecteurs (APK sideloadés en plus de l'agent) ──────────────────
 // Pour les appareils sans Play Store (Fire TV) : on pousse les APK directement.
+// Une app = un dossier /apk/store/<id>/ contenant 1+ APK (base + splits pour les
+// app bundles type MX Player extrait du Play Store → install-multiple).
 const STORE_DIR = '/apk/store'
-interface StoreApp { id: string; label: string; file: string; size: number }
+interface StoreApp { id: string; label: string; files: string[]; size: number }
 
 function readStore(): StoreApp[] {
   try {
-    return readdirSync(STORE_DIR)
-      .filter(f => f.toLowerCase().endsWith('.apk'))
-      .map(f => ({ id: f.replace(/\.apk$/i, ''), label: f.replace(/\.apk$/i, '').replace(/_/g, ' '), file: join(STORE_DIR, f), size: statSync(join(STORE_DIR, f)).size }))
+    return readdirSync(STORE_DIR, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => {
+        const dir = join(STORE_DIR, d.name)
+        const files = readdirSync(dir).filter(f => f.toLowerCase().endsWith('.apk')).map(f => join(dir, f))
+        const size = files.reduce((s, f) => { try { return s + statSync(f).size } catch { return s } }, 0)
+        return { id: d.name, label: d.name.replace(/_/g, ' '), files, size }
+      })
+      .filter(a => a.files.length > 0)
   } catch { return [] }
 }
 function slug(s: string): string {
@@ -35,6 +43,28 @@ function adb(args: string[], timeoutMs = 30000): Promise<{ code: number; out: st
       resolve({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, out: `${stdout || ''}${stderr || ''}` })
     })
   })
+}
+
+// Installe une app du magasin (1 APK → install, plusieurs → install-multiple).
+async function installApp(serial: string, app: StoreApp): Promise<boolean> {
+  const args = app.files.length > 1
+    ? ['-s', serial, 'install-multiple', '-r', '-g', ...app.files]
+    : ['-s', serial, 'install', '-r', '-g', app.files[0]]
+  const r = await adb(args, 240000)
+  return /Success/i.test(r.out)
+}
+
+// connect + vérifie l'autorisation ADB. Renvoie ok, ou un statut à relayer.
+async function ensureReady(serial: string): Promise<{ ok: true } | { ok: false; code: number; body: any }> {
+  await adb(['connect', serial], 12000)
+  const devs = await adb(['devices'], 10000)
+  if (devs.out.includes(`${serial}\tunauthorized`)) {
+    return { ok: false, code: 200, body: { status: 'authorize', message: 'Autorise « débogage USB » sur l\'écran de l\'appareil (coche « toujours autoriser »), puis relance.' } }
+  }
+  if (!devs.out.includes(`${serial}\tdevice`)) {
+    return { ok: false, code: 502, body: { status: 'error', message: `Appareil injoignable en ADB.\n${devs.out.trim()}` } }
+  }
+  return { ok: true }
 }
 
 // Teste si un port TCP est ouvert (un device ADB-over-TCP écoute sur 5555).
@@ -128,21 +158,54 @@ router.get('/players', requireAdmin, (_req, res) => {
   res.json(readStore().map(a => ({ id: a.id, label: a.label, size: a.size })))
 })
 
-// Upload d'un APK de lecteur (raw). ?label=Just Player → fichier just_player.apk
+// Upload d'un APK de lecteur (raw). ?label=MX Player → dossier mx_player/base.apk
 router.post('/players', requireAdmin, raw({ type: '*/*', limit: '200mb' }), (req, res) => {
   const buf = req.body as Buffer
   if (!buf || !buf.length) return res.status(400).json({ error: 'fichier vide' })
   if (!(buf[0] === 0x50 && buf[1] === 0x4b)) return res.status(400).json({ error: 'ce n\'est pas un APK' })
   const id = slug((req.query.label as string) || `app_${Date.now()}`)
-  try { mkdirSync(STORE_DIR, { recursive: true }); writeFileSync(join(STORE_DIR, `${id}.apk`), buf); res.json({ ok: true, id, size: buf.length }) }
+  const dir = join(STORE_DIR, id)
+  try { rmSync(dir, { recursive: true, force: true }); mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, 'base.apk'), buf); res.json({ ok: true, id, size: buf.length }) }
   catch (e: any) { res.status(500).json({ error: e.message }) }
 })
 
 router.delete('/players/:id', requireAdmin, (req, res) => {
-  const id = slug(req.params.id)
-  const p = join(STORE_DIR, `${id}.apk`)
-  try { if (existsSync(p)) unlinkSync(p); res.json({ ok: true }) }
+  const dir = join(STORE_DIR, slug(req.params.id))
+  try { rmSync(dir, { recursive: true, force: true }); res.json({ ok: true }) }
   catch (e: any) { res.status(500).json({ error: e.message }) }
+})
+
+// Extrait une app déjà installée (avec ses splits) depuis un appareil → magasin.
+// Pour les lecteurs propriétaires (MX Player) installés légalement via le Store :
+// on copie l'APK de l'appareil vers le magasin pour le redéployer ailleurs.
+router.post('/pull-from/:ip', requireAdmin, async (req, res) => {
+  const ip = req.params.ip
+  const pkg = String(req.body?.package || '').trim()
+  const label = String(req.body?.label || pkg)
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(ip)) return res.status(400).json({ error: 'ip invalide' })
+  if (!/^[a-zA-Z][a-zA-Z0-9_.]+$/.test(pkg)) return res.status(400).json({ error: 'package invalide' })
+
+  const serial = `${ip}:5555`
+  const ready = await ensureReady(serial)
+  if (!ready.ok) return res.status(ready.code).json(ready.body)
+
+  const pathsOut = await adb(['-s', serial, 'shell', 'pm', 'path', pkg], 15000)
+  const paths = pathsOut.out.split('\n').map(l => l.replace(/^package:/, '').trim()).filter(Boolean)
+  if (!paths.length) return res.status(404).json({ status: 'error', message: `« ${pkg} » introuvable sur cet appareil.` })
+
+  const id = slug(label)
+  const dir = join(STORE_DIR, id)
+  try {
+    rmSync(dir, { recursive: true, force: true }); mkdirSync(dir, { recursive: true })
+    for (const p of paths) {
+      const fname = p.split('/').pop() || 'base.apk'
+      const r = await adb(['-s', serial, 'pull', p, join(dir, fname)], 120000)
+      if (!/pulled|bytes/i.test(r.out) && !existsSync(join(dir, fname))) {
+        return res.status(502).json({ status: 'error', message: `Échec d'extraction de ${fname}: ${r.out.trim().slice(0, 200)}` })
+      }
+    }
+    res.json({ ok: true, id, label, files: paths.length })
+  } catch (e: any) { res.status(500).json({ error: e.message }) }
 })
 
 // Récupère la dernière version de Just Player (open source) depuis GitHub.
@@ -155,8 +218,9 @@ router.post('/players/fetch-justplayer', requireAdmin, async (_req, res) => {
     if (!asset) return res.status(502).json({ error: 'APK introuvable dans la release' })
     const apk = Buffer.from(await (await fetch(asset.browser_download_url, { headers: { 'User-Agent': 'hub-mediacenter' } })).arrayBuffer())
     if (!(apk[0] === 0x50 && apk[1] === 0x4b)) return res.status(502).json({ error: 'téléchargement invalide' })
-    mkdirSync(STORE_DIR, { recursive: true })
-    writeFileSync(join(STORE_DIR, 'just_player.apk'), apk)
+    const dir = join(STORE_DIR, 'just_player')
+    rmSync(dir, { recursive: true, force: true }); mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'base.apk'), apk)
     res.json({ ok: true, version: rel.tag_name, size: apk.length, asset: asset.name })
   } catch (e: any) { res.status(502).json({ error: `GitHub: ${e.message}` }) }
 })
@@ -171,19 +235,12 @@ router.post('/:ip/install-players', requireAdmin, async (req, res) => {
   if (!store.length) return res.status(400).json({ status: 'no_players', message: 'Magasin vide — récupère Just Player ou uploade un lecteur.' })
 
   const serial = `${ip}:5555`
-  await adb(['connect', serial], 12000)
-  const devs = await adb(['devices'], 10000)
-  if (devs.out.includes(`${serial}\tunauthorized`)) {
-    return res.json({ status: 'authorize', message: 'Autorise « débogage USB » sur l\'écran de l\'appareil (coche « toujours autoriser »), puis relance.' })
-  }
-  if (!devs.out.includes(`${serial}\tdevice`)) {
-    return res.status(502).json({ status: 'error', message: `Appareil injoignable en ADB.\n${devs.out.trim()}` })
-  }
+  const ready = await ensureReady(serial)
+  if (!ready.ok) return res.status(ready.code).json(ready.body)
 
   const installed: string[] = [], failed: string[] = []
   for (const app of store) {
-    const r = await adb(['-s', serial, 'install', '-r', '-g', app.file], 180000)
-    if (/Success/i.test(r.out)) installed.push(app.label); else failed.push(app.label)
+    if (await installApp(serial, app)) installed.push(app.label); else failed.push(app.label)
   }
   let msg = installed.length ? `Lecteurs installés : ${installed.join(', ')}.` : 'Aucun lecteur installé.'
   if (failed.length) msg += ` Échec : ${failed.join(', ')}.`
@@ -201,15 +258,8 @@ router.post('/:ip/deploy', requireAdmin, async (req, res) => {
   if (!existsSync(APK_PATH)) return res.status(400).json({ status: 'no_apk', message: 'Aucun APK agent. Uploade-le d\'abord.' })
 
   const serial = `${ip}:5555`
-  await adb(['connect', serial], 12000)
-  const devs = await adb(['devices'], 10000)
-
-  if (devs.out.includes(`${serial}\tunauthorized`)) {
-    return res.json({ status: 'authorize', message: 'Autorise « débogage USB » sur l\'écran de l\'appareil (coche « toujours autoriser »), puis relance le déploiement.' })
-  }
-  if (!devs.out.includes(`${serial}\tdevice`)) {
-    return res.status(502).json({ status: 'error', message: `Appareil injoignable en ADB. adb devices:\n${devs.out.trim()}` })
-  }
+  const ready = await ensureReady(serial)
+  if (!ready.ok) return res.status(ready.code).json(ready.body)
 
   const inst = await adb(['-s', serial, 'install', '-r', '-g', APK_PATH], 180000)
   if (!/Success/i.test(inst.out)) {
@@ -225,8 +275,7 @@ router.post('/:ip/deploy', requireAdmin, async (req, res) => {
   const store = readStore().filter(a => !players || players.includes(a.id))
   const installed: string[] = [], failed: string[] = []
   for (const app of store) {
-    const r = await adb(['-s', serial, 'install', '-r', '-g', app.file], 180000)
-    if (/Success/i.test(r.out)) installed.push(app.label); else failed.push(app.label)
+    if (await installApp(serial, app)) installed.push(app.label); else failed.push(app.label)
   }
 
   // Lancement de l'agent

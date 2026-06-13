@@ -590,6 +590,8 @@ export const api = {
     },
     removePlayer: (id: string) => del<{ ok: boolean }>(`/discover/players/${id}`),
     fetchJustPlayer: () => post<{ ok: boolean; version: string; size: number }>(`/discover/players/fetch-justplayer`, {}),
+    pullPlayer: (ip: string, pkg: string, label: string) =>
+      post<{ ok?: boolean; status?: 'authorize'; message?: string; files?: number }>(`/discover/pull-from/${ip}`, { package: pkg, label }),
   },
   control: {
     send: (deviceId: string, action: 'play_pause' | 'play' | 'pause' | 'stop' | 'next' | 'previous' | 'volume_up' | 'volume_down' | 'mute') =>

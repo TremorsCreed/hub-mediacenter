@@ -7,12 +7,13 @@ import { usePersistedState } from '../usePersistedState'
 // Dernière catégorie active mémorisée par type (live/vod/series)
 const catKey = (type: string) => `hub.iptv.cat.${type}`
 const saveCat = (type: string, id: string) => { try { localStorage.setItem(catKey(type), id) } catch { /* */ } }
-import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight, ChevronLeft, Lock } from 'lucide-react'
+import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight, ChevronLeft, Lock, Info } from 'lucide-react'
 import FavoriteButton from '../components/FavoriteButton'
 import AddToPlaylist from '../components/AddToPlaylist'
 import { CatalogDndProvider, DraggableMedia } from '../components/CatalogDnd'
 import EpgGuide from '../components/EpgGuide'
 import PinDialog from '../components/PinDialog'
+import VodDetail from '../components/VodDetail'
 import { LayoutGrid, CalendarDays } from 'lucide-react'
 
 const PAGE_SIZE = 300
@@ -69,6 +70,9 @@ export default function Iptv() {
   // reste déverrouillée tant qu'on n'en sort pas (changement de catégorie/type).
   const [unlockedCat, setUnlockedCat] = useState<string | null>(null)
   const [pinPrompt, setPinPrompt] = useState<{ catId: string; name: string } | null>(null)
+  // Fiche film (façon Plex) : un clic sur un film ouvre la fiche au lieu de lancer
+  // directement (anti-lancement accidentel, surtout sur mobile).
+  const [vodDetail, setVodDetail] = useState<IptvStream | null>(null)
   const [liveView, setLiveView] = usePersistedState<'list' | 'guide'>('hub.iptv.liveview', 'list') // TV : liste / guide EPG
 
   useEffect(() => {
@@ -552,7 +556,7 @@ export default function Iptv() {
                   className="group relative"
                 >
                   <button
-                    onClick={() => play(s)}
+                    onClick={() => s.type === 'vod' ? setVodDetail(s) : play(s)}
                     disabled={launching === s.stream_id}
                     className="w-full aspect-[2/3] bg-zinc-900 border border-zinc-800 rounded overflow-hidden hover:border-amber-500/60 transition-colors text-left disabled:opacity-50 block"
                   >
@@ -565,7 +569,9 @@ export default function Iptv() {
                       <div className="text-xs font-medium line-clamp-2">{s.name}</div>
                       {s.year && <div className="text-[10px] text-zinc-400 mt-0.5">{s.year}</div>}
                       <div className="flex items-center gap-1 mt-1.5 text-amber-400 text-xs">
-                        <Play size={11} fill="currentColor" /> Lancer
+                        {s.type === 'series'
+                          ? <><MonitorPlay size={11} /> Épisodes</>
+                          : <><Info size={11} /> Détails</>}
                       </div>
                     </div>
                     {launching === s.stream_id && (
@@ -718,6 +724,17 @@ export default function Iptv() {
           title={pinPrompt.name}
           onSuccess={() => { setUnlockedCat(pinPrompt.catId); setCategoryId(pinPrompt.catId); saveCat(type, pinPrompt.catId); setPinPrompt(null) }}
           onCancel={() => setPinPrompt(null)}
+        />
+      )}
+
+      {/* Fiche film (façon Plex) — le Play y est explicite (anti-lancement accidentel) */}
+      {vodDetail && credId && (
+        <VodDetail
+          credId={credId}
+          stream={vodDetail}
+          deviceName={devices.find(d => d.id === deviceId)?.name}
+          onPlay={() => { const s = vodDetail; setVodDetail(null); play(s) }}
+          onClose={() => setVodDetail(null)}
         />
       )}
     </div>

@@ -337,6 +337,46 @@ router.get('/:credId/streams', async (req, res) => {
 
 // GET /api/iptv/:credId/series/:seriesId — détail d'une série : saisons + épisodes
 // Pas de cache disque, appelé seulement à l'ouverture d'une série (rare vs liste).
+// GET /api/iptv/:credId/vod-info/:streamId — fiche détaillée d'un film (façon Plex).
+// Normalise get_vod_info (le provider agrège déjà TMDB : synopsis, casting, note,
+// backdrop, bande-annonce…). Cache 30 min (les fiches changent peu).
+const vodInfoCache = new Map<string, { at: number; data: any }>()
+router.get('/:credId/vod-info/:streamId', async (req, res) => {
+  const cred = await getXtreamCred(req.params.credId)
+  if (!cred) return res.status(404).json({ error: 'credential not found or incomplete' })
+  const key = `${req.params.credId}:${req.params.streamId}`
+  const hit = vodInfoCache.get(key)
+  if (hit && Date.now() - hit.at < 30 * 60 * 1000) return res.json(hit.data)
+  try {
+    const data: any = await xtreamCall(cred, 'get_vod_info', { vod_id: req.params.streamId })
+    const i = data.info ?? {}
+    const md = data.movie_data ?? {}
+    const backdrop = Array.isArray(i.backdrop_path) ? i.backdrop_path[0] : i.backdrop_path
+    const out = {
+      name: (i.name || md.name || '') as string,
+      o_name: (i.o_name || '') as string,
+      cover: (i.cover_big || i.movie_image || '') as string,
+      backdrop: (backdrop || '') as string,
+      year: String(i.releasedate || '').slice(0, 4),
+      release_date: (i.releasedate || '') as string,
+      duration: (i.duration || '') as string,
+      rating: i.rating ? Number(i.rating) : null,
+      genre: (i.genre || '') as string,
+      country: (i.country || '') as string,
+      plot: (i.plot || i.description || '') as string,
+      director: (i.director || '') as string,
+      cast: (i.cast || i.actors || '') as string,
+      trailer: (i.youtube_trailer || '') as string,
+      tmdb_id: (i.tmdb_id || '') as string,
+      container_extension: (md.container_extension || '') as string,
+    }
+    vodInfoCache.set(key, { at: Date.now(), data: out })
+    res.json(out)
+  } catch (e: any) {
+    res.status(502).json({ error: e.message })
+  }
+})
+
 router.get('/:credId/series/:seriesId', async (req, res) => {
   const cred = await getXtreamCred(req.params.credId)
   if (!cred) return res.status(404).json({ error: 'credential not found or incomplete' })

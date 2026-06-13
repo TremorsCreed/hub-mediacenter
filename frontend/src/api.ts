@@ -296,6 +296,17 @@ export interface MediaNow {
   updated_at: number // ms epoch — pour extrapoler la position pendant la lecture
 }
 
+// Fiche détaillée d'un film VOD (façon Plex), agrégée par le provider (TMDB)
+export interface IptvVodInfo {
+  name: string; o_name: string
+  cover: string; backdrop: string
+  year: string; release_date: string; duration: string
+  rating: number | null
+  genre: string; country: string
+  plot: string; director: string; cast: string
+  trailer: string; tmdb_id: string; container_extension: string
+}
+
 export interface IptvCategory { id: string; name: string; state?: 'hidden' | 'locked' }
 // Préférence de catégorie posée par l'admin : scope 'global' ou un user_id (texte).
 // 'visible' (scope profil) = ré-affiche un groupe masqué/verrouillé globalement.
@@ -620,6 +631,7 @@ export const api = {
       return get<{ total: number; start: number; size: number; items: IptvStream[] }>(`/iptv/${credId}/streams?${p}`)
     },
     seriesInfo: (credId: number, seriesId: string) => get<IptvSeriesInfo>(`/iptv/${credId}/series/${seriesId}`),
+    vodInfo: (credId: number, streamId: string) => get<IptvVodInfo>(`/iptv/${credId}/vod-info/${streamId}`),
     epgBatch: (credId: number, streamIds: string[]) => post<Record<string, EpgEntry[]>>(`/iptv/${credId}/epg/batch`, { stream_ids: streamIds }),
     reminders: {
       list: () => get<EpgReminder[]>('/iptv/reminders'),

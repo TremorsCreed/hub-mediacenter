@@ -344,7 +344,15 @@ class HubService : Service() {
             return
         }
         when (val r = launcher.launch(this, cmd)) {
-            is LaunchResult.Success -> sendState("playing", cmd.catalogId, cmd.app)
+            is LaunchResult.Success -> {
+                sendState("playing", cmd.catalogId, cmd.app)
+                // Remonte vite la nouvelle session à la barre du Hub, sans attendre le
+                // tick : la session met un peu à apparaître (lancement + buffering),
+                // d'où plusieurs tentatives échelonnées.
+                cmdHandler.postDelayed({ try { reportActiveSession() } catch (_: Exception) {} }, 1500L)
+                cmdHandler.postDelayed({ try { reportActiveSession() } catch (_: Exception) {} }, 3500L)
+                cmdHandler.postDelayed({ try { reportActiveSession() } catch (_: Exception) {} }, 6000L)
+            }
             is LaunchResult.AppNotInstalled -> { Log.e(TAG, "Not installed: ${r.pkg}"); sendState("error", cmd.catalogId, cmd.app) }
             is LaunchResult.Error -> { Log.e(TAG, "Error: ${r.reason}"); sendState("error", cmd.catalogId, cmd.app) }
         }
@@ -362,7 +370,7 @@ class HubService : Service() {
     private val sessionMonitor = object : Runnable {
         override fun run() {
             try { reportActiveSession() } catch (e: Exception) { Log.w(TAG, "session monitor", e) }
-            cmdHandler.postDelayed(this, 4000L)
+            cmdHandler.postDelayed(this, 2000L)
         }
     }
 

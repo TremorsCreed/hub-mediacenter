@@ -47,15 +47,23 @@ export default function VodDetail({ credId, stream, deviceName, onPlay, onClose 
   return createPortal(
     <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center sm:p-4" onClick={onClose}>
       <div
-        className="bg-zinc-950 w-full h-full sm:h-auto sm:max-h-[92vh] sm:max-w-3xl sm:rounded-xl overflow-hidden flex flex-col border border-zinc-800 shadow-2xl"
+        className="relative bg-zinc-950 w-full h-full sm:h-auto sm:max-h-[92vh] sm:max-w-3xl sm:rounded-xl overflow-hidden flex flex-col border border-zinc-800 shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
-        {/* Backdrop */}
-        <div className="relative h-40 sm:h-56 shrink-0 bg-zinc-900">
+        {/* Flou gaussien du backdrop derrière toute la fiche (façon Plex) */}
+        {(info?.backdrop || cover) && (
+          <div className="absolute inset-0 pointer-events-none">
+            <img src={api.iptv.imageUrl(info?.backdrop || cover)} alt="" className="w-full h-full object-cover scale-125 blur-2xl opacity-50" onError={e => { e.currentTarget.style.display = 'none' }} />
+            <div className="absolute inset-0 bg-zinc-950/75" />
+          </div>
+        )}
+
+        {/* Backdrop net en haut (se fond dans le flou) */}
+        <div className="relative h-40 sm:h-56 shrink-0">
           {info?.backdrop && (
             <img src={api.iptv.imageUrl(info.backdrop)} alt="" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/50 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent" />
           <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors">
             <X size={18} />
           </button>

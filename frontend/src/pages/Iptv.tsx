@@ -36,7 +36,7 @@ export default function Iptv() {
   const [creds, setCreds] = useState<{ id: number; name: string }[]>([])
   const [credsLoading, setCredsLoading] = useState(true)
   const [credId, setCredId] = useState<number | null>(null)
-  const [type, setType] = useState<'live' | 'vod' | 'series'>('live')
+  const [type, setType] = usePersistedState<'live' | 'vod' | 'series'>('hub.iptv.type', 'live')
   const [selectedSeries, setSelectedSeries] = useState<IptvStream | null>(null)
   const [seriesInfo, setSeriesInfo] = useState<IptvSeriesInfo | null>(null)
   const [loadingSeries, setLoadingSeries] = useState(false)
@@ -62,14 +62,14 @@ export default function Iptv() {
     try { return JSON.parse(localStorage.getItem(LANG_PREFS_KEY) ?? '["FR","EN"]') } catch { return ['FR', 'EN'] }
   })
   const [langPanelOpen, setLangPanelOpen] = useState(false)
-  // Cascade : média développé à l'entrée du module ; se réduit au clic d'un type
-  // pour laisser apparaître la sidebar catégories.
-  const [mediaCollapsed, setMediaCollapsed] = useState(false)
+  // Cascade : média développé à la 1re entrée ; se réduit au clic d'un type pour
+  // laisser apparaître la sidebar catégories. Persisté pour retrouver l'état exact.
+  const [mediaCollapsed, setMediaCollapsed] = usePersistedState('hub.iptv.mediacollapsed', false)
   // Contrôle parental : une catégorie verrouillée demande le PIN à l'ouverture et
   // reste déverrouillée tant qu'on n'en sort pas (changement de catégorie/type).
   const [unlockedCat, setUnlockedCat] = useState<string | null>(null)
   const [pinPrompt, setPinPrompt] = useState<{ catId: string; name: string } | null>(null)
-  const [liveView, setLiveView] = useState<'list' | 'guide'>('list') // TV : liste de chaînes ou guide EPG
+  const [liveView, setLiveView] = usePersistedState<'list' | 'guide'>('hub.iptv.liveview', 'list') // TV : liste / guide EPG
 
   useEffect(() => {
     api.iptv.credentials().then(c => {

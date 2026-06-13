@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, Credential, Device, DeviceConfig } from '../api'
-import { Wifi, WifiOff, Trash2, ChevronDown, ChevronUp, Save, KeyRound } from 'lucide-react'
+import { Wifi, WifiOff, Trash2, ChevronDown, ChevronUp, Save, KeyRound, MonitorPlay } from 'lucide-react'
+import { launchRemote, canRemote } from '../remote'
 
 const CONTENT_TYPES = ['movie', 'episode', 'live_channel', 'vod', 'music']
 const APP_NAMES: Record<string, string> = { iptv: 'IPTV (Xtream)', plex: 'Plex', kodi: 'Kodi' }
@@ -256,6 +257,15 @@ export default function Devices() {
                 </div>
               </div>
               <div className="flex items-center gap-1">
+                {canRemote(d) && (
+                  <button
+                    onClick={() => launchRemote(d.ip)}
+                    className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 border border-amber-900/50 hover:border-amber-700 rounded px-2 py-1 transition-colors mr-1"
+                    title={`Ouvrir le miroir/contrôle de ${d.name} (scrcpy)`}
+                  >
+                    <MonitorPlay size={13} /> Remote
+                  </button>
+                )}
                 <button
                   onClick={() => toggle(d.id)}
                   className="text-zinc-500 hover:text-zinc-200 transition-colors p-1"

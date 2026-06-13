@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { api, MediaNow, Device } from '../api'
 import { useCurrentDeviceId } from '../usePersistentDevice'
 import { usePersistedState } from '../usePersistedState'
-import { Play, Pause, Square, Rewind, FastForward, Radio, Pin, PinOff, Music } from 'lucide-react'
+import { launchRemote, canRemote } from '../remote'
+import { Play, Pause, Square, Rewind, FastForward, Radio, Pin, PinOff, Music, MonitorPlay } from 'lucide-react'
 
 // Badge couleur par app (cohérent avec les modules)
 const APP_STYLE: Record<string, { label: string; cls: string }> = {
@@ -72,6 +73,13 @@ export default function NowPlayingBar() {
   // Masquée seulement si rien ne joue ET pas épinglée.
   if (!hasMedia && !pinned) return null
 
+  const RemoteBtn = device && canRemote(device) ? (
+    <button onClick={() => launchRemote(device.ip)} title={`Remote (miroir/contrôle) de ${device.name}`}
+      className="p-2 rounded text-zinc-500 hover:text-amber-400 transition-colors">
+      <MonitorPlay size={15} />
+    </button>
+  ) : null
+
   const PinBtn = (
     <button onClick={() => setPinned(!pinned)} title={pinned ? 'Détacher la barre' : 'Épingler la barre'}
       className={`p-2 rounded transition-colors ${pinned ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-500 hover:text-zinc-300'}`}>
@@ -87,6 +95,7 @@ export default function NowPlayingBar() {
         <div className="text-sm text-zinc-500 flex-1">
           Rien en lecture{device ? ` sur ${device.name}` : ''}
         </div>
+        {RemoteBtn}
         {PinBtn}
       </div>
     )
@@ -158,6 +167,7 @@ export default function NowPlayingBar() {
         </div>
       )}
 
+      {RemoteBtn}
       {PinBtn}
     </div>
   )

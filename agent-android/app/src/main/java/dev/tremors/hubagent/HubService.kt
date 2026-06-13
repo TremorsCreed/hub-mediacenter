@@ -240,9 +240,17 @@ class HubService : Service() {
                 val pos = json.optLong("position", -1L)
                 if (pos >= 0) activeMediaController()?.transportControls?.seekTo(pos)
             }
-            "play_pause" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
-            "play" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PLAY)
-            "pause" -> sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PAUSE)
+            // play/pause via transportControls de la session active (fiable et ciblé,
+            // comme le seek) ; repli sur les touches média si aucune session lisible.
+            "play_pause" -> {
+                val c = activeMediaController()
+                if (c != null) {
+                    if (c.playbackState?.state == PlaybackState.STATE_PLAYING) c.transportControls.pause()
+                    else c.transportControls.play()
+                } else sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            }
+            "play" -> activeMediaController()?.transportControls?.play() ?: sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PLAY)
+            "pause" -> activeMediaController()?.transportControls?.pause() ?: sendMediaKey(am, KeyEvent.KEYCODE_MEDIA_PAUSE)
             "stop" -> {
                 // KEYCODE_MEDIA_STOP est ignoré par YouTube/Netflix/etc. On force le stop
                 // sur toutes les sessions actives via transportControls (déjà éprouvé

@@ -1,7 +1,7 @@
 import { Router, raw } from 'express'
 import net from 'node:net'
 import { execFile } from 'node:child_process'
-import { existsSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { existsSync, writeFileSync, readFileSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { db } from '../db'
 import { requireAdmin } from '../auth'
@@ -17,7 +17,7 @@ const APK_PATH = '/apk/app-debug.apk'
 // Une app = un dossier /apk/store/<id>/ contenant 1+ APK (base + splits pour les
 // app bundles type MX Player extrait du Play Store → install-multiple).
 const STORE_DIR = '/apk/store'
-interface StoreApp { id: string; label: string; files: string[]; size: number }
+interface StoreApp { id: string; label: string; files: string[]; size: number; pkg?: string }
 
 function readStore(): StoreApp[] {
   try {
@@ -27,7 +27,9 @@ function readStore(): StoreApp[] {
         const dir = join(STORE_DIR, d.name)
         const files = readdirSync(dir).filter(f => f.toLowerCase().endsWith('.apk')).map(f => join(dir, f))
         const size = files.reduce((s, f) => { try { return s + statSync(f).size } catch { return s } }, 0)
-        return { id: d.name, label: d.name.replace(/_/g, ' '), files, size }
+        let pkg: string | undefined
+        try { pkg = readFileSync(join(dir, '.pkg'), 'utf-8').trim() || undefined } catch { /* */ }
+        return { id: d.name, label: d.name.replace(/_/g, ' '), files, size, pkg }
       })
       .filter(a => a.files.length > 0)
   } catch { return [] }
@@ -46,22 +48,23 @@ function adb(args: string[], timeoutMs = 30000): Promise<{ code: number; out: st
 }
 
 // Installe une app du magasin (1 APK → install, plusieurs → install-multiple).
-// base.apk en premier (certaines cibles l'exigent). Renvoie l'erreur adb si échec.
-async function installApp(serial: string, app: StoreApp): Promise<{ ok: boolean; error?: string }> {
+// - Skip si l'app (package connu) est déjà présente sur la cible (évite d'écraser
+//   une version compatible — ex. MX Player de l'Appstore par des splits arm64).
+// - base.apk en premier. PAS de repli base-seul (casserait une app à libs natives).
+async function installApp(serial: string, app: StoreApp): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
+  if (app.pkg) {
+    const p = await adb(['-s', serial, 'shell', 'pm', 'path', app.pkg], 10000)
+    if (p.out.includes('package:')) return { ok: true, skipped: true }
+  }
   const files = [...app.files].sort((a) => (/base\.apk$/i.test(a) ? -1 : 1))
   const args = files.length > 1
     ? ['-s', serial, 'install-multiple', '-r', '-g', ...files]
     : ['-s', serial, 'install', '-r', '-g', files[0]]
   const r = await adb(args, 240000)
   if (/Success/i.test(r.out)) return { ok: true }
-  // Splits incompatibles avec l'archi/densité de la cible → repli sur le base seul.
-  if (files.length > 1 && /NO_MATCHING_ABIS|INVALID_APK|split/i.test(r.out)) {
-    const base = files.find(f => /base\.apk$/i.test(f)) || files[0]
-    const r2 = await adb(['-s', serial, 'install', '-r', '-g', base], 240000)
-    if (/Success/i.test(r2.out)) return { ok: true }
-    return { ok: false, error: r2.out.trim().slice(0, 200) }
-  }
-  return { ok: false, error: r.out.trim().replace(/\s+/g, ' ').slice(0, 200) }
+  let error = r.out.trim().replace(/\s+/g, ' ').slice(0, 200)
+  if (/NO_MATCHING_ABIS/i.test(r.out)) error = 'archi incompatible (splits extraits ≠ archi de la cible) — fournis un APK universal'
+  return { ok: false, error }
 }
 
 // connect + vérifie l'autorisation ADB. Renvoie ok, ou un statut à relayer.
@@ -214,6 +217,7 @@ router.post('/pull-from/:ip', requireAdmin, async (req, res) => {
         return res.status(502).json({ status: 'error', message: `Échec d'extraction de ${fname}: ${r.out.trim().slice(0, 200)}` })
       }
     }
+    writeFileSync(join(dir, '.pkg'), pkg)
     res.json({ ok: true, id, label, files: paths.length })
   } catch (e: any) { res.status(500).json({ error: e.message }) }
 })
@@ -231,6 +235,7 @@ router.post('/players/fetch-justplayer', requireAdmin, async (_req, res) => {
     const dir = join(STORE_DIR, 'just_player')
     rmSync(dir, { recursive: true, force: true }); mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'base.apk'), apk)
+    writeFileSync(join(dir, '.pkg'), 'com.brouken.player')
     res.json({ ok: true, version: rel.tag_name, size: apk.length, asset: asset.name })
   } catch (e: any) { res.status(502).json({ error: `GitHub: ${e.message}` }) }
 })
@@ -248,13 +253,17 @@ router.post('/:ip/install-players', requireAdmin, async (req, res) => {
   const ready = await ensureReady(serial)
   if (!ready.ok) return res.status(ready.code).json(ready.body)
 
-  const installed: string[] = [], failed: string[] = []
+  const installed: string[] = [], skipped: string[] = [], failed: string[] = []
   for (const app of store) {
-    const ir = await installApp(serial, app); if (ir.ok) installed.push(app.label); else failed.push(`${app.label}${ir.error ? ` (${ir.error})` : ``}`)
+    const ir = await installApp(serial, app)
+    if (ir.skipped) skipped.push(app.label)
+    else if (ir.ok) installed.push(app.label)
+    else failed.push(`${app.label}${ir.error ? ` (${ir.error})` : ``}`)
   }
-  let msg = installed.length ? `Lecteurs installés : ${installed.join(', ')}.` : 'Aucun lecteur installé.'
+  let msg = installed.length ? `Installés : ${installed.join(', ')}.` : ''
+  if (skipped.length) msg += ` Déjà présents : ${skipped.join(', ')}.`
   if (failed.length) msg += ` Échec : ${failed.join(', ')}.`
-  res.json({ status: 'ok', message: msg })
+  res.json({ status: 'ok', message: msg.trim() || 'Rien à faire.' })
 })
 
 // POST /api/discover/:ip/deploy — déploie l'agent sur un lecteur Android via adb.
@@ -283,9 +292,12 @@ router.post('/:ip/deploy', requireAdmin, async (req, res) => {
   // Lecteurs du magasin (Just Player, MX Player…) — sideload direct (Fire TV & co).
   const players = (req.body?.players as string[] | undefined)
   const store = readStore().filter(a => !players || players.includes(a.id))
-  const installed: string[] = [], failed: string[] = []
+  const installed: string[] = [], skipped: string[] = [], failed: string[] = []
   for (const app of store) {
-    const ir = await installApp(serial, app); if (ir.ok) installed.push(app.label); else failed.push(`${app.label}${ir.error ? ` (${ir.error})` : ``}`)
+    const ir = await installApp(serial, app)
+    if (ir.skipped) skipped.push(app.label)
+    else if (ir.ok) installed.push(app.label)
+    else failed.push(`${app.label}${ir.error ? ` (${ir.error})` : ``}`)
   }
 
   // Lancement de l'agent
@@ -293,6 +305,7 @@ router.post('/:ip/deploy', requireAdmin, async (req, res) => {
 
   let msg = 'Agent installé, permissions accordées et lancé.'
   if (installed.length) msg += ` Lecteurs installés : ${installed.join(', ')}.`
+  if (skipped.length) msg += ` Déjà présents : ${skipped.join(', ')}.`
   if (failed.length) msg += ` Échec : ${failed.join(', ')}.`
   res.json({ status: 'ok', message: msg })
 })

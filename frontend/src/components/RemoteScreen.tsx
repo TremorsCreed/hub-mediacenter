@@ -1,21 +1,22 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Pin, PinOff, Maximize2, Minimize2, ExternalLink, RefreshCw } from 'lucide-react'
-import { streamUrl, remoteBaseUrl, REMOTE_PLAYERS, RemotePlayer } from '../remote'
+import { remoteBaseUrl } from '../remote'
 import { usePersistedState } from '../usePersistedState'
 
 // Miroir d'écran (ws-scrcpy) embarqué : PIP flottant épinglable (coin bas-droite)
 // ou plein écran. Ouvert par l'événement 'hub:open-remote' (boutons « Remote »).
 // Si épinglé, réapparaît tout seul au rechargement de la page.
+// ws-scrcpy ne supporte pas de deep-link fiable (proxy WS dynamique) → on charge
+// sa page liste ; l'utilisateur clique le device + un lecteur (1 clic).
 export default function RemoteScreen() {
-  const [pin, setPin] = usePersistedState<{ ip: string; player: RemotePlayer } | null>('hub.remote.pin', null)
-  const [open, setOpen] = useState<{ ip: string } | null>(() => (pin ? { ip: pin.ip } : null))
+  const [pinned, setPinned] = usePersistedState('hub.remote.pinned', false)
+  const [open, setOpen] = useState(pinned)
   const [full, setFull] = useState(false)
-  const [player, setPlayer] = useState<RemotePlayer>(pin?.player ?? 'webcodecs')
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
-    const onOpen = (e: Event) => { setOpen({ ip: (e as CustomEvent).detail.ip as string }); setFull(false) }
+    const onOpen = () => { setOpen(true); setFull(false) }
     window.addEventListener('hub:open-remote', onOpen)
     return () => window.removeEventListener('hub:open-remote', onOpen)
   }, [])
@@ -30,33 +31,23 @@ export default function RemoteScreen() {
 
   if (!open) return null
 
-  const pinned = !!pin && pin.ip === open.ip
-  const close = () => { setOpen(null); setFull(false); setPin(null) }
-  const togglePin = () => setPin(pinned ? null : { ip: open.ip, player })
-  const changePlayer = (p: RemotePlayer) => { setPlayer(p); if (pinned) setPin({ ip: open.ip, player: p }) }
-  const src = streamUrl(open.ip, player)
+  const close = () => { setOpen(false); setFull(false); setPinned(false) }
+  const src = remoteBaseUrl()
 
   const Header = (
     <header className="h-9 shrink-0 border-b border-zinc-800 flex items-center gap-1.5 px-2 bg-zinc-900">
       <span className="text-[11px] font-medium text-zinc-300 px-1 truncate">Écran</span>
-      <select
-        value={player}
-        onChange={e => changePlayer(e.target.value as RemotePlayer)}
-        title="Lecteur du miroir"
-        className="bg-zinc-800 border border-zinc-700 rounded text-[11px] text-zinc-200 px-1 py-0.5 focus:outline-none"
-      >
-        {REMOTE_PLAYERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-      </select>
+      <span className="text-[10px] text-zinc-600 truncate hidden sm:inline">clique le device puis un lecteur</span>
       <div className="ml-auto flex items-center">
         <button onClick={() => setReloadKey(k => k + 1)} title="Recharger" className="p-1.5 rounded text-zinc-500 hover:text-zinc-200 transition-colors"><RefreshCw size={13} /></button>
-        <button onClick={togglePin} title={pinned ? 'Détacher' : 'Épingler (PIP persistant)'}
+        <button onClick={() => setPinned(p => !p)} title={pinned ? 'Détacher' : 'Épingler (PIP persistant)'}
           className={`p-1.5 rounded transition-colors ${pinned ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-500 hover:text-zinc-200'}`}>
           {pinned ? <Pin size={13} /> : <PinOff size={13} />}
         </button>
         <button onClick={() => setFull(f => !f)} title={full ? 'Réduire en PIP' : 'Plein écran'} className="p-1.5 rounded text-zinc-500 hover:text-zinc-200 transition-colors">
           {full ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
         </button>
-        <a href={remoteBaseUrl()} target="_blank" rel="noreferrer" title="Ouvrir ws-scrcpy dans un onglet" className="p-1.5 rounded text-zinc-500 hover:text-zinc-200 transition-colors"><ExternalLink size={13} /></a>
+        <a href={src} target="_blank" rel="noreferrer" title="Ouvrir dans un onglet" className="p-1.5 rounded text-zinc-500 hover:text-zinc-200 transition-colors"><ExternalLink size={13} /></a>
         <button onClick={close} title="Fermer" className="p-1.5 rounded text-zinc-500 hover:text-white hover:bg-zinc-800 transition-colors"><X size={14} /></button>
       </div>
     </header>
@@ -64,7 +55,7 @@ export default function RemoteScreen() {
 
   const Frame = (
     <iframe
-      key={`${open.ip}-${player}-${reloadKey}`}
+      key={reloadKey}
       src={src}
       title="Miroir d'écran"
       className="flex-1 w-full bg-black min-h-0"
@@ -88,7 +79,7 @@ export default function RemoteScreen() {
   return createPortal(
     <div className="fixed bottom-[72px] right-4 z-[150] w-[400px] bg-zinc-950 border border-zinc-700 rounded-lg shadow-2xl flex flex-col overflow-hidden">
       {Header}
-      <div className="h-[225px] flex flex-col">{Frame}</div>
+      <div className="h-[260px] flex flex-col">{Frame}</div>
     </div>,
     document.body
   )

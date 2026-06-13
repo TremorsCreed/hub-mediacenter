@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api, Credential, Device, DeviceConfig } from '../api'
-import { Wifi, WifiOff, Trash2, ChevronDown, ChevronUp, Save, KeyRound, MonitorPlay } from 'lucide-react'
+import { Wifi, WifiOff, Trash2, ChevronDown, ChevronUp, Save, KeyRound, MonitorPlay, Radar, Loader2, CheckCircle2, Download } from 'lucide-react'
 import { launchRemote, canRemote } from '../remote'
+import type { DiscoverResult } from '../api'
 
 const CONTENT_TYPES = ['movie', 'episode', 'live_channel', 'vod', 'music']
 const APP_NAMES: Record<string, string> = { iptv: 'IPTV (Xtream)', plex: 'Plex', kodi: 'Kodi' }
@@ -207,8 +208,17 @@ export default function Devices() {
   const [devices, setDevices] = useState<Device[]>([])
   const [credentials, setCredentials] = useState<Credential[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [scan, setScan] = useState<DiscoverResult | null>(null)
+  const [scanning, setScanning] = useState(false)
 
   const load = async () => setDevices(await api.devices.list())
+
+  const runScan = async () => {
+    setScanning(true)
+    try { setScan(await api.discover.scan()) }
+    catch (e: any) { alert(e.message || 'Échec du scan') }
+    finally { setScanning(false) }
+  }
 
   useEffect(() => {
     load()
@@ -228,10 +238,53 @@ export default function Devices() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Devices</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">Devices</h1>
+        <button
+          onClick={runScan}
+          disabled={scanning}
+          className="flex items-center gap-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 rounded px-3 py-1.5 transition-colors"
+          title="Cherche les lecteurs Android avec ADB activé (port 5555) sur le réseau"
+        >
+          {scanning ? <Loader2 size={14} className="animate-spin" /> : <Radar size={14} />}
+          {scanning ? 'Scan en cours…' : 'Scanner le réseau'}
+        </button>
+      </div>
       <p className="text-sm text-zinc-500">
         Les agents se connectent au Hub au démarrage. La config Xtream est poussée automatiquement à la connexion.
       </p>
+
+      {/* Résultats du scan réseau ADB */}
+      {scan && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-2">
+          <div className="text-xs text-zinc-500">
+            Sous-réseau {scan.subnet}.0/24 · {scan.devices.length} lecteur(s) ADB trouvé(s) sur {scan.scanned} adresses
+          </div>
+          {scan.devices.length === 0 && (
+            <div className="text-sm text-zinc-600 py-2">
+              Aucun appareil avec ADB (port 5555) détecté. Active le « débogage réseau / ADB sur TCP » sur tes Android TV.
+            </div>
+          )}
+          {scan.devices.map(d => (
+            <div key={d.ip} className="flex items-center gap-3 py-2 border-t border-zinc-800/60 first:border-t-0">
+              <Radar size={14} className="text-zinc-500 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-zinc-200">{d.ip}<span className="text-zinc-600">:{d.adb_port}</span></div>
+                {d.agent && <div className="text-[11px] text-emerald-500 flex items-center gap-1"><CheckCircle2 size={11} /> Agent installé : {d.agent.name}</div>}
+              </div>
+              {d.agent
+                ? <span className="text-xs text-zinc-500 shrink-0">déjà géré</span>
+                : <button
+                    disabled
+                    title="Déploiement de l'agent — bientôt (brique 2)"
+                    className="flex items-center gap-1.5 text-xs text-amber-400/60 border border-amber-900/40 rounded px-2 py-1 cursor-not-allowed shrink-0"
+                  >
+                    <Download size={12} /> Déployer l'agent
+                  </button>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {devices.length === 0 && (
         <div className="text-sm text-zinc-600 py-8 text-center">No devices registered.</div>

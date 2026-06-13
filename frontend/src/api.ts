@@ -272,6 +272,18 @@ export interface DiscoverAvailability {
   iptv_language?: string           // "FR", "EN", ... — undefined si non détectée
 }
 
+// Résultat d'un scan réseau ADB (découverte de lecteurs)
+export interface DiscoveredDevice {
+  ip: string
+  adb_port: number
+  agent: { id: string; name: string; last_seen: number } | null
+}
+export interface DiscoverResult {
+  subnet: string
+  scanned: number
+  devices: DiscoveredDevice[]
+}
+
 // État de lecture temps réel d'un device (barre « lecture en cours »)
 export interface MediaNow {
   state: 'playing' | 'paused' | 'stopped'
@@ -553,6 +565,9 @@ export const api = {
     devices: (userId?: number) => get<{ devices: any[] }>(`/spotify/devices${userId !== undefined ? `?user_id=${userId}` : ''}`),
     player: (userId?: number) => get<any>(`/spotify/player${userId !== undefined ? `?user_id=${userId}` : ''}`),
     control: (input: SpotifyControlInput) => post<{ ok: boolean }>('/spotify/control', input),
+  },
+  discover: {
+    scan: (subnet?: string) => get<DiscoverResult>(`/discover${subnet ? `?subnet=${subnet}` : ''}`),
   },
   control: {
     send: (deviceId: string, action: 'play_pause' | 'play' | 'pause' | 'stop' | 'next' | 'previous' | 'volume_up' | 'volume_down' | 'mute') =>

@@ -432,6 +432,10 @@ class HubService : Service() {
         pkg == "com.netflix.ninja" || pkg.startsWith("com.netflix") -> "netflix"
         pkg.startsWith("ar.tvplayer") -> "tivimate"
         pkg.startsWith("org.videolan") -> "vlc"
+        pkg == "com.brouken.player" -> "justplayer"
+        pkg.startsWith("com.mxtech") -> "mxplayer"
+        pkg.startsWith("com.spotify") -> "spotify"
+        pkg.startsWith("com.disney") -> "disney+"
         pkg.contains("kodi") -> "kodi"
         else -> pkg
     }

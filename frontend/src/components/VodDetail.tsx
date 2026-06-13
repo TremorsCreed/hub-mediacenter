@@ -52,9 +52,16 @@ export default function VodDetail({ credId, stream, deviceName, onPlay, onClose 
       >
         {/* Flou gaussien du backdrop derrière toute la fiche (façon Plex) */}
         {(info?.backdrop || cover) && (
-          <div className="absolute inset-0 pointer-events-none">
-            <img src={api.iptv.imageUrl(info?.backdrop || cover)} alt="" className="w-full h-full object-cover scale-125 blur-2xl opacity-50" onError={e => { e.currentTarget.style.display = 'none' }} />
-            <div className="absolute inset-0 bg-zinc-950/75" />
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            <img
+              src={api.iptv.imageUrl(info?.backdrop || cover)} alt=""
+              className="w-full h-full object-cover"
+              style={{ transform: 'scale(1.35)', filter: 'blur(36px)' }}
+              onError={e => { e.currentTarget.style.display = 'none' }}
+            />
+            {/* Voile dégradé : backdrop bien visible en haut, plus sombre vers le bas
+                (zone texte) pour garder la lisibilité du synopsis. */}
+            <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/40 via-zinc-950/55 to-zinc-950/85" />
           </div>
         )}
 

@@ -161,6 +161,35 @@ router.post('/players/fetch-justplayer', requireAdmin, async (_req, res) => {
   } catch (e: any) { res.status(502).json({ error: `GitHub: ${e.message}` }) }
 })
 
+// POST /api/discover/:ip/install-players — pousse les lecteurs du magasin sur un
+// appareil (sans toucher l'agent). Pour les appareils déjà gérés où les lecteurs
+// manquent. Même flux d'autorisation ADB que /deploy.
+router.post('/:ip/install-players', requireAdmin, async (req, res) => {
+  const ip = req.params.ip
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(ip)) return res.status(400).json({ error: 'ip invalide' })
+  const store = readStore()
+  if (!store.length) return res.status(400).json({ status: 'no_players', message: 'Magasin vide — récupère Just Player ou uploade un lecteur.' })
+
+  const serial = `${ip}:5555`
+  await adb(['connect', serial], 12000)
+  const devs = await adb(['devices'], 10000)
+  if (devs.out.includes(`${serial}\tunauthorized`)) {
+    return res.json({ status: 'authorize', message: 'Autorise « débogage USB » sur l\'écran de l\'appareil (coche « toujours autoriser »), puis relance.' })
+  }
+  if (!devs.out.includes(`${serial}\tdevice`)) {
+    return res.status(502).json({ status: 'error', message: `Appareil injoignable en ADB.\n${devs.out.trim()}` })
+  }
+
+  const installed: string[] = [], failed: string[] = []
+  for (const app of store) {
+    const r = await adb(['-s', serial, 'install', '-r', '-g', app.file], 180000)
+    if (/Success/i.test(r.out)) installed.push(app.label); else failed.push(app.label)
+  }
+  let msg = installed.length ? `Lecteurs installés : ${installed.join(', ')}.` : 'Aucun lecteur installé.'
+  if (failed.length) msg += ` Échec : ${failed.join(', ')}.`
+  res.json({ status: 'ok', message: msg })
+})
+
 // POST /api/discover/:ip/deploy — déploie l'agent sur un lecteur Android via adb.
 // Flux : connect → (autorisation requise ?) → install -r → permissions (overlay +
 // accès notifications) → lancement. La 1re fois, l'appareil demande d'autoriser la

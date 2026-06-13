@@ -579,6 +579,7 @@ export const api = {
       return r.json() as Promise<{ ok: boolean; size: number }>
     },
     deploy: (ip: string) => post<{ status: 'ok' | 'authorize'; message: string }>(`/discover/${ip}/deploy`, {}),
+    installPlayers: (ip: string) => post<{ status: 'ok' | 'authorize'; message: string }>(`/discover/${ip}/install-players`, {}),
     players: () => get<{ id: string; label: string; size: number }[]>(`/discover/players`),
     uploadPlayer: async (file: File, label: string) => {
       const r = await fetch(`${BASE}/discover/players?label=${encodeURIComponent(label)}`, {

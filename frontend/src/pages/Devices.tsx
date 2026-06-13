@@ -267,6 +267,16 @@ export default function Devices() {
     } finally { setDeploying(null) }
   }
 
+  const installPlayers = async (ip: string) => {
+    setDeploying(ip); setDeployMsg(null)
+    try {
+      const r = await api.discover.installPlayers(ip)
+      setDeployMsg({ ip, ok: r.status === 'ok', text: r.message })
+    } catch (e: any) {
+      setDeployMsg({ ip, ok: false, text: e.message || 'Échec de l\'installation' })
+    } finally { setDeploying(null) }
+  }
+
   useEffect(() => {
     load()
     api.credentials.list().then(setCredentials).catch(() => {})
@@ -364,11 +374,19 @@ export default function Devices() {
                   {d.agent && <div className="text-[11px] text-emerald-500 flex items-center gap-1"><CheckCircle2 size={11} /> Agent installé : {d.agent.name}</div>}
                 </div>
                 {d.agent
-                  ? <span className="text-xs text-zinc-500 shrink-0">déjà géré</span>
+                  ? <button
+                      onClick={() => installPlayers(d.ip)}
+                      disabled={deploying === d.ip || players.length === 0}
+                      title={players.length ? 'Pousser les lecteurs du magasin sur cet appareil' : 'Magasin de lecteurs vide'}
+                      className="flex items-center gap-1.5 text-xs text-sky-400 hover:text-sky-300 border border-sky-900/50 hover:border-sky-700 disabled:opacity-40 disabled:cursor-not-allowed rounded px-2 py-1 shrink-0 transition-colors"
+                    >
+                      {deploying === d.ip ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                      {deploying === d.ip ? 'Installation…' : 'Installer les lecteurs'}
+                    </button>
                   : <button
                       onClick={() => deploy(d.ip)}
                       disabled={deploying === d.ip || !apkPresent}
-                      title={apkPresent ? 'Installer et lancer l\'agent Hub' : 'Uploade d\'abord l\'APK de l\'agent'}
+                      title={apkPresent ? 'Installer et lancer l\'agent Hub (+ lecteurs)' : 'Uploade d\'abord l\'APK de l\'agent'}
                       className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 border border-amber-900/50 hover:border-amber-700 disabled:opacity-40 disabled:cursor-not-allowed rounded px-2 py-1 shrink-0 transition-colors"
                     >
                       {deploying === d.ip ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}

@@ -14,6 +14,9 @@ export default function RemoteScreen() {
   const [full, setFull] = useState(false)
   const [player, setPlayer] = useState<RemotePlayer>(pin?.player ?? 'mse')
   const [reloadKey, setReloadKey] = useState(0)
+  // Taille du PIP, redimensionnable par l'utilisateur (le rendu ws-scrcpy est
+  // scalé sur la largeur ; la hauteur rogne le vide gris du player).
+  const [size, setSize] = usePersistedState('hub.remote.pipsize', { w: 400, h: 225 })
 
   useEffect(() => {
     const onOpen = (e: Event) => { setOpen({ ip: (e as CustomEvent).detail.ip as string }); setFull(false) }
@@ -85,16 +88,34 @@ export default function RemoteScreen() {
   // PIP : ws-scrcpy dimensionne son canvas selon la taille de la fenêtre au
   // chargement → dans un petit cadre, rien ne s'affiche. On rend donc l'iframe à
   // une grande taille logique puis on la réduit en CSS (transform: scale). Les
-  // clics restent correctement mappés (mise à l'échelle uniforme).
+  // clics restent correctement mappés (mise à l'échelle uniforme). La largeur du
+  // PIP pilote l'échelle ; la hauteur rogne le vide gris en bas.
   const LOGICAL_W = 1024, LOGICAL_H = 576
-  const PIP_W = 400
-  const scale = PIP_W / LOGICAL_W
-  const dispH = Math.round(LOGICAL_H * scale)
+  const scale = size.w / LOGICAL_W
+
+  // Poignée de redimensionnement (coin haut-gauche, le PIP est ancré bas-droite :
+  // tirer vers le haut-gauche agrandit, vers le bas-droite réduit/rogne).
+  const onResizeDown = (e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation()
+    const sx = e.clientX, sy = e.clientY, sw = size.w, sh = size.h
+    const move = (ev: MouseEvent) => {
+      setSize({
+        w: Math.min(960, Math.max(240, Math.round(sw + (sx - ev.clientX)))),
+        h: Math.min(620, Math.max(120, Math.round(sh + (sy - ev.clientY)))),
+      })
+    }
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up) }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
+  }
 
   return createPortal(
-    <div className="fixed bottom-[72px] right-4 z-[150] bg-zinc-950 border border-zinc-700 rounded-lg shadow-2xl flex flex-col overflow-hidden" style={{ width: PIP_W }}>
+    <div className="fixed bottom-[72px] right-4 z-[150] bg-zinc-950 border border-zinc-700 rounded-lg shadow-2xl flex flex-col overflow-hidden" style={{ width: size.w }}>
+      {/* Poignée de resize */}
+      <div onMouseDown={onResizeDown} title="Redimensionner"
+        className="absolute top-0 left-0 w-4 h-4 z-10 cursor-nwse-resize"
+        style={{ background: 'linear-gradient(135deg, #f59e0b 0 35%, transparent 35%)' }} />
       {Header}
-      <div style={{ width: PIP_W, height: dispH, overflow: 'hidden', position: 'relative', background: '#000' }}>
+      <div style={{ width: size.w, height: size.h, overflow: 'hidden', position: 'relative', background: '#000' }}>
         <iframe
           key={`pip-${open.ip}-${player}-${reloadKey}`}
           src={src}

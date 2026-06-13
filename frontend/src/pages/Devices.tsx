@@ -214,9 +214,32 @@ export default function Devices() {
   const [uploading, setUploading] = useState(false)
   const [deploying, setDeploying] = useState<string | null>(null)
   const [deployMsg, setDeployMsg] = useState<{ ip: string; ok: boolean; text: string } | null>(null)
+  const [players, setPlayers] = useState<{ id: string; label: string; size: number }[]>([])
+  const [playerBusy, setPlayerBusy] = useState(false)
 
   const load = async () => setDevices(await api.devices.list())
   const refreshApk = () => api.discover.apkStatus().then(s => setApkPresent(s.present)).catch(() => setApkPresent(null))
+  const refreshPlayers = () => api.discover.players().then(setPlayers).catch(() => setPlayers([]))
+
+  const fetchJP = async () => {
+    setPlayerBusy(true)
+    try { const r = await api.discover.fetchJustPlayer(); await refreshPlayers(); alert(`Just Player ${r.version} récupéré (${(r.size/1e6).toFixed(1)} Mo)`) }
+    catch (e: any) { alert(e.message || 'Échec') }
+    finally { setPlayerBusy(false) }
+  }
+  const uploadPlayer = async (file?: File) => {
+    if (!file) return
+    const label = prompt('Nom du lecteur (ex. MX Player, VLC) :', file.name.replace(/\.apk$/i, ''))
+    if (!label) return
+    setPlayerBusy(true)
+    try { await api.discover.uploadPlayer(file, label); await refreshPlayers() }
+    catch (e: any) { alert(e.message || 'Échec de l\'upload') }
+    finally { setPlayerBusy(false) }
+  }
+  const removePlayer = async (id: string) => {
+    if (!confirm('Retirer ce lecteur du magasin ?')) return
+    try { await api.discover.removePlayer(id); await refreshPlayers() } catch (e: any) { alert(e.message) }
+  }
 
   const runScan = async () => {
     setScanning(true)
@@ -248,6 +271,7 @@ export default function Devices() {
     load()
     api.credentials.list().then(setCredentials).catch(() => {})
     refreshApk()
+    refreshPlayers()
     const t = setInterval(load, 5000)
     return () => clearInterval(t)
   }, [])
@@ -297,6 +321,33 @@ export default function Devices() {
               <input type="file" accept=".apk" className="hidden"
                 onChange={e => uploadApk(e.target.files?.[0])} disabled={uploading} />
             </label>
+          </div>
+
+          {/* Magasin de lecteurs à sideloader (Fire TV sans Play Store…) */}
+          <div className="bg-zinc-950/40 border border-zinc-800/70 rounded p-2.5 space-y-1.5">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-[11px] uppercase tracking-wider text-zinc-500">Lecteurs poussés au déploiement</span>
+              <div className="flex items-center gap-2">
+                <button onClick={fetchJP} disabled={playerBusy}
+                  className="flex items-center gap-1 text-[11px] text-sky-400 hover:text-sky-300 disabled:opacity-50">
+                  {playerBusy ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />} Récupérer Just Player
+                </button>
+                <label className="flex items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-200 cursor-pointer">
+                  <Download size={11} /> Uploader un lecteur
+                  <input type="file" accept=".apk" className="hidden" disabled={playerBusy} onChange={e => uploadPlayer(e.target.files?.[0])} />
+                </label>
+              </div>
+            </div>
+            {players.length === 0
+              ? <div className="text-[11px] text-zinc-600">Aucun lecteur. Récupère Just Player (open source) et/ou uploade MX Player, VLC…</div>
+              : <div className="flex flex-wrap gap-1.5">
+                  {players.map(p => (
+                    <span key={p.id} className="flex items-center gap-1.5 bg-zinc-800 rounded px-2 py-0.5 text-[11px] text-zinc-300">
+                      {p.label} <span className="text-zinc-600">{(p.size/1e6).toFixed(1)}Mo</span>
+                      <button onClick={() => removePlayer(p.id)} className="text-zinc-600 hover:text-red-400"><Trash2 size={10} /></button>
+                    </span>
+                  ))}
+                </div>}
           </div>
 
           {scan.devices.length === 0 && (

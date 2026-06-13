@@ -579,6 +579,16 @@ export const api = {
       return r.json() as Promise<{ ok: boolean; size: number }>
     },
     deploy: (ip: string) => post<{ status: 'ok' | 'authorize'; message: string }>(`/discover/${ip}/deploy`, {}),
+    players: () => get<{ id: string; label: string; size: number }[]>(`/discover/players`),
+    uploadPlayer: async (file: File, label: string) => {
+      const r = await fetch(`${BASE}/discover/players?label=${encodeURIComponent(label)}`, {
+        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/octet-stream' }, body: file,
+      })
+      if (!r.ok) throw await extractError(r)
+      return r.json() as Promise<{ ok: boolean; id: string; size: number }>
+    },
+    removePlayer: (id: string) => del<{ ok: boolean }>(`/discover/players/${id}`),
+    fetchJustPlayer: () => post<{ ok: boolean; version: string; size: number }>(`/discover/players/fetch-justplayer`, {}),
   },
   control: {
     send: (deviceId: string, action: 'play_pause' | 'play' | 'pause' | 'stop' | 'next' | 'previous' | 'volume_up' | 'volume_down' | 'mute') =>

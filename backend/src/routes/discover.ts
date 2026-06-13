@@ -1,7 +1,8 @@
 import { Router, raw } from 'express'
 import net from 'node:net'
 import { execFile } from 'node:child_process'
-import { existsSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 import { db } from '../db'
 import { requireAdmin } from '../auth'
 
@@ -10,6 +11,22 @@ const router = Router()
 const AGENT_PKG = 'dev.tremors.hubagent'
 const AGENT_LISTENER = `${AGENT_PKG}/${AGENT_PKG}.HubNotificationListener`
 const APK_PATH = '/apk/app-debug.apk'
+
+// ── Magasin de lecteurs (APK sideloadés en plus de l'agent) ──────────────────
+// Pour les appareils sans Play Store (Fire TV) : on pousse les APK directement.
+const STORE_DIR = '/apk/store'
+interface StoreApp { id: string; label: string; file: string; size: number }
+
+function readStore(): StoreApp[] {
+  try {
+    return readdirSync(STORE_DIR)
+      .filter(f => f.toLowerCase().endsWith('.apk'))
+      .map(f => ({ id: f.replace(/\.apk$/i, ''), label: f.replace(/\.apk$/i, '').replace(/_/g, ' '), file: join(STORE_DIR, f), size: statSync(join(STORE_DIR, f)).size }))
+  } catch { return [] }
+}
+function slug(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40) || `app_${Date.now()}`
+}
 
 // Exécute adb (binaire android-tools dans l'image). Renvoie code + sortie fusionnée.
 function adb(args: string[], timeoutMs = 30000): Promise<{ code: number; out: string }> {
@@ -91,7 +108,7 @@ router.get('/', requireAdmin, async (req, res) => {
 // État de l'APK agent (présent ? taille ?) pour piloter l'UI de déploiement.
 router.get('/agent-apk', requireAdmin, (_req, res) => {
   if (!existsSync(APK_PATH)) return res.json({ present: false })
-  try { const { statSync } = require('node:fs'); res.json({ present: true, size: statSync(APK_PATH).size }) }
+  try { res.json({ present: true, size: statSync(APK_PATH).size }) }
   catch { res.json({ present: true }) }
 })
 
@@ -103,6 +120,45 @@ router.post('/agent-apk', requireAdmin, raw({ type: '*/*', limit: '120mb' }), (r
   if (!(buf[0] === 0x50 && buf[1] === 0x4b)) return res.status(400).json({ error: 'ce n\'est pas un APK (.apk)' })
   try { mkdirSync('/apk', { recursive: true }); writeFileSync(APK_PATH, buf); res.json({ ok: true, size: buf.length }) }
   catch (e: any) { res.status(500).json({ error: e.message }) }
+})
+
+// ── Magasin de lecteurs ──────────────────────────────────────────────────────
+// Liste les lecteurs disponibles à pousser.
+router.get('/players', requireAdmin, (_req, res) => {
+  res.json(readStore().map(a => ({ id: a.id, label: a.label, size: a.size })))
+})
+
+// Upload d'un APK de lecteur (raw). ?label=Just Player → fichier just_player.apk
+router.post('/players', requireAdmin, raw({ type: '*/*', limit: '200mb' }), (req, res) => {
+  const buf = req.body as Buffer
+  if (!buf || !buf.length) return res.status(400).json({ error: 'fichier vide' })
+  if (!(buf[0] === 0x50 && buf[1] === 0x4b)) return res.status(400).json({ error: 'ce n\'est pas un APK' })
+  const id = slug((req.query.label as string) || `app_${Date.now()}`)
+  try { mkdirSync(STORE_DIR, { recursive: true }); writeFileSync(join(STORE_DIR, `${id}.apk`), buf); res.json({ ok: true, id, size: buf.length }) }
+  catch (e: any) { res.status(500).json({ error: e.message }) }
+})
+
+router.delete('/players/:id', requireAdmin, (req, res) => {
+  const id = slug(req.params.id)
+  const p = join(STORE_DIR, `${id}.apk`)
+  try { if (existsSync(p)) unlinkSync(p); res.json({ ok: true }) }
+  catch (e: any) { res.status(500).json({ error: e.message }) }
+})
+
+// Récupère la dernière version de Just Player (open source) depuis GitHub.
+router.post('/players/fetch-justplayer', requireAdmin, async (_req, res) => {
+  try {
+    const rel: any = await (await fetch('https://api.github.com/repos/moneytoo/Player/releases/latest', {
+      headers: { 'User-Agent': 'hub-mediacenter', Accept: 'application/vnd.github+json' },
+    })).json()
+    const asset = (rel.assets || []).find((a: any) => /universal.*\.apk$|\.apk$/i.test(a.name))
+    if (!asset) return res.status(502).json({ error: 'APK introuvable dans la release' })
+    const apk = Buffer.from(await (await fetch(asset.browser_download_url, { headers: { 'User-Agent': 'hub-mediacenter' } })).arrayBuffer())
+    if (!(apk[0] === 0x50 && apk[1] === 0x4b)) return res.status(502).json({ error: 'téléchargement invalide' })
+    mkdirSync(STORE_DIR, { recursive: true })
+    writeFileSync(join(STORE_DIR, 'just_player.apk'), apk)
+    res.json({ ok: true, version: rel.tag_name, size: apk.length, asset: asset.name })
+  } catch (e: any) { res.status(502).json({ error: `GitHub: ${e.message}` }) }
 })
 
 // POST /api/discover/:ip/deploy — déploie l'agent sur un lecteur Android via adb.
@@ -128,16 +184,29 @@ router.post('/:ip/deploy', requireAdmin, async (req, res) => {
 
   const inst = await adb(['-s', serial, 'install', '-r', '-g', APK_PATH], 180000)
   if (!/Success/i.test(inst.out)) {
-    return res.status(502).json({ status: 'error', message: `Échec install: ${inst.out.trim().slice(0, 400)}` })
+    return res.status(502).json({ status: 'error', message: `Échec install agent: ${inst.out.trim().slice(0, 400)}` })
   }
 
   // Permissions best-effort (n'empêchent pas le succès si elles échouent)
   await adb(['-s', serial, 'shell', 'appops', 'set', AGENT_PKG, 'SYSTEM_ALERT_WINDOW', 'allow'])
   await adb(['-s', serial, 'shell', 'cmd', 'notification', 'allow_listener', AGENT_LISTENER])
+
+  // Lecteurs du magasin (Just Player, MX Player…) — sideload direct (Fire TV & co).
+  const players = (req.body?.players as string[] | undefined)
+  const store = readStore().filter(a => !players || players.includes(a.id))
+  const installed: string[] = [], failed: string[] = []
+  for (const app of store) {
+    const r = await adb(['-s', serial, 'install', '-r', '-g', app.file], 180000)
+    if (/Success/i.test(r.out)) installed.push(app.label); else failed.push(app.label)
+  }
+
   // Lancement de l'agent
   await adb(['-s', serial, 'shell', 'monkey', '-p', AGENT_PKG, '-c', 'android.intent.category.LAUNCHER', '1'])
 
-  res.json({ status: 'ok', message: 'Agent installé, permissions accordées et lancé. Il va se connecter au Hub.' })
+  let msg = 'Agent installé, permissions accordées et lancé.'
+  if (installed.length) msg += ` Lecteurs installés : ${installed.join(', ')}.`
+  if (failed.length) msg += ` Échec : ${failed.join(', ')}.`
+  res.json({ status: 'ok', message: msg })
 })
 
 export default router

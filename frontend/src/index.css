@@ -36,6 +36,26 @@ body {
 }
 
 @layer components {
+  /* Boutons d'action qui n'apparaissaient qu'au survol (favoris, +playlist,
+     supprimer). Cachés au repos sur desktop, révélés au survol de la carte
+     (.group) ou au focus clavier, et TOUJOURS visibles sur tactile/TV (pas de
+     survol possible), où ils étaient sinon inatteignables. */
+  .reveal {
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+  .group:hover .reveal,
+  .reveal:focus,
+  .reveal:focus-within,
+  .reveal:focus-visible {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .reveal {
+      opacity: 1;
+    }
+  }
+
   /* Étend la zone tappable d'un petit bouton-icône à 44x44px minimum,
      SANS changer sa taille visuelle. Activé uniquement sur appareils
      sans survol (tactile / TV), pour ne pas intercepter au desktop les

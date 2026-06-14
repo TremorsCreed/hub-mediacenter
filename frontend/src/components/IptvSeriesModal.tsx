@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, IptvSeriesInfo } from '../api'
+import { useModalA11y } from '../useModalA11y'
 import { ChevronDown, ChevronRight, Loader2, Play, X } from 'lucide-react'
 
 export interface Props {
@@ -26,6 +27,7 @@ export default function IptvSeriesModal({
   const [loading, setLoading] = useState(true)
   const [openSeasons, setOpenSeasons] = useState<Set<number>>(new Set([1]))
   const [launching, setLaunching] = useState<string | null>(null)
+  const modalRef = useModalA11y(true, onClose)
 
   useEffect(() => {
     setLoading(true)
@@ -67,7 +69,7 @@ export default function IptvSeriesModal({
       className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-start justify-center p-4 overflow-y-auto"
       onClick={onClose}
     >
-      <div className="bg-zinc-900/95 border border-zinc-700 rounded-lg max-w-3xl w-full my-8 relative shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div ref={modalRef} className="bg-zinc-900/95 border border-zinc-700 rounded-lg max-w-3xl w-full my-8 relative shadow-2xl" onClick={e => e.stopPropagation()}>
         <button onClick={onClose} className="absolute top-3 right-3 text-zinc-500 hover:text-white z-10">
           <X size={18} />
         </button>

@@ -4,6 +4,7 @@ import { api, Device, Favorite, HistoryEntry } from '../api'
 import { usePersistentDevice } from '../usePersistentDevice'
 import { useUser, initials } from '../UserContext'
 import { useFavorites } from '../FavoritesContext'
+import Toast from '../components/Toast'
 import { Heart, Play, Loader2, Tv, Film, Gamepad2, MonitorPlay, Radio, History as HistoryIcon } from 'lucide-react'
 
 const APP_ICON: Record<string, typeof Tv> = { iptv: Radio, plex: Film, launchbox: Gamepad2, catalog: MonitorPlay }
@@ -131,7 +132,7 @@ export default function UserDashboard() {
                   <button
                     onClick={() => toggle(f)}
                     title="Retirer des favoris"
-                    className="absolute top-1.5 right-1.5 w-7 h-7 flex items-center justify-center rounded-full bg-black/55 backdrop-blur-sm hover:bg-black/75 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="tap-target reveal absolute top-1.5 right-1.5 w-7 h-7 flex items-center justify-center rounded-full bg-black/55 backdrop-blur-sm hover:bg-black/75"
                   >
                     <Heart size={14} className="text-red-500" fill="currentColor" />
                   </button>
@@ -163,11 +164,7 @@ export default function UserDashboard() {
         </section>
       )}
 
-      {toast && (
-        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded shadow-lg text-sm font-medium z-[110] ${toast.ok ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
-          {toast.msg}
-        </div>
-      )}
+      {toast && <Toast msg={toast.msg} ok={toast.ok} />}
     </div>
   )
 }

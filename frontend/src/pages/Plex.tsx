@@ -7,6 +7,7 @@ import { Search, Play, Loader2, AlertCircle, RotateCcw, ChevronLeft, ChevronRigh
 import FavoriteButton from '../components/FavoriteButton'
 import AddToPlaylist from '../components/AddToPlaylist'
 import { CatalogDndProvider, DraggableMedia } from '../components/CatalogDnd'
+import Toast from '../components/Toast'
 
 const SECTION_ICONS: Record<string, typeof Library> = {
   movie: Film,
@@ -467,11 +468,11 @@ export default function Plex() {
 
               <FavoriteButton
                 fav={{ app: 'plex', ref_id: item.ratingKey, ref_type: item.type, title: item.title, thumb: item.thumb }}
-                className="absolute top-1.5 left-1.5 z-10 w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="reveal absolute top-1.5 left-1.5 z-10 w-7 h-7"
               />
               <AddToPlaylist
                 item={{ app: 'plex', ref_id: item.ratingKey, ref_type: item.type, title: item.title, year: item.year, thumb: item.thumb }}
-                className="absolute top-1.5 left-10 z-10 w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="reveal absolute top-1.5 left-10 z-10 w-7 h-7"
               />
 
               {/* Mini bouton "recommencer du début" sur les en-cours (visible au hover) */}
@@ -629,14 +630,7 @@ export default function Plex() {
         document.body
       )}
 
-      {toast && createPortal(
-        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded shadow-lg text-sm font-medium z-[110] ${
-          toast.ok ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-        }`}>
-          {toast.msg}
-        </div>,
-        document.body
-      )}
+      {toast && <Toast msg={toast.msg} ok={toast.ok} />}
     </div>
     </CatalogDndProvider>
   )

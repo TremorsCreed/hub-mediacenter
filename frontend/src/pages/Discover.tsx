@@ -4,6 +4,7 @@ import { api, Device, DiscoverAvailability, DiscoverItem } from '../api'
 import { usePersistentDevice } from '../usePersistentDevice'
 import { Search, Loader2, AlertCircle, Play, X, Languages } from 'lucide-react'
 import IptvSeriesModal from '../components/IptvSeriesModal'
+import Toast from '../components/Toast'
 
 const LANG_PREFS_KEY = 'iptv.languages.selected'  // partagé avec la page IPTV
 const COMMON_LANG_LABELS: Record<string, string> = {
@@ -375,14 +376,7 @@ export default function Discover() {
         />
       )}
 
-      {toast && createPortal(
-        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded shadow-lg text-sm font-medium z-[110] ${
-          toast.ok ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-        }`}>
-          {toast.msg}
-        </div>,
-        document.body
-      )}
+      {toast && <Toast msg={toast.msg} ok={toast.ok} />}
     </div>
   )
 }

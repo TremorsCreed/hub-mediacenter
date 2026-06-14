@@ -14,6 +14,8 @@ import { CatalogDndProvider, DraggableMedia } from '../components/CatalogDnd'
 import EpgGuide from '../components/EpgGuide'
 import PinDialog from '../components/PinDialog'
 import VodDetail from '../components/VodDetail'
+import Toast from '../components/Toast'
+import { useModalA11y } from '../useModalA11y'
 import { LayoutGrid, CalendarDays } from 'lucide-react'
 
 const PAGE_SIZE = 300
@@ -74,6 +76,7 @@ export default function Iptv() {
   // directement (anti-lancement accidentel, surtout sur mobile).
   const [vodDetail, setVodDetail] = useState<IptvStream | null>(null)
   const [liveView, setLiveView] = usePersistedState<'list' | 'guide'>('hub.iptv.liveview', 'list') // TV : liste / guide EPG
+  const seriesModalRef = useModalA11y(!!selectedSeries, () => setSelectedSeries(null))
 
   useEffect(() => {
     api.iptv.credentials().then(c => {
@@ -541,7 +544,7 @@ export default function Iptv() {
                   <FavoriteButton
                     fav={{ app: 'iptv', ref_id: s.stream_id, ref_type: s.type, title: s.name, thumb: s.logo }}
                     size={13}
-                    className="absolute top-1.5 right-1.5 w-6 h-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="reveal absolute top-1.5 right-1.5 w-6 h-6"
                   />
                 </div>
               ))}
@@ -582,11 +585,11 @@ export default function Iptv() {
                   </button>
                   <FavoriteButton
                     fav={{ app: 'iptv', ref_id: s.stream_id, ref_type: s.type, title: s.name, thumb: s.logo }}
-                    className="absolute top-2 right-2 w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="reveal absolute top-2 right-2 w-7 h-7"
                   />
                   <AddToPlaylist
                     item={{ app: 'iptv', ref_id: s.stream_id, ref_type: s.type, title: s.name, thumb: s.logo }}
-                    className="absolute top-2 right-11 w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="reveal absolute top-2 right-11 w-7 h-7"
                   />
                 </DraggableMedia>
               ))}
@@ -616,7 +619,7 @@ export default function Iptv() {
           className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-start justify-center p-4 overflow-y-auto"
           onClick={() => setSelectedSeries(null)}
         >
-          <div className="bg-zinc-900/95 border border-zinc-700 rounded-lg max-w-3xl w-full my-8 relative shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div ref={seriesModalRef} className="bg-zinc-900/95 border border-zinc-700 rounded-lg max-w-3xl w-full my-8 relative shadow-2xl" onClick={e => e.stopPropagation()}>
             <button onClick={() => setSelectedSeries(null)} className="absolute top-3 right-3 text-zinc-500 hover:text-white z-10">
               <X size={18} />
             </button>
@@ -709,14 +712,7 @@ export default function Iptv() {
         document.body
       )}
 
-      {toast && createPortal(
-        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded shadow-lg text-sm font-medium z-[110] ${
-          toast.ok ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-        }`}>
-          {toast.msg}
-        </div>,
-        document.body
-      )}
+      {toast && <Toast msg={toast.msg} ok={toast.ok} />}
 
       {/* PIN parental : déverrouille une catégorie verrouillée */}
       {pinPrompt && (

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Lock, Loader2 } from 'lucide-react'
 import { api } from '../api'
+import { useModalA11y } from '../useModalA11y'
 
 // Demande le PIN (parental) pour déverrouiller quelque chose. Vérifie côté
 // serveur via /users/check-pin (sans émettre de token admin).
@@ -14,6 +15,7 @@ export default function PinDialog({ title, onSuccess, onCancel }: {
   const [error, setError] = useState(false)
   const [checking, setChecking] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const modalRef = useModalA11y(true, onCancel)
 
   useEffect(() => { inputRef.current?.focus() }, [])
 
@@ -36,6 +38,7 @@ export default function PinDialog({ title, onSuccess, onCancel }: {
   return createPortal(
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center" onClick={onCancel}>
       <div
+        ref={modalRef}
         className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-80 flex flex-col items-center gap-4"
         onClick={e => e.stopPropagation()}
       >

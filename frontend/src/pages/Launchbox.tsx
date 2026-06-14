@@ -125,11 +125,11 @@ function GameCard({ game, launching, onLaunch }: {
       </button>
       <FavoriteButton
         fav={{ app: 'launchbox', ref_id: game.id, ref_type: game.platform, title: game.title, thumb: `${BASE}/image/${game.id}` }}
-        className="absolute top-2 right-2 w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="reveal absolute top-2 right-2 w-7 h-7"
       />
       <AddToPlaylist
         item={{ app: 'launchbox', ref_id: game.id, ref_type: game.platform, title: game.title, thumb: `${BASE}/image/${game.id}` }}
-        className="absolute top-2 right-11 w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="reveal absolute top-2 right-11 w-7 h-7"
       />
     </DraggableMedia>
   )

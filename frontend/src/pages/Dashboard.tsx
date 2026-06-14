@@ -70,7 +70,7 @@ export default function Dashboard() {
                   {state && state.status !== 'stopped' ? (
                     <>
                       <div className="flex items-center gap-2 min-w-0">
-                        <Circle size={7} className={`fill-current shrink-0 ${statusColor(state.status)}`} />
+                        <Circle size={7} role="img" aria-label={state.status} className={`fill-current shrink-0 ${statusColor(state.status)}`} />
                         <span className="text-zinc-300 truncate max-w-[200px]">{state.title ?? state.status}</span>
                         <span className="text-zinc-600 text-xs shrink-0">{state.app}</span>
                       </div>

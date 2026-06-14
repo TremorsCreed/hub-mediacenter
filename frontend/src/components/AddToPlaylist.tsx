@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, Playlist, PlaylistItemInput } from '../api'
 import { useUser } from '../UserContext'
+import { useModalA11y } from '../useModalA11y'
 import { ListPlus, Plus, Loader2, Check, X, ListVideo } from 'lucide-react'
 
 // Bouton + modale pour ajouter un contenu à une playlist (existante ou nouvelle).
@@ -14,6 +15,7 @@ export default function AddToPlaylist({ item, className = '' }: { item: Playlist
   const [addedTo, setAddedTo] = useState<number | null>(null)
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
+  const modalRef = useModalA11y(open, () => setOpen(false))
 
   const openModal = (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation()
@@ -57,7 +59,7 @@ export default function AddToPlaylist({ item, className = '' }: { item: Playlist
 
       {open && createPortal(
         <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={e => { e.stopPropagation(); setOpen(false) }}>
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-sm p-4 relative" onClick={e => e.stopPropagation()}>
+          <div ref={modalRef} className="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-sm p-4 relative" onClick={e => e.stopPropagation()}>
             <button onClick={() => setOpen(false)} className="absolute top-3 right-3 text-zinc-500 hover:text-white"><X size={18} /></button>
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><ListVideo size={16} className="text-amber-400" /> Ajouter à une playlist</h3>
             {item.title && <p className="text-xs text-zinc-500 mb-3 truncate">« {item.title} »</p>}

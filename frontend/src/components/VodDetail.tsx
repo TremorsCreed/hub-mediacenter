@@ -4,6 +4,7 @@ import { api, IptvStream, IptvVodInfo } from '../api'
 import { X, Play, Film, Star, Clock, Calendar, Loader2 } from 'lucide-react'
 import FavoriteButton from './FavoriteButton'
 import AddToPlaylist from './AddToPlaylist'
+import { useModalA11y } from '../useModalA11y'
 
 // Extrait l'ID YouTube d'un champ trailer (ID brut ou URL).
 function ytId(t: string): string | null {
@@ -25,6 +26,7 @@ export default function VodDetail({ credId, stream, deviceName, onPlay, onClose 
   const [info, setInfo] = useState<IptvVodInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [trailer, setTrailer] = useState(false)
+  const modalRef = useModalA11y(true, onClose)
 
   useEffect(() => {
     setLoading(true)
@@ -34,12 +36,6 @@ export default function VodDetail({ credId, stream, deviceName, onPlay, onClose 
       .finally(() => setLoading(false))
   }, [credId, stream.stream_id])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   const title = info?.name || stream.name
   const cover = info?.cover || stream.logo
   const yt = info ? ytId(info.trailer) : null
@@ -47,6 +43,7 @@ export default function VodDetail({ credId, stream, deviceName, onPlay, onClose 
   return createPortal(
     <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center sm:p-4" onClick={onClose}>
       <div
+        ref={modalRef}
         className="relative bg-zinc-950 w-full h-full sm:h-auto sm:max-h-[92vh] sm:max-w-3xl sm:rounded-xl overflow-hidden flex flex-col border border-zinc-800 shadow-2xl"
         onClick={e => e.stopPropagation()}
       >

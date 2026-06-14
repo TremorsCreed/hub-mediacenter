@@ -8,6 +8,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { api, Device, Playlist, PlaylistItem } from '../api'
 import { usePersistentDevice } from '../usePersistentDevice'
 import { useUser } from '../UserContext'
+import Toast from '../components/Toast'
 import {
   ArrowLeft, Play, Loader2, Trash2, GripVertical, Film, Tv, Gamepad2, Radio, MonitorPlay,
   Users, Lock, AlertTriangle, Check,
@@ -240,9 +241,7 @@ export default function PlaylistDetail() {
         </DndContext>
       )}
 
-      {toast && (
-        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded shadow-lg text-sm font-medium z-[110] ${toast.ok ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>{toast.msg}</div>
-      )}
+      {toast && <Toast msg={toast.msg} ok={toast.ok} />}
     </div>
   )
 }

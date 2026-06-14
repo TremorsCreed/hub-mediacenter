@@ -103,7 +103,7 @@ export default function History() {
               </div>
               <button
                 onClick={() => deleteOne(h.id)}
-                className="text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 shrink-0"
+                className="tap-target reveal text-zinc-600 hover:text-red-400 p-1 shrink-0"
                 title="Supprimer cette entrée"
               >
                 <X size={15} />

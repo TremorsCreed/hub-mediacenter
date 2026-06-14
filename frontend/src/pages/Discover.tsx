@@ -155,7 +155,7 @@ export default function Discover() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <h1 className="text-xl font-semibold mr-auto">Discover</h1>
+        <h1 className="text-2xl font-bold tracking-tight mr-auto">Discover</h1>
 
         <div className="relative">
           <button

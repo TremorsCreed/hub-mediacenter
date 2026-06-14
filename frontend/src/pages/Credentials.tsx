@@ -65,7 +65,7 @@ export default function Credentials() {
   return (
     <div className="space-y-4 max-w-2xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Credentials</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Credentials</h1>
         <div className="flex items-center gap-2">
           <button
             onClick={startNew}

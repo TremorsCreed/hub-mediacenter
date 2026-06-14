@@ -29,7 +29,7 @@ export default function Playlists() {
   return (
     <div className="space-y-5 max-w-5xl">
       <div className="flex items-center gap-3 flex-wrap">
-        <h1 className="text-xl font-semibold mr-auto">Playlists</h1>
+        <h1 className="text-2xl font-bold tracking-tight mr-auto">Playlists</h1>
         <button
           onClick={() => navigate('/playlists/import')}
           className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 text-sm rounded px-3 py-1.5 hover:border-zinc-500 transition-colors"

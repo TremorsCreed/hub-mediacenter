@@ -16,6 +16,7 @@ import PinDialog from '../components/PinDialog'
 import VodDetail from '../components/VodDetail'
 import Toast from '../components/Toast'
 import { useModalA11y } from '../useModalA11y'
+import { PosterSkeletons, ChannelSkeletons } from '../components/Skeleton'
 import { LayoutGrid, CalendarDays } from 'lucide-react'
 
 const PAGE_SIZE = 300
@@ -507,9 +508,7 @@ export default function Iptv() {
           ) : (
           <>
           {loading && streams.length === 0 && (
-            <div className="flex items-center justify-center py-16 text-zinc-600 gap-2 text-sm">
-              <Loader2 size={16} className="animate-spin" /> Chargement…
-            </div>
+            type === 'live' ? <ChannelSkeletons /> : <PosterSkeletons />
           )}
 
           {!loading && streams.length === 0 && (
@@ -523,7 +522,7 @@ export default function Iptv() {
                   <button
                     onClick={() => play(s)}
                     disabled={launching === s.stream_id}
-                    className="w-full flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded p-2 hover:border-amber-500/60 transition-colors text-left disabled:opacity-50"
+                    className="w-full flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded p-2 hover:border-amber-500/60 transition active:scale-[0.97] text-left disabled:opacity-50"
                   >
                     <div className="w-12 h-12 shrink-0 bg-zinc-800 rounded overflow-hidden flex items-center justify-center">
                       {s.logo ? (
@@ -534,7 +533,7 @@ export default function Iptv() {
                     </div>
                     <div className="flex-1 min-w-0 pr-6">
                       <div className="text-xs font-medium truncate">{s.name}</div>
-                      <div className="text-[10px] text-zinc-500 mt-0.5">Live · #{s.stream_id}</div>
+                      <div className="text-[11px] text-zinc-400 mt-0.5">Live · #{s.stream_id}</div>
                     </div>
                     {launching === s.stream_id
                       ? <Loader2 size={14} className="animate-spin text-amber-400" />
@@ -561,7 +560,7 @@ export default function Iptv() {
                   <button
                     onClick={() => s.type === 'vod' ? setVodDetail(s) : play(s)}
                     disabled={launching === s.stream_id}
-                    className="w-full aspect-[2/3] bg-zinc-900 border border-zinc-800 rounded overflow-hidden hover:border-amber-500/60 transition-colors text-left disabled:opacity-50 block"
+                    className="w-full aspect-[2/3] bg-zinc-900 border border-zinc-800 rounded overflow-hidden hover:border-amber-500/60 transition active:scale-[0.97] text-left disabled:opacity-50 block"
                   >
                     {s.logo ? (
                       <img src={api.iptv.imageUrl(s.logo)} alt={s.name} loading="lazy" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />

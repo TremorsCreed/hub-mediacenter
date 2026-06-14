@@ -148,7 +148,7 @@ export default function Profiles() {
   return (
     <div className="space-y-5 max-w-2xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Profils</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Profils</h1>
         <button
           onClick={openCreate}
           className="flex items-center gap-1.5 bg-amber-500 text-black text-sm font-medium rounded px-3 py-1.5 hover:bg-amber-400 transition-colors"

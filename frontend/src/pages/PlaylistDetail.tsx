@@ -195,7 +195,7 @@ export default function PlaylistDetail() {
           {pl.cover ? <img src={pl.cover} alt="" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} /> : <MonitorPlay size={28} className="text-zinc-700" />}
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-semibold">{pl.name}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{pl.name}</h1>
           {pl.description && <p className="text-sm text-zinc-400 mt-1 line-clamp-3">{pl.description}</p>}
           <div className="text-xs text-zinc-500 mt-2">{items.length} élément{items.length > 1 ? 's' : ''}{pl.owner_name && pl.owner_user_id !== currentUser?.id ? ` · ${pl.owner_name}` : ''}</div>
           <div className="flex items-center gap-2 mt-3 flex-wrap">

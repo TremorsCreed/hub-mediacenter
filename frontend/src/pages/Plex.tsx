@@ -8,6 +8,7 @@ import FavoriteButton from '../components/FavoriteButton'
 import AddToPlaylist from '../components/AddToPlaylist'
 import { CatalogDndProvider, DraggableMedia } from '../components/CatalogDnd'
 import Toast from '../components/Toast'
+import { PosterSkeletons } from '../components/Skeleton'
 
 const SECTION_ICONS: Record<string, typeof Library> = {
   movie: Film,
@@ -407,11 +408,7 @@ export default function Plex() {
         {/* Contenu scrollable */}
         <div ref={contentRef} className="flex-1 overflow-y-auto p-4 space-y-4">
 
-      {loading && items.length === 0 && (
-        <div className="flex items-center justify-center py-16 text-zinc-600 gap-2 text-sm">
-          <Loader2 size={16} className="animate-spin" /> Chargement…
-        </div>
-      )}
+      {loading && items.length === 0 && <PosterSkeletons />}
 
       {!loading && items.length === 0 && (
         <div className="text-sm text-zinc-600 py-16 text-center">Aucun résultat.</div>
@@ -436,7 +433,7 @@ export default function Plex() {
               <button
                 onClick={() => play(item, { resume: inProgress })}
                 disabled={launching === item.ratingKey}
-                className="relative aspect-[2/3] w-full bg-zinc-900 border border-zinc-800 rounded overflow-hidden hover:border-amber-500/60 transition-colors text-left disabled:opacity-50 block"
+                className="relative aspect-[2/3] w-full bg-zinc-900 border border-zinc-800 rounded overflow-hidden hover:border-amber-500/60 transition active:scale-[0.97] text-left disabled:opacity-50 block"
               >
                 {item.thumb ? (
                   <img src={api.plex.imageUrl(item.thumb)} alt={item.title} loading="lazy"

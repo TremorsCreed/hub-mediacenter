@@ -45,7 +45,7 @@ export default function History() {
   return (
     <div className="space-y-4 max-w-3xl">
       <div className="flex items-center gap-3 flex-wrap">
-        <h1 className="text-xl font-semibold mr-auto">Historique</h1>
+        <h1 className="text-2xl font-bold tracking-tight mr-auto">Historique</h1>
 
         {adminUnlocked && (
           <select

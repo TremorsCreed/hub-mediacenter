@@ -75,14 +75,14 @@ export default function NowPlayingBar() {
 
   const RemoteBtn = device && canRemote(device) ? (
     <button onClick={() => launchRemote(device.ip)} title={`Remote (miroir/contrôle) de ${device.name}`}
-      className="p-2 rounded text-zinc-500 hover:text-amber-400 transition-colors">
+      className="inline-flex items-center justify-center min-w-11 min-h-11 rounded text-zinc-500 hover:text-amber-400 transition-colors">
       <MonitorPlay size={15} />
     </button>
   ) : null
 
   const PinBtn = (
     <button onClick={() => setPinned(!pinned)} title={pinned ? 'Détacher la barre' : 'Épingler la barre'}
-      className={`p-2 rounded transition-colors ${pinned ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-500 hover:text-zinc-300'}`}>
+      className={`inline-flex items-center justify-center min-w-11 min-h-11 rounded transition-colors ${pinned ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-500 hover:text-zinc-300'}`}>
       {pinned ? <Pin size={15} /> : <PinOff size={15} />}
     </button>
   )
@@ -119,28 +119,28 @@ export default function NowPlayingBar() {
         </span>
         <div className="min-w-0">
           <div className="text-sm text-zinc-100 truncate font-medium">{m.title || 'Lecture en cours'}</div>
-          {device && <div className="text-[11px] text-zinc-500 truncate">sur {device.name}</div>}
+          {device && <div className="text-[11px] text-zinc-400 truncate">sur {device.name}</div>}
         </div>
       </div>
 
       <div className="flex items-center gap-1 shrink-0">
         {hasBar && (
           <button onClick={() => seekTo(pos - 10000)} disabled={busy} title="−10 s"
-            className="p-2 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors">
+            className="inline-flex items-center justify-center min-w-11 min-h-11 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors">
             <Rewind size={18} />
           </button>
         )}
         <button onClick={() => ctrl(() => api.control.send(deviceId, 'play_pause'))} disabled={busy} title="Play / Pause"
-          className="p-2.5 rounded-full bg-zinc-800 text-white hover:bg-zinc-700 disabled:opacity-40 transition-colors">
+          className="inline-flex items-center justify-center min-w-11 min-h-11 rounded-full bg-zinc-800 text-white hover:bg-zinc-700 disabled:opacity-40 transition-colors">
           {playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
         </button>
         <button onClick={() => ctrl(() => api.control.send(deviceId, 'stop'))} disabled={busy} title="Stop"
-          className="p-2 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors">
+          className="inline-flex items-center justify-center min-w-11 min-h-11 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors">
           <Square size={16} fill="currentColor" />
         </button>
         {hasBar && (
           <button onClick={() => seekTo(pos + 10000)} disabled={busy} title="+10 s"
-            className="p-2 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors">
+            className="inline-flex items-center justify-center min-w-11 min-h-11 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors">
             <FastForward size={18} />
           </button>
         )}
@@ -157,7 +157,7 @@ export default function NowPlayingBar() {
             onKeyUp={() => { if (scrub != null) { seekTo(scrub); setScrub(null) } }}
             className="flex-1 h-1 accent-amber-500 cursor-pointer"
           />
-          <span className="text-[11px] tabular-nums text-zinc-500 w-12">{fmt(m.duration)}</span>
+          <span className="text-[11px] tabular-nums text-zinc-400 w-12">{fmt(m.duration)}</span>
         </div>
       ) : (
         <div className="flex-1 flex items-center">

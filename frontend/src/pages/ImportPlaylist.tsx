@@ -120,7 +120,7 @@ export default function ImportPlaylist() {
       </button>
 
       <div>
-        <h1 className="text-xl font-semibold">Importer une playlist</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Importer une playlist</h1>
         <p className="text-sm text-zinc-500 mt-1">Depuis SensCritique (ex. une chronologie MCU). On résout chaque titre vers ton Plex et ton IPTV.</p>
       </div>
 

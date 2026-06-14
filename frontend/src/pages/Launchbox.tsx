@@ -90,7 +90,7 @@ function GameCard({ game, launching, onLaunch }: {
       <button
         onClick={() => onLaunch(game.id)}
         disabled={!!launching}
-        className="w-full flex flex-col bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden hover:border-amber-500/60 transition-colors text-left disabled:opacity-60"
+        className="w-full flex flex-col bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden hover:border-amber-500/60 transition active:scale-[0.97] text-left disabled:opacity-60"
       >
         {/* Pochette */}
         <div className="relative w-full aspect-[3/4] bg-zinc-800 shrink-0">

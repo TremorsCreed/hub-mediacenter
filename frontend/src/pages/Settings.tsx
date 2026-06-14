@@ -40,7 +40,7 @@ export default function Settings() {
 
   return (
     <div className="space-y-6 max-w-lg">
-      <h1 className="text-xl font-semibold">Settings</h1>
+      <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
         <div className="flex items-center gap-2">

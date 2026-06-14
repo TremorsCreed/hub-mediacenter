@@ -78,6 +78,24 @@ export default function NowPlayingBar() {
     return () => clearInterval(id)
   }, [])
 
+  // Barre d'espace = play/pause global (convention lecteur). Ignoré pendant la saisie
+  // dans un champ et quand un bouton/lien est focus (sinon double déclenchement avec le
+  // clic clavier natif). preventDefault pour ne pas scroller la page.
+  useEffect(() => {
+    if (!deviceId) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' && e.key !== ' ') return
+      if (e.repeat || e.ctrlKey || e.altKey || e.metaKey) return
+      const el = document.activeElement as HTMLElement | null
+      const tag = el?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || tag === 'A' || el?.isContentEditable) return
+      e.preventDefault()
+      api.control.send(deviceId, 'play_pause').catch(() => {})
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [deviceId])
+
   const device = devices.find(d => d.id === deviceId)
   const hasMedia = !!now && now.state !== 'stopped'
 

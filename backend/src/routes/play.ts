@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db'
-import { sendPlayCommand, sendNotify, isConnected, getConnectedIds } from '../ws'
+import { sendPlayCommand, sendNotify, isConnected, getConnectedIds, sendControl, mediaStates } from '../ws'
 import { AppId, CatalogEntry, RequesterType, WsPlayCommand } from '../types'
 import { resolvePlexWatchUrl } from './plex'
 import { spotifyFetch, MAISON_USER_ID } from './spotify'
@@ -190,6 +190,8 @@ const PlaySchema = z.object({
   title: z.string().nullable().optional().transform(v => v ?? undefined),
   thumb: z.string().nullable().optional().transform(v => v ?? undefined),
   resume: z.boolean().optional(),
+  // Position de départ (ms) — transfert « continuer sur… » / reprise explicite.
+  resume_position_ms: z.number().nullable().optional().transform(v => v ?? undefined),
   device_id: z.string().optional(),
   app: z.string().optional(),
   requester: z.enum(['zaparoo', 'llm', 'n8n', 'manual', 'ha']).default('manual')
@@ -218,6 +220,9 @@ function getBackendBaseUrl(req: any): string {
 
 function buildImageUrl(req: any, thumb: string | undefined, app: string): string | undefined {
   if (!thumb) return undefined
+  // Idempotence : un thumb déjà proxifié (persisté dans playback_state/playback_progress,
+  // réutilisé lors d'un transfert) ne doit pas être re-proxifié en boucle.
+  if (thumb.includes('/api/iptv/image') || thumb.includes('/api/plex/image')) return thumb
   const base = getBackendBaseUrl(req)
   if (/^https?:\/\//.test(thumb)) {
     // URL absolue (logo IPTV) → on passe par le proxy /api/iptv/image qui suit le mixed-content
@@ -229,18 +234,53 @@ function buildImageUrl(req: any, thumb: string | undefined, app: string): string
   return undefined
 }
 
-router.post('/', async (req, res) => {
-  const parsed = PlaySchema.safeParse(req.body)
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
+// Enregistre, au lancement, tout ce qu'il faut pour reprendre/transférer ce média
+// (champs de relecture). media_key = catalog_id synthétique (= ce que le tick WS
+// recalcule depuis playback_state, d'où l'alignement des clés). position = offset de
+// reprise (0 = relecture du début, ce qui remet le compteur à zéro volontairement).
+async function upsertProgressOnLaunch(mediaKey: string, f: {
+  catalogId: string; app: string; title: string; thumb: string | null
+  plexId?: string | null; iptvStreamId?: string | null; iptvType?: string | null; iptvExt?: string | null
+  externalUrl?: string | null; externalPlatform?: string | null
+  position: number; seekable: boolean; deviceId: string; userId: number | null
+}): Promise<void> {
+  try {
+    await db.execute({
+      sql: `INSERT INTO playback_progress
+              (media_key, catalog_id, app, title, thumb, plex_id, iptv_stream_id, iptv_type, iptv_ext,
+               external_url, external_platform, position, duration, seekable, device_id, user_id, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+            ON CONFLICT(media_key) DO UPDATE SET
+              catalog_id = excluded.catalog_id, app = excluded.app, title = excluded.title,
+              thumb = COALESCE(excluded.thumb, playback_progress.thumb),
+              plex_id = excluded.plex_id, iptv_stream_id = excluded.iptv_stream_id,
+              iptv_type = excluded.iptv_type, iptv_ext = excluded.iptv_ext,
+              external_url = excluded.external_url, external_platform = excluded.external_platform,
+              position = excluded.position, seekable = excluded.seekable,
+              device_id = excluded.device_id,
+              user_id = COALESCE(excluded.user_id, playback_progress.user_id),
+              updated_at = excluded.updated_at`,
+      args: [mediaKey, f.catalogId, f.app, f.title, f.thumb,
+             f.plexId ?? null, f.iptvStreamId ?? null, f.iptvType ?? null, f.iptvExt ?? null,
+             f.externalUrl ?? null, f.externalPlatform ?? null,
+             Math.max(0, Math.round(f.position)), f.seekable ? 1 : 0, f.deviceId, f.userId, Date.now()],
+    })
+  } catch { /* best-effort */ }
+}
 
-  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, iptv_ext, external_url, external_platform, spotify_uri, spotify_device_id, title, thumb, resume, device_id, app, requester } = parsed.data
-  const userId = (req as any).userId ?? null // profil courant (header X-User-Id)
+type PlayResult = { status: number; body: any }
+
+// Cœur du lancement, réutilisable : appelé par POST /play (requête utilisateur) et par
+// POST /play/transfer (« continuer sur… »). Retourne { status, body } au lieu d'écrire
+// la réponse, pour que les deux routes décident du code HTTP.
+async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, req: any): Promise<PlayResult> {
+  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, iptv_ext, external_url, external_platform, spotify_uri, spotify_device_id, title, thumb, resume, resume_position_ms, device_id, app, requester } = input
 
   // 0. Spotify : flux à part — contrôle Spotify Connect via Web API, pas le catalogue
   //    ni l'agent WS. Le token « suit le profil actif » : on lit avec le compte du
   //    profil courant (ou le compte « Maison » si on cible une enceinte partagée).
   if (app === 'spotify' || spotify_uri) {
-    if (!spotify_uri) return res.status(400).json({ error: 'spotify_uri requis' })
+    if (!spotify_uri) return { status: 400, body: { error: 'spotify_uri requis' } }
     // Le profil qui « possède » la lecture : header X-User-Id, ou Maison si demandé
     const playUserId = userId ?? MAISON_USER_ID
     const isTrack = spotify_uri.startsWith('spotify:track:')
@@ -253,17 +293,17 @@ router.post('/', async (req, res) => {
       })
       if (!r.ok && r.status !== 204) {
         const detail = await r.text()
-        return res.status(r.status).json({ error: 'spotify_play_failed', status: r.status, detail })
+        return { status: r.status, body: { error: 'spotify_play_failed', status: r.status, detail } }
       }
     } catch (e: any) {
       // no_spotify_account : le profil actif n'a pas lié de compte
-      return res.status(400).json({ error: e.message || 'spotify_error' })
+      return { status: 400, body: { error: e.message || 'spotify_error' } }
     }
     await db.execute({
       sql: `INSERT INTO playback_history (device_id, catalog_id, app, title, started_at, requester, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       args: [spotify_device_id ?? 'spotify', spotify_uri, 'spotify', title ?? 'Spotify', Date.now(), requester, userId],
     })
-    return res.json({ ok: true, app: 'spotify', uri: spotify_uri, device_id: spotify_device_id ?? null, title: title ?? 'Spotify' })
+    return { status: 200, body: { ok: true, app: 'spotify', uri: spotify_uri, device_id: spotify_device_id ?? null, title: title ?? 'Spotify' } }
   }
 
   // 1. Resolve catalog entry
@@ -302,7 +342,7 @@ router.post('/', async (req, res) => {
     entry = (rows[0] as any) ?? null
   }
 
-  if (!entry) return res.status(404).json({ error: 'media not found', query, ean, catalog_id })
+  if (!entry) return { status: 404, body: { error: 'media not found', query, ean, catalog_id } }
 
   // 2. Resolve target device
   let target_device_id = device_id
@@ -319,8 +359,8 @@ router.post('/', async (req, res) => {
     }
   }
 
-  if (!target_device_id) return res.status(503).json({ error: 'no device available for this media type' })
-  if (!isConnected(target_device_id)) return res.status(503).json({ error: 'device not connected', device_id: target_device_id })
+  if (!target_device_id) return { status: 503, body: { error: 'no device available for this media type' } }
+  if (!isConnected(target_device_id)) return { status: 503, body: { error: 'device not connected', device_id: target_device_id } }
 
   // 3. Resolve app
   const { rows: devRows } = await db.execute({ sql: 'SELECT capabilities FROM devices WHERE id = ?', args: [target_device_id] })
@@ -367,18 +407,21 @@ router.post('/', async (req, res) => {
       console.log(`[plex] client ready=${ready} after ${Date.now() - t0}ms`)
 
       if (!ready) {
-        return res.status(503).json({
+        return { status: 503, body: {
           error: 'Plex injoignable sur le device. Ferme l\'app en cours sur le Shield (YouTube/autre) et réessaie.',
           hint: 'android_foreground_blocked',
-        })
+        } }
       }
 
-      const offsetMs = resume ? await getPlexViewOffset(entry.plex_id, plexCfg.server_url, plexCfg.auth_token) : 0
-      if (resume && offsetMs > 0) console.log(`[plex] resume at ${offsetMs}ms (${Math.floor(offsetMs / 60000)}min)`)
+      // Position de départ : explicite (transfert « continuer sur… ») prioritaire,
+      // sinon le viewOffset enregistré côté serveur Plex si resume demandé.
+      const offsetMs = resume_position_ms != null ? Math.max(0, Math.round(resume_position_ms))
+        : (resume ? await getPlexViewOffset(entry.plex_id, plexCfg.server_url, plexCfg.auth_token) : 0)
+      if (offsetMs > 0) console.log(`[plex] start at ${offsetMs}ms (${Math.floor(offsetMs / 60000)}min)`)
       const ok = await plexRemotePlay(deviceIp, entry.plex_id, plexCfg.auth_token, plexCfg.server_url, plexCfg.server_machine_id, offsetMs)
       if (!ok) {
         notifyOverlay(target_device_id, { title: '✗ Échec Plex', message: 'Remote Control a échoué', duration: 5 })
-        return res.status(502).json({ error: 'plex remote control failed' })
+        return { status: 502, body: { error: 'plex remote control failed' } }
       }
 
       notifyOverlayPlayer(target_device_id, {
@@ -392,8 +435,13 @@ router.post('/', async (req, res) => {
       // Update playback_state — sinon le dashboard reste sur "idle" pour les plays
       // qui passent par Remote Control (ils ne déclenchent pas de state_update WS).
       await db.execute({
-        sql: `UPDATE playback_state SET status='playing', catalog_id=?, title=?, app='plex', started_at=? WHERE device_id=?`,
-        args: [entry.id, entry.title, Date.now(), target_device_id]
+        sql: `UPDATE playback_state SET status='playing', catalog_id=?, title=?, app='plex', thumb=?, started_at=? WHERE device_id=?`,
+        args: [entry.id, entry.title, plexImageUrl ?? null, Date.now(), target_device_id]
+      })
+      // Socle « continuer sur… » : on enregistre de quoi reprendre/transférer ce média.
+      await upsertProgressOnLaunch(entry.id, {
+        catalogId: entry.id, app: 'plex', title: entry.title, thumb: plexImageUrl ?? null,
+        plexId: entry.plex_id, position: offsetMs, seekable: true, deviceId: target_device_id, userId,
       })
 
       // PAS de focus intent post Remote Control : la permission SYSTEM_ALERT_WINDOW
@@ -407,14 +455,14 @@ router.post('/', async (req, res) => {
         args: [target_device_id, entry.id, resolved_app, entry.title, Date.now(), requester, userId]
       })
       console.log(`[plex] remote control ok: ${entry.title} → ${target_device_id}`)
-      return res.json({ ok: true, device_id: target_device_id, catalog_id: entry.id, title: entry.title, app: resolved_app })
+      return { status: 200, body: { ok: true, device_id: target_device_id, catalog_id: entry.id, title: entry.title, app: resolved_app } }
     }
     // Fallback : watch URL via agent si pas de config Plex
     const plex_watch_url = await resolvePlexWatchUrl(entry.plex_id) ?? undefined
     const cmd: WsPlayCommand = { type: 'play', catalog_id: entry.id, app: resolved_app, title: entry.title, plex_id: entry.plex_id, plex_watch_url, requester: requester as RequesterType }
-    if (!sendPlayCommand(target_device_id, cmd)) return res.status(503).json({ error: 'failed to send command to device' })
+    if (!sendPlayCommand(target_device_id, cmd)) return { status: 503, body: { error: 'failed to send command to device' } }
     await db.execute({ sql: `INSERT INTO playback_history (device_id, catalog_id, app, title, started_at, requester, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)`, args: [target_device_id, entry.id, resolved_app, entry.title, Date.now(), requester, userId] })
-    return res.json({ ok: true, device_id: target_device_id, catalog_id: entry.id, title: entry.title, app: resolved_app })
+    return { status: 200, body: { ok: true, device_id: target_device_id, catalog_id: entry.id, title: entry.title, app: resolved_app } }
   }
 
   // 5. Autres apps : WebSocket vers l'agent
@@ -450,6 +498,11 @@ router.post('/', async (req, res) => {
     }
   }
 
+  // Position de départ (transfert/reprise) : seulement pour les flux seekable (pas le
+  // live, et les deep links externes reprennent via leur propre compte → ignoré).
+  const startMs = (resume_position_ms != null && finalApp !== 'external' && resolvedIptvType !== 'live')
+    ? Math.max(0, Math.round(resume_position_ms)) : 0
+
   const cmd: WsPlayCommand = {
     type: 'play',
     catalog_id: entry.id,
@@ -463,32 +516,114 @@ router.post('/', async (req, res) => {
     external_url: external_url ?? undefined,
     external_platform: external_platform ?? undefined,
     player: iptvPlayer,
+    resume_ms: startMs > 0 ? startMs : undefined,
     requester: requester as RequesterType
   }
 
   if (!sendPlayCommand(target_device_id, cmd)) {
-    return res.status(503).json({ error: 'failed to send command to device' })
+    return { status: 503, body: { error: 'failed to send command to device' } }
   }
+  const thumbUrl = buildImageUrl(req, thumb, resolved_app as string)
   notifyOverlayPlayer(target_device_id, {
     title: entry.title,
     message: resolvedIptvType === 'live' ? 'Live en cours' : 'En lecture',
     app_label: (resolved_app as string).toUpperCase(),
-    image: buildImageUrl(req, thumb, resolved_app as string),
+    image: thumbUrl,
     // Pour IPTV (logos chaînes) ratio carré → fitCenter ; VOD souvent posters → poster
     image_kind: resolved_app === 'iptv' && resolvedIptvType !== 'vod' ? 'logo' : 'poster',
   })
 
   await db.execute({
-    sql: `UPDATE playback_state SET status='playing', catalog_id=?, title=?, app=?, started_at=? WHERE device_id=?`,
-    args: [entry.id, entry.title, resolved_app, Date.now(), target_device_id]
+    sql: `UPDATE playback_state SET status='playing', catalog_id=?, title=?, app=?, thumb=?, started_at=? WHERE device_id=?`,
+    args: [entry.id, entry.title, resolved_app, thumbUrl ?? null, Date.now(), target_device_id]
   })
+
+  // Socle « continuer sur… ». Le live n'est pas suivi (rien à reprendre).
+  if (resolvedIptvType !== 'live') {
+    await upsertProgressOnLaunch(entry.id, {
+      catalogId: entry.id, app: finalApp, title: entry.title, thumb: thumbUrl ?? null,
+      plexId: entry.plex_id ?? null,
+      iptvStreamId: entry.tivimate_id ?? null, iptvType: resolvedIptvType ?? null, iptvExt: iptv_ext ?? null,
+      externalUrl: external_url ?? null, externalPlatform: external_platform ?? null,
+      position: startMs, seekable: finalApp !== 'external', deviceId: target_device_id, userId,
+    })
+  }
 
   await db.execute({
     sql: `INSERT INTO playback_history (device_id, catalog_id, app, title, started_at, requester, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     args: [target_device_id, entry.id, resolved_app, entry.title, Date.now(), requester, userId]
   })
 
-  res.json({ ok: true, device_id: target_device_id, catalog_id: entry.id, title: entry.title, app: resolved_app })
+  return { status: 200, body: { ok: true, device_id: target_device_id, catalog_id: entry.id, title: entry.title, app: resolved_app } }
+}
+
+// POST /play — requête utilisateur classique.
+router.post('/', async (req, res) => {
+  const parsed = PlaySchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
+  const userId = (req as any).userId ?? null // profil courant (header X-User-Id)
+  const r = await doPlay(parsed.data, userId, req)
+  res.status(r.status).json(r.body)
+})
+
+const TransferSchema = z.object({
+  from_device_id: z.string(),
+  to_device_id: z.string(),
+  player: z.string().nullable().optional().transform(v => v ?? undefined),
+})
+
+// POST /play/transfer — « continuer la lecture sur… » : enregistre la position courante,
+// arrête le device source, relance le même média sur la cible à la même position.
+// Ne marche que pour les médias relançables par le Hub (Plex, IPTV VOD/séries) ; le
+// live et les apps externes (Netflix/Disney+) ne sont pas transférables avec reprise.
+router.post('/transfer', async (req, res) => {
+  const parsed = TransferSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
+  const { from_device_id, to_device_id, player } = parsed.data
+  const userId = (req as any).userId ?? null
+
+  // Identité du média en cours sur la source
+  const { rows: psRows } = await db.execute({
+    sql: 'SELECT catalog_id, app, title FROM playback_state WHERE device_id = ?', args: [from_device_id],
+  })
+  const ps = psRows[0] as any | undefined
+  const mediaKey = ps?.catalog_id || (ps?.app && ps?.title ? `${ps.app}|${ps.title}` : null)
+  if (!mediaKey) return res.status(404).json({ error: 'rien à transférer sur ce device' })
+
+  const { rows: prRows } = await db.execute({ sql: 'SELECT * FROM playback_progress WHERE media_key = ?', args: [mediaKey] })
+  const pr = prRows[0] as any | undefined
+  if (!pr || (!pr.plex_id && !pr.iptv_stream_id && !pr.external_url)) {
+    return res.status(422).json({ error: 'media_not_transferable', message: 'Ce média a été lancé hors du Hub : impossible de le relancer ailleurs.' })
+  }
+
+  // Position live (plus fraîche que la DB throttlée) — extrapolée si en lecture.
+  const live = mediaStates.get(from_device_id)
+  let pos = Number(pr.position) || 0
+  if (live && live.duration > 0) {
+    pos = live.state === 'playing' ? live.position + (Date.now() - live.updated_at) : live.position
+    pos = Math.max(0, Math.min(pos, live.duration))
+  }
+  const isLive = pr.iptv_type === 'live'
+
+  // Stop sur la source avant de relancer ailleurs
+  if (isConnected(from_device_id)) sendControl(from_device_id, 'stop')
+
+  const input = PlaySchema.parse({
+    device_id: to_device_id,
+    app: pr.app || undefined,
+    plex_id: pr.plex_id || undefined,
+    iptv_stream_id: pr.iptv_stream_id || undefined,
+    iptv_type: pr.iptv_type || undefined,
+    iptv_ext: pr.iptv_ext || undefined,
+    external_url: pr.external_url || undefined,
+    external_platform: pr.external_platform || undefined,
+    title: pr.title || undefined,
+    thumb: pr.thumb || undefined,
+    resume_position_ms: isLive ? undefined : pos,
+    requester: 'manual',
+  })
+  const r = await doPlay(input, userId, req)
+  res.status(r.status).json({ ...r.body, transferred_position_ms: isLive ? null : pos })
 })
 
 export default router

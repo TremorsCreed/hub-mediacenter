@@ -7,7 +7,7 @@ const router = Router()
 
 const ALLOWED_ACTIONS = new Set([
   'play_pause', 'play', 'pause', 'stop', 'next', 'previous',
-  'volume_up', 'volume_down', 'mute', 'seek'
+  'volume_up', 'volume_down', 'mute', 'set_volume', 'seek'
 ])
 
 router.post('/:deviceId/:action', async (req, res) => {
@@ -16,11 +16,16 @@ router.post('/:deviceId/:action', async (req, res) => {
   if (!isConnected(deviceId)) return res.status(503).json({ error: 'device not connected', device_id: deviceId })
 
   // seek : position absolue en ms (?position=...), transmise à la session active.
+  // set_volume : volume absolu 0-100 (?level=...), appliqué au stream MUSIC du device.
   let extra: Record<string, unknown> | undefined
   if (action === 'seek') {
     const position = parseInt((req.query.position as string) ?? '')
     if (!Number.isFinite(position) || position < 0) return res.status(400).json({ error: 'position (ms) requise' })
     extra = { position }
+  } else if (action === 'set_volume') {
+    const level = parseInt((req.query.level as string) ?? '')
+    if (!Number.isFinite(level) || level < 0 || level > 100) return res.status(400).json({ error: 'level (0-100) requis' })
+    extra = { level }
   }
 
   const ok = sendControl(deviceId, action, extra)

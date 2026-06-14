@@ -164,8 +164,16 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
                 )
                 // Titre affiché par le lecteur (MX Player / VLC le lisent)
                 putExtra("title", cmd.title)
-                // VLC : démarre du début sans la pop-up "reprendre la lecture ?"
-                putExtra("from_start", true)
+                // Reprise « continuer sur… » : Just Player (ExoPlayer, lecteur VOD par
+                // défaut) lit l'extra "position" en ms (Long). MX Player free l'attend en
+                // Int → reprise non garantie pour lui (repli début, acceptable).
+                if (cmd.resumeMs > 0) {
+                    putExtra("position", cmd.resumeMs)
+                    Log.i(TAG, "Reprise à ${cmd.resumeMs}ms")
+                } else {
+                    // VLC : démarre du début sans la pop-up "reprendre la lecture ?"
+                    putExtra("from_start", true)
+                }
                 playerPkg?.let { setPackage(it) }
             }
             ctx.startActivity(intent)

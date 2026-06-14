@@ -3,7 +3,11 @@ import { api, MediaNow, Device } from '../api'
 import { useCurrentDeviceId } from '../usePersistentDevice'
 import { usePersistedState } from '../usePersistedState'
 import { launchRemote, canRemote } from '../remote'
-import { Play, Pause, Square, Rewind, FastForward, Radio, Pin, PinOff, Music, MonitorPlay } from 'lucide-react'
+import Toast from './Toast'
+import {
+  Play, Pause, Square, Rewind, FastForward, Radio, Pin, PinOff, Music, MonitorPlay,
+  Volume2, Volume1, VolumeX, ArrowRightLeft,
+} from 'lucide-react'
 
 // Badge couleur par app (cohérent avec les modules)
 const APP_STYLE: Record<string, { label: string; cls: string }> = {
@@ -39,11 +43,20 @@ export default function NowPlayingBar() {
   const [devices, setDevices] = useState<Device[]>([])
   const [, forceTick] = useState(0)
   const [scrub, setScrub] = useState<number | null>(null)
+  const [vol, setVol] = useState<number | null>(null)       // valeur pendant le drag du slider
   const [busy, setBusy] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [pinned, setPinned] = usePersistedState('hub.nowplaying.pin', false)
   const nullStreak = useRef(0)
+  const volTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => { api.devices.list().then(setDevices).catch(() => {}) }, [])
+
+  const flash = (msg: string, ok: boolean) => {
+    setToast({ msg, ok })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   // Poll de l'état de lecture (1,5s). Anti-clignotement : on ne masque qu'après
   // plusieurs réponses vides d'affilée (sinon la barre disparaît à chaque
@@ -90,7 +103,7 @@ export default function NowPlayingBar() {
   // Épinglée mais rien en lecture : barre « au repos »
   if (!hasMedia) {
     return (
-      <div className="shrink-0 h-16 bg-zinc-900 border-t border-zinc-800 flex items-center gap-3 px-4">
+      <div className="shrink-0 h-20 bg-zinc-900 border-t border-zinc-800 flex items-center gap-3 px-4">
         <Music size={16} className="text-zinc-600" />
         <div className="text-sm text-zinc-500 flex-1">
           Rien en lecture{device ? ` sur ${device.name}` : ''}
@@ -111,18 +124,63 @@ export default function NowPlayingBar() {
   const ctrl = async (fn: () => Promise<unknown>) => { setBusy(true); try { await fn() } catch { /* */ } finally { setBusy(false) } }
   const seekTo = (ms: number) => ctrl(() => api.control.seek(deviceId, Math.max(0, Math.min(ms, m.duration || ms))))
 
+  // Volume : valeur affichée = drag en cours, sinon ce que remonte l'agent. Le slider
+  // n'apparaît que si l'agent fournit le volume (sinon mute/±, déjà gérés ailleurs).
+  const hasVolume = typeof m.volume === 'number'
+  const shownVol = vol != null ? vol : (m.volume ?? 0)
+  const onVolInput = (v: number) => {
+    setVol(v)
+    if (volTimer.current) clearTimeout(volTimer.current)
+    volTimer.current = setTimeout(() => {
+      api.control.setVolume(deviceId, v).catch(() => {})
+      setVol(null)
+    }, 180)
+  }
+
+  // « Continuer sur… » : autres devices connectés (la cible ≠ source).
+  const targets = devices.filter(d => d.id !== deviceId && d.ws_connected)
+  const transfer = (to: Device) => {
+    setMenuOpen(false)
+    ctrl(async () => {
+      try {
+        const r = await api.transferPlayback(deviceId, to.id)
+        const at = r.transferred_position_ms != null ? ` à ${fmt(r.transferred_position_ms)}` : ''
+        flash(`Lecture transférée sur ${to.name}${at}`, true)
+      } catch (e) {
+        const msg = (e as Error).message
+        flash(msg === 'media_not_transferable'
+          ? 'Ce média ne peut pas être transféré (lancé hors du Hub ou live).'
+          : `Échec du transfert : ${msg}`, false)
+      }
+    })
+  }
+
+  const VolIcon = m.muted ? VolumeX : shownVol < 50 ? Volume1 : Volume2
+
   return (
-    <div className="shrink-0 h-16 bg-zinc-900 border-t border-zinc-800 flex items-center gap-4 px-4">
-      <div className="flex items-center gap-3 min-w-0 w-64 shrink-0">
-        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded ${appStyle.cls}`}>
-          {appStyle.label}
-        </span>
+    <div className="shrink-0 h-20 bg-zinc-900 border-t border-zinc-800 flex items-center gap-4 px-4">
+      {/* Miniature + titre */}
+      <div className="flex items-center gap-3 min-w-0 w-72 shrink-0">
+        <div className="relative h-14 w-14 shrink-0 rounded overflow-hidden bg-zinc-800 ring-1 ring-zinc-700/60">
+          {m.thumb ? (
+            <img src={m.thumb} alt="" className="h-full w-full object-cover" loading="lazy"
+              onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+          ) : (
+            <div className="h-full w-full flex items-center justify-center text-zinc-600">
+              <Music size={20} />
+            </div>
+          )}
+        </div>
         <div className="min-w-0">
-          <div className="text-sm text-zinc-100 truncate font-medium">{m.title || 'Lecture en cours'}</div>
+          <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${appStyle.cls}`}>
+            {appStyle.label}
+          </span>
+          <div className="text-sm text-zinc-100 truncate font-medium mt-0.5">{m.title || 'Lecture en cours'}</div>
           {device && <div className="text-[11px] text-zinc-400 truncate">sur {device.name}</div>}
         </div>
       </div>
 
+      {/* Transport */}
       <div className="flex items-center gap-1 shrink-0">
         {hasBar && (
           <button onClick={() => seekTo(pos - 10000)} disabled={busy} title="−10 s"
@@ -146,6 +204,7 @@ export default function NowPlayingBar() {
         )}
       </div>
 
+      {/* Progression / Live */}
       {hasBar ? (
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <span className="text-[11px] tabular-nums text-zinc-400 w-12 text-right">{fmt(pos)}</span>
@@ -167,8 +226,55 @@ export default function NowPlayingBar() {
         </div>
       )}
 
+      {/* Volume */}
+      <div className="flex items-center gap-2 shrink-0">
+        <button onClick={() => ctrl(() => api.control.send(deviceId, 'mute'))} disabled={busy}
+          title={m.muted ? 'Réactiver le son' : 'Couper le son'}
+          className={`inline-flex items-center justify-center min-w-11 min-h-11 rounded transition-colors disabled:opacity-40 ${m.muted ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}>
+          <VolIcon size={18} />
+        </button>
+        {hasVolume && (
+          <input
+            type="range" min={0} max={100} value={m.muted ? 0 : shownVol}
+            onChange={e => onVolInput(Number(e.target.value))}
+            title={`Volume ${m.muted ? 0 : shownVol}%`}
+            className="w-20 h-1 accent-amber-500 cursor-pointer"
+          />
+        )}
+      </div>
+
+      {/* Continuer sur… */}
+      {targets.length > 0 && (
+        <div className="relative shrink-0">
+          <button onClick={() => setMenuOpen(o => !o)} disabled={busy}
+            title="Continuer la lecture sur un autre lecteur"
+            className={`inline-flex items-center justify-center min-w-11 min-h-11 rounded transition-colors disabled:opacity-40 ${menuOpen ? 'text-amber-400' : 'text-zinc-500 hover:text-amber-400'}`}>
+            <ArrowRightLeft size={16} />
+          </button>
+          {menuOpen && (
+            <>
+              {/* clic en dehors → ferme */}
+              <div className="fixed inset-0 z-[105]" onClick={() => setMenuOpen(false)} />
+              <div className="absolute bottom-full right-0 mb-2 z-[106] w-56 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1">
+                <div className="px-3 py-1.5 text-[11px] uppercase tracking-wider text-zinc-500 font-semibold">
+                  Continuer sur…
+                </div>
+                {targets.map(t => (
+                  <button key={t.id} onClick={() => transfer(t)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-700/70 text-left transition-colors">
+                    <MonitorPlay size={14} className="text-zinc-400 shrink-0" />
+                    <span className="truncate">{t.name}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {RemoteBtn}
       {PinBtn}
+      {toast && <Toast msg={toast.msg} ok={toast.ok} />}
     </div>
   )
 }

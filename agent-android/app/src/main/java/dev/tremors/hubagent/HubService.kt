@@ -269,6 +269,15 @@ class HubService : Service() {
             "volume_up" -> am.adjustVolume(AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
             "volume_down" -> am.adjustVolume(AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
             "mute" -> am.adjustVolume(AudioManager.ADJUST_TOGGLE_MUTE, AudioManager.FLAG_SHOW_UI)
+            // Volume absolu (slider du Hub) : 0-100 → index sur le stream MUSIC.
+            "set_volume" -> {
+                val level = json.optInt("level", -1)
+                if (level in 0..100) {
+                    val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                    val idx = Math.round(level * max / 100f)
+                    am.setStreamVolume(AudioManager.STREAM_MUSIC, idx, AudioManager.FLAG_SHOW_UI)
+                }
+            }
             else -> Log.w(TAG, "Unknown control action: $action")
         }
         // Feedback rapide : on re-rapporte l'état ~400ms après l'action (sans attendre
@@ -414,12 +423,28 @@ class HubService : Service() {
         // scrubber côté Hub, juste play/pause/stop).
         val seekable = ((playbackState?.actions ?: 0L) and PlaybackState.ACTION_SEEK_TO) != 0L
 
+        // Miniature : URI de pochette exposée par la MediaSession (le Hub ne garde que
+        // les URL http(s) ; les content:// ne sont pas joignables depuis le Hub).
+        val art = active.metadata?.let { md ->
+            md.getString(android.media.MediaMetadata.METADATA_KEY_ART_URI)
+                ?: md.getString(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
+                ?: md.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI)
+        }?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+
+        // Volume courant (stream MUSIC = celui des apps vidéo sur Android TV) en %.
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val volPct = if (maxVol > 0) Math.round(am.getStreamVolume(AudioManager.STREAM_MUSIC) * 100f / maxVol) else -1
+        // isStreamMute = API 23 ; minSdk 22 → repli sur « volume nul » sous Android 5.1.
+        val muted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+            am.isStreamMute(AudioManager.STREAM_MUSIC) else volPct == 0
+
         // Toujours update l'overlay à chaque tick (sinon la barre de progression ne bouge
         // pas et le badge ⏸/▶ ne reflète pas le state).
         overlay.updatePlayerStatus(isPlaying, isPaused, position, duration, appLabel)
 
         // Barre « lecture en cours » du Hub : envoyée à CHAQUE tick (la position avance).
-        webSocket?.send(buildMediaUpdate(state, appLabel, title, position, duration, seekable, pkg))
+        webSocket?.send(buildMediaUpdate(state, appLabel, title, position, duration, seekable, pkg, art, volPct, muted))
 
         // Anti-spam WS : on n'envoie state_update (notif/dashboard) que si état/title/app
         // ont changé.

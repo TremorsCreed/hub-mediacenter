@@ -216,6 +216,9 @@ export async function initDb() {
   // Migrations idempotentes (ALTER TABLE échoue silencieusement si la colonne existe)
   try { await db.execute("ALTER TABLE device_config ADD COLUMN xtream_credential_id INTEGER") } catch {}
   try { await db.execute("ALTER TABLE playback_state ADD COLUMN title TEXT") } catch {}
+  // Miniature du média en cours (URL absolue déjà proxifiée) — affichée dans la barre
+  // « lecture en cours » quand la MediaSession ne fournit pas d'art (cas Just Player/IPTV).
+  try { await db.execute("ALTER TABLE playback_state ADD COLUMN thumb TEXT") } catch {}
   try { await db.execute("ALTER TABLE device_config ADD COLUMN tvoverlay_enabled INTEGER NOT NULL DEFAULT 0") } catch {}
   try { await db.execute("ALTER TABLE device_config ADD COLUMN overlay_player_duration INTEGER NOT NULL DEFAULT 0") } catch {}
   // Lecteur IPTV préféré par device : 'auto' | 'mxplayer' | 'vlc' | 'tivimate'
@@ -234,6 +237,39 @@ export async function initDb() {
   try { await db.execute("ALTER TABLE playlist_items ADD COLUMN ext TEXT") } catch {}
   // Logo de la chaîne pour l'overlay de rappel EPG (carte du bas)
   try { await db.execute("ALTER TABLE epg_reminders ADD COLUMN logo TEXT") } catch {}
+
+  // ── Progression de lecture ───────────────────────────────────────────────────
+  // Avancement du dernier passage de CHAQUE média (Hub ou lancé hors Hub), pour
+  // pouvoir reprendre ailleurs (« continuer la lecture sur… ») ou plus tard.
+  // media_key = catalog_id (synthétique : plex:…/iptv:type:…/ext:…) si lancé par le
+  // Hub, sinon `${app}|${title}` (sessions détectées sans passer par /play).
+  // Les champs de relecture (plex_id, iptv_*, external_*) ne sont remplis QUE pour
+  // les lancements Hub — c'est ce qui rend le transfert possible. Le live et les
+  // flux non-seekable ne sont pas suivis (aucune position à reprendre).
+  // Pas de scoping par profil en v1 : la notion de session active par device
+  // arrivera avec le sprint Zaparoo (cf. mémoire). user_id reste nullable.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS playback_progress (
+      media_key TEXT PRIMARY KEY,
+      catalog_id TEXT,
+      app TEXT,
+      title TEXT,
+      thumb TEXT,
+      plex_id TEXT,
+      iptv_stream_id TEXT,
+      iptv_type TEXT,
+      iptv_ext TEXT,
+      external_url TEXT,
+      external_platform TEXT,
+      position INTEGER NOT NULL DEFAULT 0,
+      duration INTEGER NOT NULL DEFAULT 0,
+      seekable INTEGER NOT NULL DEFAULT 0,
+      device_id TEXT,
+      user_id INTEGER,
+      updated_at INTEGER NOT NULL DEFAULT 0
+    )
+  `)
+  await db.execute("CREATE INDEX IF NOT EXISTS idx_progress_updated ON playback_progress(updated_at DESC)")
 
   // ── Spotify : un compte Spotify lié par profil hub ───────────────────────────
   // Le token « suit le profil actif » (cf. design Spotify). user_id = id du profil hub,

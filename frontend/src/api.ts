@@ -293,6 +293,9 @@ export interface MediaNow {
   duration: number   // ms (0 = inconnu / live)
   seekable: boolean
   package?: string
+  thumb?: string     // miniature (art MediaSession ou thumb persisté au lancement)
+  volume?: number    // volume courant 0-100 (stream MUSIC du device)
+  muted?: boolean
   updated_at: number // ms epoch — pour extrapoler la position pendant la lecture
 }
 
@@ -541,6 +544,9 @@ export const api = {
     search: (q: string) => get<ScListResult[]>(`/senscritique/search?q=${encodeURIComponent(q)}`),
   },
   play: (intent: PlayIntent) => post<{ ok: boolean; title: string; device_id: string; app: string }>('/play', intent),
+  // « Continuer la lecture sur… » : enregistre la position, stoppe la source, relance sur la cible.
+  transferPlayback: (from_device_id: string, to_device_id: string, player?: string) =>
+    post<{ ok: boolean; title: string; device_id: string; app: string; transferred_position_ms: number | null }>('/play/transfer', { from_device_id, to_device_id, player }),
   credentials: {
     list: () => get<Credential[]>('/credentials'),
     create: (c: Omit<Credential, 'id' | 'created_at' | 'updated_at'>) => post<{ ok: boolean; id: number }>('/credentials', c),
@@ -609,6 +615,8 @@ export const api = {
       post<{ ok: boolean; action: string }>(`/control/${deviceId}/${action}`, {}),
     seek: (deviceId: string, positionMs: number) =>
       post<{ ok: boolean; action: string }>(`/control/${deviceId}/seek?position=${Math.max(0, Math.round(positionMs))}`, {}),
+    setVolume: (deviceId: string, level: number) =>
+      post<{ ok: boolean; action: string }>(`/control/${deviceId}/set_volume?level=${Math.max(0, Math.min(100, Math.round(level)))}`, {}),
     now: (deviceId: string) => get<MediaNow | null>(`/state/now/${deviceId}`),
   },
   iptv: {

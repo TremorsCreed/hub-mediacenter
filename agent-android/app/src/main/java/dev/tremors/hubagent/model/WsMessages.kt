@@ -31,6 +31,7 @@ data class PlayCommand(
     val externalUrl: String?,        // Netflix/Disney+/... deep link
     val externalPlatform: String?,   // "netflix" | "disney+" | ...
     val player: String? = null,      // lecteur IPTV préféré : auto/mxplayer/vlc/tivimate
+    val resumeMs: Long = 0,          // position de départ (transfert « continuer sur… »/reprise)
     val requester: String
 ) {
     companion object {
@@ -48,6 +49,7 @@ data class PlayCommand(
             externalUrl = json.optString("external_url").ifEmpty { null },
             externalPlatform = json.optString("external_platform").ifEmpty { null },
             player = json.optString("player").ifEmpty { null } ?: config?.iptvPlayer?.ifEmpty { null },
+            resumeMs = json.optLong("resume_ms", 0),
             requester = json.optString("requester", "unknown")
         )
     }
@@ -107,6 +109,7 @@ data class HubConfig(
 fun buildMediaUpdate(
     state: String, app: String?, title: String?,
     positionMs: Long, durationMs: Long, seekable: Boolean, pkg: String?,
+    art: String? = null, volume: Int = -1, muted: Boolean = false,
 ): String = JSONObject().apply {
     put("type", "media")
     put("state", state)
@@ -116,6 +119,9 @@ fun buildMediaUpdate(
     put("duration", durationMs)
     put("seekable", seekable)
     pkg?.let { put("package", it) }
+    art?.let { put("art", it) }
+    if (volume >= 0) put("volume", volume)
+    put("muted", muted)
 }.toString()
 
 fun buildPing(): String = JSONObject().apply { put("type", "ping") }.toString()

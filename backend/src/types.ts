@@ -83,5 +83,6 @@ export interface WsPlayCommand extends WsMessage {
   external_url?: string       // deep link Netflix/Disney+/etc.
   external_platform?: string  // "netflix" | "disney+" | "primevideo" | "appletvplus" | "web"
   player?: string             // lecteur IPTV préféré : 'auto' | 'justplayer' | 'mxplayer' | 'vlc' | 'tivimate'
+  resume_ms?: number          // position de départ (ms) — transfert « continuer sur… » / reprise
   requester: RequesterType
 }

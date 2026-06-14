@@ -8,9 +8,21 @@ const router = Router()
 
 // GET /now/:deviceId — état de lecture temps réel (barre « lecture en cours »).
 // null si rien ne joue. La position est un instantané + updated_at pour que le
-// client l'extrapole pendant la lecture.
-router.get('/now/:deviceId', (req, res) => {
-  res.json(mediaStates.get(req.params.deviceId) ?? null)
+// client l'extrapole pendant la lecture. On enrichit avec la miniature : l'art de
+// la MediaSession (poussé par l'agent) en priorité, sinon le thumb persisté par
+// /play (cas Just Player/IPTV où la session n'expose pas de pochette).
+router.get('/now/:deviceId', async (req, res) => {
+  const m = mediaStates.get(req.params.deviceId)
+  if (!m) return res.json(null)
+  let thumb = m.art
+  if (!thumb) {
+    const { rows } = await db.execute({
+      sql: 'SELECT thumb FROM playback_state WHERE device_id = ?',
+      args: [req.params.deviceId],
+    })
+    thumb = ((rows[0] as any)?.thumb as string) || undefined
+  }
+  res.json({ ...m, thumb })
 })
 
 router.get('/', async (_req, res) => {

@@ -21,9 +21,17 @@ export interface MediaState {
   duration: number
   seekable: boolean
   package?: string
+  art?: string             // URL http(s) de la pochette (MediaSession), si fournie
+  volume?: number          // volume courant 0-100 (stream MUSIC du device)
+  muted?: boolean
   updated_at: number       // pour extrapoler la position côté client
 }
 export const mediaStates = new Map<string, MediaState>()
+
+// Anti-spam d'écritures DB de progression : on ne sauvegarde au plus qu'une fois
+// toutes les PROGRESS_SAVE_MS par device (le tick agent arrive ~toutes les 2s).
+const PROGRESS_SAVE_MS = 8000
+const lastProgressSave = new Map<string, number>()
 
 export function setupWebSocket(server: Server) {
   const wss = new WebSocketServer({ server, path: '/ws' })
@@ -222,8 +230,10 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
       // avance). Stocké en mémoire, lu par la barre du Hub via /api/state/now.
       if (msg.state === 'stopped') {
         mediaStates.delete(device_id)
+        lastProgressSave.delete(device_id)
       } else {
-        mediaStates.set(device_id, {
+        const art = (msg.art as string) || undefined
+        const state: MediaState = {
           state: String(msg.state),
           app: (msg.app as string) || undefined,
           title: (msg.title as string) || undefined,
@@ -231,8 +241,13 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
           duration: Number(msg.duration ?? 0),
           seekable: !!msg.seekable,
           package: (msg.package as string) || undefined,
+          art: art && /^https?:\/\//.test(art) ? art : undefined,
+          volume: msg.volume != null ? Number(msg.volume) : undefined,
+          muted: msg.muted != null ? !!msg.muted : undefined,
           updated_at: Date.now(),
-        })
+        }
+        mediaStates.set(device_id, state)
+        void persistProgress(device_id, state)
       }
       break
     }
@@ -246,6 +261,47 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
       break
     }
   }
+}
+
+// Persiste l'avancement du média en cours (throttlé). On résout l'identité du média
+// (catalog_id + champs de relecture déjà posés par /play) depuis playback_state, et on
+// ne met à jour QUE la position/durée sur conflit — sans écraser plex_id/iptv_*/external_*
+// (sinon une session détectée hors Hub effacerait les infos de relecture).
+async function persistProgress(deviceId: string, m: MediaState): Promise<void> {
+  if (!m.seekable || m.duration <= 0) return
+  if (m.state !== 'playing' && m.state !== 'paused') return
+  const now = Date.now()
+  if (now - (lastProgressSave.get(deviceId) ?? 0) < PROGRESS_SAVE_MS) return
+  lastProgressSave.set(deviceId, now)
+  try {
+    const { rows } = await db.execute({
+      sql: 'SELECT catalog_id, title, app, thumb FROM playback_state WHERE device_id = ?',
+      args: [deviceId],
+    })
+    const ps = rows[0] as any | undefined
+    const catalogId = (ps?.catalog_id as string) || null
+    const app = m.app || (ps?.app as string) || null
+    const title = m.title || (ps?.title as string) || null
+    const mediaKey = catalogId || (app && title ? `${app}|${title}` : null)
+    if (!mediaKey) return
+    const thumb = m.art || (ps?.thumb as string) || null
+    await db.execute({
+      sql: `INSERT INTO playback_progress
+              (media_key, catalog_id, app, title, thumb, position, duration, seekable, device_id, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(media_key) DO UPDATE SET
+              position = excluded.position,
+              duration = excluded.duration,
+              seekable = excluded.seekable,
+              device_id = excluded.device_id,
+              thumb = COALESCE(excluded.thumb, playback_progress.thumb),
+              app = COALESCE(excluded.app, playback_progress.app),
+              title = COALESCE(excluded.title, playback_progress.title),
+              updated_at = excluded.updated_at`,
+      args: [mediaKey, catalogId, app, title, thumb,
+             Math.round(m.position), Math.round(m.duration), m.seekable ? 1 : 0, deviceId, now],
+    })
+  } catch { /* best-effort : la progression n'est pas critique */ }
 }
 
 export function sendPlayCommand(device_id: string, cmd: WsPlayCommand): boolean {

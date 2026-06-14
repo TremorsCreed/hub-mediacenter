@@ -6,7 +6,7 @@ import { launchRemote, canRemote } from '../remote'
 import Toast from './Toast'
 import {
   Play, Pause, Square, Rewind, FastForward, Radio, Pin, PinOff, Music, MonitorPlay,
-  Volume2, Volume1, VolumeX, ArrowRightLeft,
+  Volume2, VolumeX, Minus, Plus, ArrowRightLeft,
 } from 'lucide-react'
 
 // Badge couleur par app (cohérent avec les modules)
@@ -43,13 +43,11 @@ export default function NowPlayingBar() {
   const [devices, setDevices] = useState<Device[]>([])
   const [, forceTick] = useState(0)
   const [scrub, setScrub] = useState<number | null>(null)
-  const [vol, setVol] = useState<number | null>(null)       // valeur pendant le drag du slider
   const [busy, setBusy] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [pinned, setPinned] = usePersistedState('hub.nowplaying.pin', false)
   const nullStreak = useRef(0)
-  const volTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => { api.devices.list().then(setDevices).catch(() => {}) }, [])
 
@@ -124,19 +122,6 @@ export default function NowPlayingBar() {
   const ctrl = async (fn: () => Promise<unknown>) => { setBusy(true); try { await fn() } catch { /* */ } finally { setBusy(false) } }
   const seekTo = (ms: number) => ctrl(() => api.control.seek(deviceId, Math.max(0, Math.min(ms, m.duration || ms))))
 
-  // Volume : valeur affichée = drag en cours, sinon ce que remonte l'agent. Le slider
-  // n'apparaît que si l'agent fournit le volume (sinon mute/±, déjà gérés ailleurs).
-  const hasVolume = typeof m.volume === 'number'
-  const shownVol = vol != null ? vol : (m.volume ?? 0)
-  const onVolInput = (v: number) => {
-    setVol(v)
-    if (volTimer.current) clearTimeout(volTimer.current)
-    volTimer.current = setTimeout(() => {
-      api.control.setVolume(deviceId, v).catch(() => {})
-      setVol(null)
-    }, 180)
-  }
-
   // « Continuer sur… » : autres devices connectés (la cible ≠ source).
   const targets = devices.filter(d => d.id !== deviceId && d.ws_connected)
   const transfer = (to: Device) => {
@@ -155,7 +140,7 @@ export default function NowPlayingBar() {
     })
   }
 
-  const VolIcon = m.muted ? VolumeX : shownVol < 50 ? Volume1 : Volume2
+  const VolIcon = m.muted ? VolumeX : Volume2
 
   return (
     <div className="shrink-0 h-20 bg-zinc-900 border-t border-zinc-800 flex items-center gap-4 px-4">
@@ -226,21 +211,23 @@ export default function NowPlayingBar() {
         </div>
       )}
 
-      {/* Volume */}
-      <div className="flex items-center gap-2 shrink-0">
+      {/* Volume relatif : crans − / mute / + transmis au device (et relayés à l'ampli
+          via HDMI-CEC le cas échéant). Pas de slider absolu : quand le device délègue
+          son volume à un AVR, il ne connaît pas le niveau réel → un absolu serait faux. */}
+      <div className="flex items-center gap-1 shrink-0">
+        <button onClick={() => ctrl(() => api.control.send(deviceId, 'volume_down'))} disabled={busy} title="Baisser le volume"
+          className="inline-flex items-center justify-center min-w-11 min-h-11 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors">
+          <Minus size={18} />
+        </button>
         <button onClick={() => ctrl(() => api.control.send(deviceId, 'mute'))} disabled={busy}
           title={m.muted ? 'Réactiver le son' : 'Couper le son'}
           className={`inline-flex items-center justify-center min-w-11 min-h-11 rounded transition-colors disabled:opacity-40 ${m.muted ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}>
           <VolIcon size={18} />
         </button>
-        {hasVolume && (
-          <input
-            type="range" min={0} max={100} value={m.muted ? 0 : shownVol}
-            onChange={e => onVolInput(Number(e.target.value))}
-            title={`Volume ${m.muted ? 0 : shownVol}%`}
-            className="w-20 h-1 accent-amber-500 cursor-pointer"
-          />
-        )}
+        <button onClick={() => ctrl(() => api.control.send(deviceId, 'volume_up'))} disabled={busy} title="Monter le volume"
+          className="inline-flex items-center justify-center min-w-11 min-h-11 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors">
+          <Plus size={18} />
+        </button>
       </div>
 
       {/* Continuer sur… */}

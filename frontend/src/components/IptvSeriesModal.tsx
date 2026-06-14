@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { api, IptvSeriesInfo } from '../api'
+import { api, IptvSeriesInfo, UpNextItem } from '../api'
 import { useModalA11y } from '../useModalA11y'
 import { ChevronDown, ChevronRight, Loader2, Play, X } from 'lucide-react'
 
@@ -41,9 +41,30 @@ export default function IptvSeriesModal({
   const toggleSeason = (n: number) =>
     setOpenSeasons(prev => { const s = new Set(prev); s.has(n) ? s.delete(n) : s.add(n); return s })
 
+  // Liste à plat, ordonnée (saison puis épisode), de tous les épisodes de la série.
+  // Sert à construire la file d'autoplay (les épisodes APRÈS celui qu'on lance).
+  const flatEpisodes = (): { id: string; item: UpNextItem }[] => {
+    if (!detail) return []
+    const name = detail.info.name ?? titleFallback ?? 'Série'
+    const out: { id: string; item: UpNextItem }[] = []
+    for (const s of detail.seasons)
+      for (const ep of s.episodes)
+        out.push({
+          id: ep.episode_id,
+          item: {
+            iptv_stream_id: ep.episode_id, iptv_type: 'series', iptv_ext: ep.container_extension,
+            title: `${name} — S${s.season_number}E${ep.episode_num} ${ep.title}`, thumb: coverFallback,
+          },
+        })
+    return out
+  }
+
   const playEpisode = async (epId: string, ext: string, title: string) => {
     if (!deviceId) { onError?.('Sélectionne un device'); return }
     setLaunching(`ep-${epId}`)
+    const flat = flatEpisodes()
+    const idx = flat.findIndex(f => f.id === epId)
+    const up_next = idx >= 0 ? flat.slice(idx + 1).map(f => f.item) : undefined
     try {
       const r = await api.play({
         iptv_stream_id: epId,
@@ -51,6 +72,7 @@ export default function IptvSeriesModal({
         iptv_ext: ext,
         title,
         thumb: coverFallback,
+        up_next,
         app: 'iptv',
         device_id: deviceId,
         requester: 'manual',

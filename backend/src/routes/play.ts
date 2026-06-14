@@ -1,7 +1,8 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db'
-import { sendPlayCommand, sendNotify, isConnected, getConnectedIds, sendControl, mediaStates } from '../ws'
+import { sendPlayCommand, sendNotify, isConnected, getConnectedIds, sendControl, mediaStates,
+  setUpNext, cancelAutoplay, fireAutoplayNow, setAutoplayLauncher, UpNextItem } from '../ws'
 import { AppId, CatalogEntry, RequesterType, WsPlayCommand } from '../types'
 import { resolvePlexWatchUrl } from './plex'
 import { spotifyFetch, MAISON_USER_ID } from './spotify'
@@ -173,6 +174,11 @@ async function plexRemotePlay(deviceIp: string, ratingKey: string, plexToken: st
 
 const router = Router()
 
+// Dernier host/protocole vus sur une vraie requête /play — réutilisés pour l'autoplay
+// (qui relance sans requête HTTP) afin que les URLs d'images d'overlay soient joignables.
+let lastHost = process.env.PUBLIC_URL || `localhost:${process.env.PORT || '8020'}`
+let lastProto = 'http'
+
 const PlaySchema = z.object({
   query: z.string().optional(),
   catalog_id: z.string().optional(),
@@ -192,6 +198,15 @@ const PlaySchema = z.object({
   resume: z.boolean().optional(),
   // Position de départ (ms) — transfert « continuer sur… » / reprise explicite.
   resume_position_ms: z.number().nullable().optional().transform(v => v ?? undefined),
+  // File d'attente des épisodes SUIVANTS (autoplay) — ordonnée, sans l'épisode courant.
+  up_next: z.array(z.object({
+    plex_id: z.string().optional(),
+    iptv_stream_id: z.string().optional(),
+    iptv_type: z.string().optional(),
+    iptv_ext: z.string().optional(),
+    title: z.string().optional(),
+    thumb: z.string().optional(),
+  })).nullable().optional().transform(v => v ?? undefined),
   device_id: z.string().optional(),
   app: z.string().optional(),
   requester: z.enum(['zaparoo', 'llm', 'n8n', 'manual', 'ha']).default('manual')
@@ -274,7 +289,7 @@ type PlayResult = { status: number; body: any }
 // POST /play/transfer (« continuer sur… »). Retourne { status, body } au lieu d'écrire
 // la réponse, pour que les deux routes décident du code HTTP.
 async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, req: any): Promise<PlayResult> {
-  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, iptv_ext, external_url, external_platform, spotify_uri, spotify_device_id, title, thumb, resume, resume_position_ms, device_id, app, requester } = input
+  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, iptv_ext, external_url, external_platform, spotify_uri, spotify_device_id, title, thumb, resume, resume_position_ms, up_next, device_id, app, requester } = input
 
   // 0. Spotify : flux à part — contrôle Spotify Connect via Web API, pas le catalogue
   //    ni l'agent WS. Le token « suit le profil actif » : on lit avec le compte du
@@ -361,6 +376,10 @@ async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, 
 
   if (!target_device_id) return { status: 503, body: { error: 'no device available for this media type' } }
   if (!isConnected(target_device_id)) return { status: 503, body: { error: 'device not connected', device_id: target_device_id } }
+
+  // File d'attente autoplay : ce play (épisode courant) définit la suite. Un play sans
+  // up_next efface toute file/compte à rebours en cours pour ce device.
+  setUpNext(target_device_id, up_next as UpNextItem[] | undefined, userId)
 
   // 3. Resolve app
   const { rows: devRows } = await db.execute({ sql: 'SELECT capabilities FROM devices WHERE id = ?', args: [target_device_id] })
@@ -562,8 +581,45 @@ router.post('/', async (req, res) => {
   const parsed = PlaySchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
   const userId = (req as any).userId ?? null // profil courant (header X-User-Id)
+  // Mémorise un req « réaliste » (host LAN) pour l'autoplay, qui n'a pas de requête HTTP.
+  lastProto = req.protocol || 'http'
+  lastHost = (req.headers?.host as string) || lastHost
   const r = await doPlay(parsed.data, userId, req)
   res.status(r.status).json(r.body)
+})
+
+// POST /play/cancel-next/:deviceId — annule le compte à rebours autoplay en cours.
+router.post('/cancel-next/:deviceId', (req, res) => {
+  cancelAutoplay(req.params.deviceId)
+  res.json({ ok: true })
+})
+
+// POST /play/play-next-now/:deviceId — lance immédiatement l'épisode en attente.
+router.post('/play-next-now/:deviceId', (req, res) => {
+  const ok = fireAutoplayNow(req.params.deviceId)
+  res.json({ ok })
+})
+
+// Autoplay : enregistre le lanceur (relance le suivant via doPlay, en propageant le
+// reste de la file). Pas de requête HTTP ici → on fabrique un req synthétique avec le
+// dernier host LAN connu (pour que les images d'overlay restent joignables par la TV).
+setAutoplayLauncher((deviceId, item, rest, userId) => {
+  const fakeReq = { protocol: lastProto, headers: { host: lastHost } }
+  const input = PlaySchema.parse({
+    device_id: deviceId,
+    app: item.plex_id ? 'plex' : 'iptv',
+    plex_id: item.plex_id,
+    iptv_stream_id: item.iptv_stream_id,
+    iptv_type: item.iptv_type ?? (item.iptv_stream_id ? 'series' : undefined),
+    iptv_ext: item.iptv_ext,
+    title: item.title,
+    thumb: item.thumb,
+    up_next: rest,
+    requester: 'manual',
+  })
+  doPlay(input, userId, fakeReq)
+    .then(r => { if (r.status >= 400) console.warn('[autoplay] launch failed:', r.body?.error) })
+    .catch(e => console.error('[autoplay] launch error:', e))
 })
 
 const TransferSchema = z.object({

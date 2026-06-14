@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { api, Device, PlexItem, PlexOnDeckItem, PlexSection, PlexShowDetail } from '../api'
+import { api, Device, PlexItem, PlexOnDeckItem, PlexSection, PlexShowDetail, UpNextItem } from '../api'
 import { usePersistentDevice } from '../usePersistentDevice'
 import { usePersistedState } from '../usePersistedState'
 import { Search, Play, Loader2, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, X, ChevronDown, Check, Film, Tv, Music, Image, Library } from 'lucide-react'
@@ -274,12 +274,21 @@ export default function Plex() {
     if (!deviceId) { setToast({ msg: 'Sélectionne un device', ok: false }); return }
     setLaunching(`ep-${ep.ratingKey}`)
     const resume = (ep.viewOffset ?? 0) > 0
+    // File d'autoplay : tous les épisodes de la série (à plat, ordonnés) après celui-ci.
+    const name = selectedShow?.title ?? showDetail?.info.title ?? 'Série'
+    const flat: { id: string; item: UpNextItem }[] = []
+    for (const s of showDetail?.seasons ?? [])
+      for (const e of s.episodes)
+        flat.push({ id: e.ratingKey, item: { plex_id: e.ratingKey, title: `${name} — S${s.season_number}E${e.episode_number} ${e.title}`, thumb: e.thumb || selectedShow?.thumb } })
+    const idx = flat.findIndex(f => f.id === ep.ratingKey)
+    const up_next = idx >= 0 ? flat.slice(idx + 1).map(f => f.item) : undefined
     try {
       const r = await api.play({
         plex_id: ep.ratingKey,
         title: `${selectedShow?.title} — S${season}E${epNum} ${ep.title}`,
         thumb: ep.thumb || selectedShow?.thumb,
         resume,
+        up_next,
         app: 'plex',
         device_id: deviceId,
         requester: 'manual',

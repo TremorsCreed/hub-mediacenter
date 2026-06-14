@@ -9,7 +9,7 @@ const router = Router()
 // N'expose jamais le pin_hash, juste un booléen has_pin.
 router.get('/', async (_req, res) => {
   const { rows } = await db.execute(
-    "SELECT id, name, avatar_color, is_admin, (pin_hash IS NOT NULL) as has_pin, (nfc_token IS NOT NULL) as has_nfc, COALESCE(preferred_lang, 'FR') as preferred_lang, default_device_id, default_player, created_at FROM users ORDER BY is_admin DESC, name"
+    "SELECT id, name, avatar_color, is_admin, (pin_hash IS NOT NULL) as has_pin, (nfc_token IS NOT NULL) as has_nfc, COALESCE(preferred_lang, 'FR') as preferred_lang, default_device_id, default_player, COALESCE(autoplay_next, 1) as autoplay_next, created_at FROM users ORDER BY is_admin DESC, name"
   )
   res.json(rows.map((r: any) => ({
     id: r.id,
@@ -21,6 +21,7 @@ router.get('/', async (_req, res) => {
     preferred_lang: r.preferred_lang,
     default_device_id: r.default_device_id ?? null,
     default_player: r.default_player ?? null,
+    autoplay_next: !!r.autoplay_next,
     created_at: r.created_at,
   })))
 })
@@ -90,6 +91,7 @@ const UpdateSchema = z.object({
   preferred_lang: z.string().optional(),
   default_device_id: z.string().nullable().optional(),  // null/'' = aucun défaut
   default_player: z.string().nullable().optional(),     // null/'' = suit le réglage du device
+  autoplay_next: z.boolean().optional(),                // autoplay de l'épisode suivant
 })
 router.put('/:id', requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10)
@@ -122,9 +124,13 @@ router.put('/:id', requireAdmin, async (req, res) => {
     ? cur.default_player
     : (parsed.data.default_player?.trim() || null)
 
+  const newAutoplay = parsed.data.autoplay_next === undefined
+    ? (cur.autoplay_next ?? 1)
+    : (parsed.data.autoplay_next ? 1 : 0)
+
   try {
     await db.execute({
-      sql: 'UPDATE users SET name = ?, avatar_color = ?, is_admin = ?, pin_hash = ?, nfc_token = ?, preferred_lang = ?, default_device_id = ?, default_player = ? WHERE id = ?',
+      sql: 'UPDATE users SET name = ?, avatar_color = ?, is_admin = ?, pin_hash = ?, nfc_token = ?, preferred_lang = ?, default_device_id = ?, default_player = ?, autoplay_next = ? WHERE id = ?',
       args: [
         parsed.data.name ?? cur.name,
         parsed.data.avatar_color ?? cur.avatar_color,
@@ -134,6 +140,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
         (parsed.data.preferred_lang ?? cur.preferred_lang ?? 'FR').toUpperCase(),
         newDefaultDevice,
         newDefaultPlayer,
+        newAutoplay,
         id,
       ]
     })

@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db'
-import { isConnected, mediaStates } from '../ws'
+import { isConnected, mediaStates, getPendingAutoplay } from '../ws'
 import { isValidAdminToken } from '../auth'
 
 const router = Router()
@@ -13,7 +13,13 @@ const router = Router()
 // /play (cas Just Player/IPTV où la session n'expose pas de pochette).
 router.get('/now/:deviceId', async (req, res) => {
   const m = mediaStates.get(req.params.deviceId)
-  if (!m) return res.json(null)
+  if (!m) {
+    // Rien ne joue : si un autoplay est armé, on renvoie l'état « entre deux épisodes »
+    // pour que la barre du Hub affiche le compte à rebours (titre + échéance).
+    const pending = getPendingAutoplay(req.params.deviceId)
+    if (pending) return res.json({ state: 'between', position: 0, duration: 0, seekable: false, updated_at: Date.now(), up_next: pending })
+    return res.json(null)
+  }
   let thumb = m.art
   if (!thumb) {
     const { rows } = await db.execute({

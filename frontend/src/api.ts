@@ -40,6 +40,7 @@ export interface User {
   preferred_lang: string
   default_device_id: string | null  // device présélectionné à l'activation du profil
   default_player: string | null     // lecteur IPTV du profil (prime sur celui du device)
+  autoplay_next: boolean             // autoplay de l'épisode suivant des séries
   created_at: number
 }
 
@@ -239,6 +240,7 @@ export interface PlayIntent {
   title?: string
   thumb?: string
   resume?: boolean
+  up_next?: UpNextItem[]   // file des épisodes suivants (autoplay)
   device_id?: string
   app?: string
   requester: string
@@ -285,8 +287,18 @@ export interface DiscoverResult {
 }
 
 // État de lecture temps réel d'un device (barre « lecture en cours »)
+// Élément de file d'attente autoplay (épisode suivant d'une série)
+export interface UpNextItem {
+  plex_id?: string
+  iptv_stream_id?: string
+  iptv_type?: string
+  iptv_ext?: string
+  title?: string
+  thumb?: string
+}
+
 export interface MediaNow {
-  state: 'playing' | 'paused' | 'stopped'
+  state: 'playing' | 'paused' | 'stopped' | 'between'  // 'between' = compte à rebours autoplay
   app?: string
   title?: string
   position: number   // ms (instantané au moment de updated_at)
@@ -296,6 +308,7 @@ export interface MediaNow {
   thumb?: string     // miniature (art MediaSession ou thumb persisté au lancement)
   volume?: number    // volume courant 0-100 (stream MUSIC du device)
   muted?: boolean
+  up_next?: { title: string; launches_at: number }  // présent pendant le compte à rebours
   updated_at: number // ms epoch — pour extrapoler la position pendant la lecture
 }
 
@@ -516,7 +529,7 @@ export const api = {
   users: {
     list: () => get<User[]>('/users'),
     create: (u: { name: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string; preferred_lang?: string }) => post<{ ok: boolean; id: number }>('/users', u),
-    update: (id: number, u: { name?: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string | null; preferred_lang?: string; default_device_id?: string | null; default_player?: string | null }) => put<{ ok: boolean }>(`/users/${id}`, u),
+    update: (id: number, u: { name?: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string | null; preferred_lang?: string; default_device_id?: string | null; default_player?: string | null; autoplay_next?: boolean }) => put<{ ok: boolean }>(`/users/${id}`, u),
     remove: (id: number) => del<{ ok: boolean }>(`/users/${id}`),
     verifyPin: (pin: string) => post<{ ok: boolean; token: string; admin: { id: number; name: string } }>('/users/verify-pin', { pin }),
     // Vérifie le PIN sans obtenir de droits admin (déverrouillage parental)
@@ -618,6 +631,9 @@ export const api = {
     setVolume: (deviceId: string, level: number) =>
       post<{ ok: boolean; action: string }>(`/control/${deviceId}/set_volume?level=${Math.max(0, Math.min(100, Math.round(level)))}`, {}),
     now: (deviceId: string) => get<MediaNow | null>(`/state/now/${deviceId}`),
+    // Autoplay « épisode suivant » : annuler le compte à rebours / lancer tout de suite.
+    cancelNext: (deviceId: string) => post<{ ok: boolean }>(`/play/cancel-next/${deviceId}`, {}),
+    playNextNow: (deviceId: string) => post<{ ok: boolean }>(`/play/play-next-now/${deviceId}`, {}),
   },
   iptv: {
     credentials: () => get<{ id: number; name: string }[]>('/iptv/credentials'),

@@ -229,8 +229,10 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
       // État de lecture temps réel poussé par l'agent à chaque tick (la position
       // avance). Stocké en mémoire, lu par la barre du Hub via /api/state/now.
       if (msg.state === 'stopped') {
+        const prev = mediaStates.get(device_id)
         mediaStates.delete(device_id)
         lastProgressSave.delete(device_id)
+        void maybeAutoplayNext(device_id, prev)
       } else {
         const art = (msg.art as string) || undefined
         const state: MediaState = {
@@ -302,6 +304,88 @@ async function persistProgress(deviceId: string, m: MediaState): Promise<void> {
              Math.round(m.position), Math.round(m.duration), m.seekable ? 1 : 0, deviceId, now],
     })
   } catch { /* best-effort : la progression n'est pas critique */ }
+}
+
+// ── Autoplay « épisode suivant » ─────────────────────────────────────────────
+// File d'attente des épisodes restants par device (poussée par le frontend au
+// lancement d'un épisode de série) + compte à rebours en cours. Tout en mémoire :
+// éphémère par nature (ne concerne qu'une session de visionnage active).
+export interface UpNextItem {
+  plex_id?: string
+  iptv_stream_id?: string
+  iptv_type?: string
+  iptv_ext?: string
+  title?: string
+  thumb?: string
+}
+interface UpNextState { items: UpNextItem[]; userId: number | null }
+const upNext = new Map<string, UpNextState>()
+
+interface PendingAutoplay { title: string; launchesAt: number; timer: ReturnType<typeof setTimeout>; next: UpNextItem; rest: UpNextItem[]; userId: number | null }
+const pendingAutoplay = new Map<string, PendingAutoplay>()
+
+const AUTOPLAY_COUNTDOWN_MS = 10000
+const FINISH_RATIO = 0.90          // ≥90% lu = épisode considéré terminé
+const FINISH_REMAIN_MS = 120000    // ou moins de 2 min restantes
+
+// Lanceur injecté par play.ts (évite l'import circulaire ws ↔ play).
+export type AutoplayLauncher = (deviceId: string, item: UpNextItem, rest: UpNextItem[], userId: number | null) => void
+let autoplayLauncher: AutoplayLauncher | null = null
+export function setAutoplayLauncher(fn: AutoplayLauncher) { autoplayLauncher = fn }
+
+// Définit/écrase la file du device. Tout nouveau play annule un compte à rebours en cours.
+export function setUpNext(deviceId: string, items: UpNextItem[] | undefined, userId: number | null) {
+  cancelAutoplay(deviceId)
+  if (items && items.length) upNext.set(deviceId, { items, userId })
+  else upNext.delete(deviceId)
+}
+
+export function cancelAutoplay(deviceId: string) {
+  const p = pendingAutoplay.get(deviceId)
+  if (p) { clearTimeout(p.timer); pendingAutoplay.delete(deviceId) }
+}
+
+export function getPendingAutoplay(deviceId: string): { title: string; launches_at: number } | null {
+  const p = pendingAutoplay.get(deviceId)
+  return p ? { title: p.title, launches_at: p.launchesAt } : null
+}
+
+// Lance immédiatement l'épisode en attente (bouton « Lancer » de la barre).
+export function fireAutoplayNow(deviceId: string): boolean {
+  const p = pendingAutoplay.get(deviceId)
+  if (!p) return false
+  clearTimeout(p.timer)
+  pendingAutoplay.delete(deviceId)
+  autoplayLauncher?.(deviceId, p.next, p.rest, p.userId)
+  return true
+}
+
+// Déclenché quand une lecture s'arrête : si l'épisode était quasi terminé et qu'une
+// file existe (autoplay activé pour le profil), arme le compte à rebours vers le suivant.
+async function maybeAutoplayNext(deviceId: string, prev: MediaState | undefined): Promise<void> {
+  if (!prev || !prev.duration || prev.duration <= 0) return
+  const ratio = prev.position / prev.duration
+  const remaining = prev.duration - prev.position
+  if (ratio < FINISH_RATIO && remaining > FINISH_REMAIN_MS) return  // arrêt en cours de route → pas d'autoplay
+  const q = upNext.get(deviceId)
+  if (!q || !q.items.length) return
+  // Respect du réglage par profil (autoplay_next, défaut activé)
+  if (q.userId != null) {
+    try {
+      const { rows } = await db.execute({ sql: 'SELECT autoplay_next FROM users WHERE id = ?', args: [q.userId] })
+      if (rows.length && Number((rows[0] as any).autoplay_next) === 0) return
+    } catch { /* en cas d'erreur DB, on autorise (défaut ON) */ }
+  }
+  const [next, ...rest] = q.items
+  upNext.delete(deviceId) // consommé ; doPlay du suivant reposera la file (rest)
+  const launchesAt = Date.now() + AUTOPLAY_COUNTDOWN_MS
+  const timer = setTimeout(() => {
+    pendingAutoplay.delete(deviceId)
+    autoplayLauncher?.(deviceId, next, rest, q.userId)
+  }, AUTOPLAY_COUNTDOWN_MS)
+  pendingAutoplay.set(deviceId, { title: next.title ?? 'Épisode suivant', launchesAt, timer, next, rest, userId: q.userId })
+  // Info sur la TV (sans bouton : l'annulation/le lancement se font depuis la barre du Hub)
+  try { sendOverlay(deviceId, { title: 'À suivre', message: `${next.title ?? 'Épisode suivant'} — lecture dans 10 s`, duration: 11 }) } catch { /* */ }
 }
 
 export function sendPlayCommand(device_id: string, cmd: WsPlayCommand): boolean {

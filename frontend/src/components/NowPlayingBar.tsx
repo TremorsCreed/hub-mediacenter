@@ -6,7 +6,7 @@ import { launchRemote, canRemote } from '../remote'
 import Toast from './Toast'
 import {
   Play, Pause, Square, Rewind, FastForward, Radio, Pin, PinOff, Music, MonitorPlay,
-  Volume2, VolumeX, Minus, Plus, ArrowRightLeft,
+  Volume2, VolumeX, Minus, Plus, ArrowRightLeft, SkipForward, X,
 } from 'lucide-react'
 
 // Badge couleur par app (cohérent avec les modules)
@@ -124,6 +124,36 @@ export default function NowPlayingBar() {
         <div className="text-sm text-zinc-500 flex-1">
           Rien en lecture{device ? ` sur ${device.name}` : ''}
         </div>
+        {RemoteBtn}
+        {PinBtn}
+      </div>
+    )
+  }
+
+  // Autoplay « épisode suivant » : entre deux épisodes, on affiche le compte à rebours
+  // (le re-render 2×/s via forceTick fait défiler les secondes).
+  if (now?.up_next) {
+    const secs = Math.max(0, Math.ceil((now.up_next.launches_at - Date.now()) / 1000))
+    return (
+      <div className="shrink-0 h-20 bg-zinc-900 border-t border-amber-500/40 flex items-center gap-4 px-4">
+        <div className="flex items-center justify-center h-14 w-14 shrink-0 rounded bg-amber-500/15 text-amber-400">
+          <SkipForward size={22} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] uppercase tracking-wider text-amber-400 font-semibold">À suivre · dans {secs}s</div>
+          <div className="text-sm text-zinc-100 truncate font-medium">{now.up_next.title}</div>
+          {device && <div className="text-[11px] text-zinc-400 truncate">sur {device.name}</div>}
+        </div>
+        <button
+          onClick={() => { api.control.playNextNow(deviceId).catch(() => {}) }}
+          className="inline-flex items-center gap-1.5 px-3 min-h-11 rounded-full bg-amber-500 text-zinc-950 text-sm font-semibold hover:bg-amber-400 transition-colors">
+          <Play size={15} fill="currentColor" /> Lancer
+        </button>
+        <button
+          onClick={() => { api.control.cancelNext(deviceId).catch(() => {}); setNow(null) }}
+          className="inline-flex items-center gap-1.5 px-3 min-h-11 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 text-sm transition-colors">
+          <X size={15} /> Annuler
+        </button>
         {RemoteBtn}
         {PinBtn}
       </div>

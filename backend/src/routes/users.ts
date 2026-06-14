@@ -5,11 +5,14 @@ import { hashPin, verifyPin, issueAdminToken, requireAdmin } from '../auth'
 
 const router = Router()
 
+// Parse tolérant (dashboard_prefs peut être vide/corrompu → null plutôt que crash)
+function safeParse(s: string): unknown { try { return JSON.parse(s) } catch { return null } }
+
 // Liste des profils (public — sert à l'écran « Qui regarde ? »).
 // N'expose jamais le pin_hash, juste un booléen has_pin.
 router.get('/', async (_req, res) => {
   const { rows } = await db.execute(
-    "SELECT id, name, avatar_color, is_admin, (pin_hash IS NOT NULL) as has_pin, (nfc_token IS NOT NULL) as has_nfc, COALESCE(preferred_lang, 'FR') as preferred_lang, default_device_id, default_player, COALESCE(autoplay_next, 1) as autoplay_next, created_at FROM users ORDER BY is_admin DESC, name"
+    "SELECT id, name, avatar_color, is_admin, (pin_hash IS NOT NULL) as has_pin, (nfc_token IS NOT NULL) as has_nfc, COALESCE(preferred_lang, 'FR') as preferred_lang, default_device_id, default_player, COALESCE(autoplay_next, 1) as autoplay_next, dashboard_prefs, created_at FROM users ORDER BY is_admin DESC, name"
   )
   res.json(rows.map((r: any) => ({
     id: r.id,
@@ -22,6 +25,7 @@ router.get('/', async (_req, res) => {
     default_device_id: r.default_device_id ?? null,
     default_player: r.default_player ?? null,
     autoplay_next: !!r.autoplay_next,
+    dashboard_prefs: r.dashboard_prefs ? safeParse(r.dashboard_prefs) : null,
     created_at: r.created_at,
   })))
 })
@@ -52,6 +56,34 @@ router.post('/check-pin', async (req, res) => {
   const { rows } = await db.execute('SELECT pin_hash FROM users WHERE is_admin = 1')
   const ok = rows.some((r: any) => verifyPin(parsed.data.pin, r.pin_hash as string))
   if (!ok) return res.status(401).json({ error: 'PIN incorrect' })
+  res.json({ ok: true })
+})
+
+// ── Réglages perso (self-service, pas besoin d'être admin) ───────────────────
+// Un profil peut modifier SES propres préférences : layout du dashboard + autoplay.
+const PrefsSchema = z.object({
+  dashboard_prefs: z.any().optional(),
+  autoplay_next: z.boolean().optional(),
+})
+router.put('/:id/prefs', async (req, res) => {
+  const id = parseInt(req.params.id, 10)
+  const userId = (req as any).userId as number | null
+  if (userId == null || userId !== id) return res.status(403).json({ error: 'forbidden' })
+  const parsed = PrefsSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
+
+  if (parsed.data.dashboard_prefs !== undefined) {
+    await db.execute({
+      sql: 'UPDATE users SET dashboard_prefs = ? WHERE id = ?',
+      args: [JSON.stringify(parsed.data.dashboard_prefs), id],
+    })
+  }
+  if (parsed.data.autoplay_next !== undefined) {
+    await db.execute({
+      sql: 'UPDATE users SET autoplay_next = ? WHERE id = ?',
+      args: [parsed.data.autoplay_next ? 1 : 0, id],
+    })
+  }
   res.json({ ok: true })
 })
 

@@ -235,6 +235,8 @@ export async function initDb() {
   try { await db.execute("ALTER TABLE users ADD COLUMN default_player TEXT") } catch {}
   // Autoplay de l'épisode suivant des séries (compte à rebours en fin d'épisode), par profil
   try { await db.execute("ALTER TABLE users ADD COLUMN autoplay_next INTEGER NOT NULL DEFAULT 1") } catch {}
+  // Personnalisation du dashboard d'accueil (rangées activées + ordre), JSON, par profil
+  try { await db.execute("ALTER TABLE users ADD COLUMN dashboard_prefs TEXT") } catch {}
   // Extension de conteneur (épisodes IPTV séries, pour la relecture depuis une playlist)
   try { await db.execute("ALTER TABLE playlist_items ADD COLUMN ext TEXT") } catch {}
   // Logo de la chaîne pour l'overlay de rappel EPG (carte du bas)

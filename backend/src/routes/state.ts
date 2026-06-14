@@ -31,6 +31,27 @@ router.get('/now/:deviceId', async (req, res) => {
   res.json({ ...m, thumb })
 })
 
+// GET /progress — « Reprendre » (continue watching) : médias en cours, ni à peine
+// commencés ni quasi terminés, triés par récence. Fournit les identifiants de reprise
+// (plex/iptv) + la position pour relancer à la bonne seconde. Progression globale en v1
+// (pas de scoping par profil — viendra avec la session active par device).
+router.get('/progress', async (_req, res) => {
+  const { rows } = await db.execute(`
+    SELECT media_key, catalog_id, app, title, thumb, plex_id, iptv_stream_id, iptv_type, iptv_ext,
+           position, duration, updated_at
+    FROM playback_progress
+    WHERE seekable = 1 AND duration > 0
+      AND position > duration * 0.02 AND position < duration * 0.95
+      AND iptv_type IS NOT 'live'
+    ORDER BY updated_at DESC
+    LIMIT 24
+  `)
+  res.json(rows.map((r: any) => ({
+    ...r,
+    percent: r.duration > 0 ? Math.min(100, Math.round((r.position / r.duration) * 100)) : 0,
+  })))
+})
+
 router.get('/', async (_req, res) => {
   // Title : prefer playback_state.title (rempli pour les plays directs Plex/IPTV),
   // fallback sur catalog.title pour les plays via entrée catalog.

@@ -41,7 +41,30 @@ export interface User {
   default_device_id: string | null  // device présélectionné à l'activation du profil
   default_player: string | null     // lecteur IPTV du profil (prime sur celui du device)
   autoplay_next: boolean             // autoplay de l'épisode suivant des séries
+  dashboard_prefs: DashboardPrefs | null  // perso du dashboard (rangées activées + ordre)
   created_at: number
+}
+
+// Personnalisation du dashboard : liste ordonnée des rangées avec leur état actif.
+export interface DashboardPrefs {
+  rails: { id: string; on: boolean }[]
+}
+
+// Élément « Reprendre » (continue watching) issu de playback_progress.
+export interface ProgressItem {
+  media_key: string
+  catalog_id?: string
+  app?: string
+  title?: string
+  thumb?: string          // URL absolue déjà proxifiée
+  plex_id?: string
+  iptv_stream_id?: string
+  iptv_type?: string
+  iptv_ext?: string
+  position: number
+  duration: number
+  percent: number
+  updated_at: number
 }
 
 export interface ScrapedListItem {
@@ -240,6 +263,7 @@ export interface PlayIntent {
   title?: string
   thumb?: string
   resume?: boolean
+  resume_position_ms?: number  // reprise à une position précise (continue watching)
   up_next?: UpNextItem[]   // file des épisodes suivants (autoplay)
   device_id?: string
   app?: string
@@ -525,12 +549,16 @@ export const api = {
     deleteHistory: (id: number) => del<{ ok: boolean }>(`/state/history/${id}`),
     clearHistory: (userFilter?: string) => del<{ ok: boolean }>(`/state/history${userFilter ? `?user_id=${userFilter}` : ''}`),
     played: () => get<string[]>('/state/played'),
+    progress: () => get<ProgressItem[]>('/state/progress'),
   },
   users: {
     list: () => get<User[]>('/users'),
     create: (u: { name: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string; preferred_lang?: string }) => post<{ ok: boolean; id: number }>('/users', u),
     update: (id: number, u: { name?: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string | null; preferred_lang?: string; default_device_id?: string | null; default_player?: string | null; autoplay_next?: boolean }) => put<{ ok: boolean }>(`/users/${id}`, u),
     remove: (id: number) => del<{ ok: boolean }>(`/users/${id}`),
+    // Réglages perso (self-service) : layout dashboard + autoplay, du profil courant.
+    savePrefs: (id: number, prefs: { dashboard_prefs?: DashboardPrefs; autoplay_next?: boolean }) =>
+      put<{ ok: boolean }>(`/users/${id}/prefs`, prefs),
     verifyPin: (pin: string) => post<{ ok: boolean; token: string; admin: { id: number; name: string } }>('/users/verify-pin', { pin }),
     // Vérifie le PIN sans obtenir de droits admin (déverrouillage parental)
     checkPin: (pin: string) => post<{ ok: boolean }>('/users/check-pin', { pin }),

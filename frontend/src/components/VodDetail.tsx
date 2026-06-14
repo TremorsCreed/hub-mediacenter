@@ -97,7 +97,7 @@ export default function VodDetail({ credId, stream, deviceName, onPlay, onClose 
 
           {/* Actions */}
           <div className="flex items-center gap-2 mt-4 flex-wrap">
-            <button onClick={onPlay}
+            <button onClick={onPlay} data-autofocus
               className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-black font-semibold rounded-lg px-5 py-2.5 transition-colors">
               <Play size={18} fill="currentColor" /> Lancer{deviceName ? <span className="font-normal text-black/70 text-sm">· {deviceName}</span> : null}
             </button>

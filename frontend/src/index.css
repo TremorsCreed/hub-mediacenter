@@ -6,6 +6,56 @@ body {
   @apply bg-zinc-950 text-zinc-100;
 }
 
+/* ──────────────────────────────────────────────────────────────
+   Accessibilité globale (Lot 1)
+   ────────────────────────────────────────────────────────────── */
+
+/* Anneau de focus visible pour le clavier ET la télécommande TV.
+   Utilise :focus-visible : n'apparaît donc PAS au clic souris, seulement
+   en navigation clavier/D-pad. Le !important neutralise d'un coup les ~50
+   « focus:outline-none » du code (un masquage d'indicateur de focus ne doit
+   jamais l'emporter silencieusement, c'est un point d'accessibilité). */
+:focus-visible {
+  outline: 2px solid theme('colors.accent') !important;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Respect du réglage système « réduire les animations » :
+   coupe transitions et boucles (les spinners se figent, ce qui est le
+   comportement attendu en reduced-motion). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@layer components {
+  /* Étend la zone tappable d'un petit bouton-icône à 44x44px minimum,
+     SANS changer sa taille visuelle. Activé uniquement sur appareils
+     sans survol (tactile / TV), pour ne pas intercepter au desktop les
+     clics destinés à la carte sous-jacente. */
+  @media (hover: none) {
+    .tap-target {
+      position: relative;
+    }
+    .tap-target::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 44px;
+      height: 44px;
+      transform: translate(-50%, -50%);
+    }
+  }
+}
+
 @keyframes slideIn {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }

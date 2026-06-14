@@ -11,7 +11,7 @@ export default function FavoriteButton({ fav, size = 15, className = '' }: { fav
     <button
       onClick={e => { e.preventDefault(); e.stopPropagation(); toggle(fav) }}
       title={active ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-      className={`flex items-center justify-center rounded-full bg-black/55 backdrop-blur-sm hover:bg-black/75 transition-colors ${className}`}
+      className={`tap-target flex items-center justify-center rounded-full bg-black/55 backdrop-blur-sm hover:bg-black/75 transition-colors ${className}`}
     >
       <Heart
         size={size}

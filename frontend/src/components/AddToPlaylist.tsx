@@ -50,7 +50,7 @@ export default function AddToPlaylist({ item, className = '' }: { item: Playlist
       <button
         onClick={openModal}
         title="Ajouter à une playlist"
-        className={`flex items-center justify-center rounded-full bg-black/55 backdrop-blur-sm hover:bg-black/75 transition-colors ${className}`}
+        className={`tap-target flex items-center justify-center rounded-full bg-black/55 backdrop-blur-sm hover:bg-black/75 transition-colors ${className}`}
       >
         <ListPlus size={14} className="text-white/90" strokeWidth={2} />
       </button>

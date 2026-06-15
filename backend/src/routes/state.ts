@@ -42,13 +42,21 @@ router.get('/now/:deviceId', async (req, res) => {
     if (pending) return res.json({ state: 'between', position: 0, duration: 0, seekable: false, updated_at: Date.now(), up_next: pending })
     return res.json(null)
   }
+  // Miniature : art MediaSession d'abord ; sinon le thumb du lancement (lastCatalog,
+  // puis playback_state) MAIS seulement si son titre correspond à ce qui joue — sinon
+  // on laisserait le poster d'un film précédent (Just Player ne rafraîchit pas son art).
   let thumb = m.art
   if (!thumb) {
+    const lc = lastCatalog.get(req.params.deviceId)
+    if (lc && titleMatch(lc.title, m.title)) thumb = lc.thumb
+  }
+  if (!thumb) {
     const { rows } = await db.execute({
-      sql: 'SELECT thumb FROM playback_state WHERE device_id = ?',
+      sql: 'SELECT thumb, title FROM playback_state WHERE device_id = ?',
       args: [req.params.deviceId],
     })
-    thumb = ((rows[0] as any)?.thumb as string) || undefined
+    const ps = rows[0] as any | undefined
+    if (ps?.thumb && titleMatch(ps.title, m.title)) thumb = ps.thumb as string
   }
   res.json({ ...m, thumb })
 })

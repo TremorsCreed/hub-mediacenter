@@ -104,9 +104,18 @@ export default function UserDashboard() {
   const [autoplay, setAutoplay] = useState(currentUser?.autoplay_next ?? true)
 
   useEffect(() => { api.devices.list().then(ds => { setDevices(ds); reconcile(ds) }).catch(() => {}) }, [])
+  // Rafraîchit « Reprendre »/« On Deck » au montage, au retour sur l'onglet et
+  // périodiquement (le dashboard reste ouvert en permanence).
   useEffect(() => {
-    api.state.progress().then(setResume).catch(() => {})
-    api.plex.onDeck(20).then(setOnDeck).catch(() => setOnDeck([]))
+    const refresh = () => {
+      api.state.progress().then(setResume).catch(() => {})
+      api.plex.onDeck(20).then(setOnDeck).catch(() => setOnDeck([]))
+    }
+    refresh()
+    const onFocus = () => refresh()
+    window.addEventListener('focus', onFocus)
+    const id = setInterval(refresh, 20000)
+    return () => { window.removeEventListener('focus', onFocus); clearInterval(id) }
   }, [currentUser])
 
   const flash = (msg: string, ok: boolean) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3000) }

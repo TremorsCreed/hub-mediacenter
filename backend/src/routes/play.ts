@@ -468,6 +468,7 @@ async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, 
         sql: `UPDATE playback_state SET status='playing', catalog_id=?, title=?, app='plex', thumb=?, started_at=? WHERE device_id=?`,
         args: [entry.id, entry.title, plexImageUrl ?? null, Date.now(), target_device_id]
       })
+      lastCatalog.set(target_device_id, { catalog_id: entry.id, title: entry.title, thumb: plexImageUrl })
       // Socle « continuer sur… » : on enregistre de quoi reprendre/transférer ce média.
       await upsertProgressOnLaunch(entry.id, {
         catalogId: entry.id, app: 'plex', title: entry.title, thumb: plexImageUrl ?? null,
@@ -554,6 +555,7 @@ async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, 
     return { status: 503, body: { error: 'failed to send command to device' } }
   }
   const thumbUrl = buildImageUrl(req, thumb, resolved_app as string)
+  lastCatalog.set(target_device_id, { catalog_id: entry.id, title: entry.title, thumb: thumbUrl })
   notifyOverlayPlayer(target_device_id, {
     title: entry.title,
     message: resolvedIptvType === 'live' ? 'Live en cours' : 'En lecture',

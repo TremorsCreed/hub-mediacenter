@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db'
 import { sendPlayCommand, sendNotify, isConnected, getConnectedIds, sendControl, mediaStates,
-  setUpNext, cancelAutoplay, fireAutoplayNow, setAutoplayLauncher, UpNextItem } from '../ws'
+  setUpNext, cancelAutoplay, fireAutoplayNow, setAutoplayLauncher, UpNextItem, lastCatalog } from '../ws'
 import { AppId, CatalogEntry, RequesterType, WsPlayCommand } from '../types'
 import { resolvePlexWatchUrl } from './plex'
 import { spotifyFetch, MAISON_USER_ID } from './spotify'
@@ -388,6 +388,9 @@ async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, 
   // File d'attente autoplay : ce play (épisode courant) définit la suite. Un play sans
   // up_next efface toute file/compte à rebours en cours pour ce device.
   setUpNext(target_device_id, up_next as UpNextItem[] | undefined, userId, series_duration_ms ?? 0)
+  // catalog_id fiable (résolution des métadonnées du média en cours, cf. now-meta) :
+  // survit aux reconnexions agent contrairement à playback_state.
+  lastCatalog.set(target_device_id, entry.id)
 
   // 3. Resolve app
   const { rows: devRows } = await db.execute({ sql: 'SELECT capabilities FROM devices WHERE id = ?', args: [target_device_id] })

@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db'
-import { isConnected, mediaStates, getPendingAutoplay } from '../ws'
+import { isConnected, mediaStates, getPendingAutoplay, lastCatalog } from '../ws'
 import { isValidAdminToken } from '../auth'
 import { getXtreamCred, xtreamCall } from './iptv'
 
@@ -57,8 +57,12 @@ router.get('/progress', async (_req, res) => {
 // casting…) résolues depuis la source (Plex ou IPTV VOD) via le catalog_id persisté.
 // null si rien d'exploitable (live, série IPTV par épisode, etc.).
 router.get('/now-meta/:deviceId', async (req, res) => {
-  const { rows } = await db.execute({ sql: 'SELECT catalog_id FROM playback_state WHERE device_id = ?', args: [req.params.deviceId] })
-  const catId = (rows[0] as any)?.catalog_id as string | undefined
+  // catalog_id : la mémoire du dernier lancement d'abord (fiable), sinon playback_state.
+  let catId = lastCatalog.get(req.params.deviceId)
+  if (!catId) {
+    const { rows } = await db.execute({ sql: 'SELECT catalog_id FROM playback_state WHERE device_id = ?', args: [req.params.deviceId] })
+    catId = (rows[0] as any)?.catalog_id as string | undefined
+  }
   if (!catId) return res.json(null)
   try {
     if (catId.startsWith('plex:')) {

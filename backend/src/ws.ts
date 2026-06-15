@@ -28,6 +28,11 @@ export interface MediaState {
 }
 export const mediaStates = new Map<string, MediaState>()
 
+// catalog_id du dernier média lancé par device (posé par /play). En mémoire et NON
+// réinitialisé par le register agent (qui, lui, remet playback_state à zéro à chaque
+// reconnexion) → source fiable pour résoudre les métadonnées du média en cours.
+export const lastCatalog = new Map<string, string>()
+
 // Anti-spam d'écritures DB de progression : on ne sauvegarde au plus qu'une fois
 // toutes les PROGRESS_SAVE_MS par device (le tick agent arrive ~toutes les 2s).
 const PROGRESS_SAVE_MS = 8000
@@ -232,6 +237,7 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
         const prev = mediaStates.get(device_id)
         mediaStates.delete(device_id)
         lastProgressSave.delete(device_id)
+        lastCatalog.delete(device_id)
         void maybeAutoplayNext(device_id, prev)
       } else {
         const art = (msg.art as string) || undefined

@@ -16,6 +16,11 @@ function titleMatch(a?: string, b?: string): boolean {
   return (na.includes(nb) && nb.length >= 6) || (nb.includes(na) && na.length >= 6)
 }
 
+// Cache (par device) de la miniature résolue par titre, pour ne pas relancer une
+// recherche VOD à chaque poll (1,5s) tant que le titre joué ne change pas.
+const nowThumbCache = new Map<string, { title: string; thumb?: string }>()
+const IPTV_PLAYERS = ['justplayer', 'vlc', 'mxplayer', 'iptv', 'tivimate']
+
 async function resolveCredId(deviceId: string): Promise<number | null> {
   const { rows: dc } = await db.execute({ sql: 'SELECT xtream_credential_id FROM device_config WHERE device_id = ?', args: [deviceId] })
   let credId = (dc[0] as any)?.xtream_credential_id
@@ -57,6 +62,19 @@ router.get('/now/:deviceId', async (req, res) => {
     })
     const ps = rows[0] as any | undefined
     if (ps?.thumb && titleMatch(ps.title, m.title)) thumb = ps.thumb as string
+  }
+  // Lancé hors Hub (télécommande) sur un lecteur IPTV : pas de thumb connu → on le
+  // retrouve par titre dans le catalogue VOD (cache par device pour éviter le spam).
+  if (!thumb && m.title && IPTV_PLAYERS.includes(m.app || '')) {
+    const cached = nowThumbCache.get(req.params.deviceId)
+    if (cached && cached.title === m.title) {
+      thumb = cached.thumb
+    } else {
+      const credId = await resolveCredId(req.params.deviceId)
+      const match = credId ? await findIptvVodMatch(credId, m.title).catch(() => null) : null
+      thumb = match?.logo ? `/api/iptv/image?url=${encodeURIComponent(match.logo)}` : undefined
+      nowThumbCache.set(req.params.deviceId, { title: m.title, thumb })
+    }
   }
   res.json({ ...m, thumb })
 })

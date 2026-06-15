@@ -76,6 +76,22 @@ body {
   }
 }
 
+@layer components {
+  /* Vignette « qui réagit » : léger relief + zoom au survol (souris uniquement,
+     via hover:hover → pas d'effet sur tactile/TV). La transition est neutralisée
+     automatiquement par le bloc prefers-reduced-motion plus haut. */
+  .hover-pop {
+    transition: transform 160ms ease, box-shadow 160ms ease;
+  }
+  @media (hover: hover) {
+    .hover-pop:hover {
+      transform: scale(1.04);
+      z-index: 1;
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+    }
+  }
+}
+
 @keyframes slideIn {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }

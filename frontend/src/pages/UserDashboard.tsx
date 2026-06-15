@@ -77,7 +77,7 @@ function Rail({ icon: Icon, title, count, children }: { icon: typeof Tv; title: 
           </button>
         </div>
       </div>
-      <div ref={ref} className="flex gap-3 overflow-x-auto scrollbar-thin snap-x pb-2 -mx-1 px-1">
+      <div ref={ref} className="flex gap-3 overflow-x-auto scrollbar-thin snap-x py-2 -mx-1 px-1">
         {children}
       </div>
     </section>
@@ -253,7 +253,7 @@ export default function UserDashboard() {
                 const busy = launching === `resume:${it.media_key}`
                 return (
                   <button key={it.media_key} onClick={() => resumePlay(it)} disabled={busy}
-                    className="group relative w-60 shrink-0 snap-start text-left disabled:opacity-50">
+                    className="hover-pop group relative w-60 shrink-0 snap-start text-left disabled:opacity-50">
                     <div className="relative w-full aspect-video bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden group-hover:border-amber-500/60 transition-colors">
                       {it.app === 'youtube'
                         ? <div className="w-full h-full flex items-center justify-center bg-red-600/90"><Youtube size={40} className="text-white" /></div>
@@ -288,7 +288,7 @@ export default function UserDashboard() {
                 const busy = launching === `${f.app}:${f.ref_id}`
                 const src = favImg(f)
                 return (
-                  <div key={`${f.app}:${f.ref_id}`} className="group relative w-32 shrink-0 snap-start">
+                  <div key={`${f.app}:${f.ref_id}`} className="hover-pop group relative w-32 shrink-0 snap-start">
                     <button onClick={() => launchFav(f)} disabled={busy}
                       className="w-full aspect-[2/3] bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden hover:border-amber-500/60 transition-colors text-left disabled:opacity-50 block">
                       {src
@@ -324,7 +324,7 @@ export default function UserDashboard() {
                 const busy = launching === `ondeck:${it.ratingKey}`
                 return (
                   <button key={it.ratingKey} onClick={() => onDeckPlay(it)} disabled={busy}
-                    className="group relative w-60 shrink-0 snap-start text-left disabled:opacity-50">
+                    className="hover-pop group relative w-60 shrink-0 snap-start text-left disabled:opacity-50">
                     <div className="relative w-full aspect-video bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden group-hover:border-amber-500/60 transition-colors">
                       {it.thumb
                         ? <img src={api.plex.imageUrl(it.thumb)} alt={it.title} loading="lazy" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
@@ -357,7 +357,7 @@ export default function UserDashboard() {
               <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
                 {QUICK_TILES.map(t => (
                   <button key={t.to} onClick={() => navigate(t.to)}
-                    className={`relative h-24 rounded-xl border border-zinc-800 bg-gradient-to-br ${t.grad} hover:border-amber-500/50 transition-colors flex flex-col items-start justify-end p-3 text-left group`}>
+                    className={`hover-pop relative h-24 rounded-xl border border-zinc-800 bg-gradient-to-br ${t.grad} hover:border-amber-500/50 flex flex-col items-start justify-end p-3 text-left group`}>
                     <t.icon size={22} className="absolute top-3 right-3 text-white/70 group-hover:text-white transition-colors" />
                     <span className="font-semibold">{t.label}</span>
                   </button>

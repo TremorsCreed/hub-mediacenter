@@ -9,6 +9,7 @@ import { api, Device, Playlist, PlaylistItem } from '../api'
 import { usePersistentDevice } from '../usePersistentDevice'
 import { useUser } from '../UserContext'
 import Toast from '../components/Toast'
+import CurrentButton from '../components/CurrentButton'
 import {
   ArrowLeft, Play, Loader2, Trash2, GripVertical, Film, Tv, Gamepad2, Radio, MonitorPlay,
   Users, Lock, AlertTriangle, Check,
@@ -203,6 +204,12 @@ export default function PlaylistDetail() {
               className={`flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border transition-colors ${pl.is_shared ? 'border-cyan-700/60 text-cyan-300' : 'border-zinc-700 text-zinc-400'} ${canEdit ? 'hover:border-zinc-500' : 'opacity-70'}`}>
               {pl.is_shared ? <><Users size={12} /> Partagée</> : <><Lock size={12} /> Perso</>}
             </button>
+            <CurrentButton
+              item={{ key: `playlist:${pl.id}`, kind: 'playlist', playlist_id: pl.id, title: pl.name, thumb: pl.cover }}
+              label="En cours"
+              className="border border-zinc-700 px-2.5 py-1 hover:border-amber-500/50 text-xs"
+              size={13}
+            />
             {canEdit && (
               <button onClick={deletePlaylist} className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-red-400 transition-colors px-2.5 py-1">
                 <Trash2 size={12} /> Supprimer

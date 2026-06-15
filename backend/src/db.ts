@@ -143,6 +143,25 @@ export async function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_watched_user ON watched(user_id);
 
+    -- « Favori du moment » / en cours : la série ou playlist que le profil suit en ce
+    -- moment (épinglée manuellement), affichée dans une rangée dédiée du dashboard.
+    -- key = 'playlist:<id>' ou '<app>:<ref_id>' (dédup par profil).
+    CREATE TABLE IF NOT EXISTS current_picks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      key TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      app TEXT,
+      ref_id TEXT,
+      playlist_id INTEGER,
+      title TEXT,
+      thumb TEXT,
+      created_at INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(user_id, key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_current_user ON current_picks(user_id);
+
     CREATE TABLE IF NOT EXISTS playlists (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       owner_user_id INTEGER NOT NULL,

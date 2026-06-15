@@ -4,23 +4,27 @@ import { api, Device, Favorite, ProgressItem, PlexOnDeckItem, DashboardPrefs } f
 import { usePersistentDevice } from '../usePersistentDevice'
 import { useUser, initials } from '../UserContext'
 import { useFavorites } from '../FavoritesContext'
+import { useCurrent } from '../CurrentContext'
 import Toast from '../components/Toast'
 import {
   Heart, Play, Loader2, Tv, Film, Gamepad2, MonitorPlay, Radio, Compass, ListMusic,
-  RotateCcw, Settings2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, X, Youtube,
+  RotateCcw, Settings2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, X, Youtube, Bookmark,
 } from 'lucide-react'
 
 // ── Rangées disponibles + ordre par défaut ───────────────────────────────────
-type RailId = 'resume' | 'favorites' | 'ondeck' | 'quick'
+type RailId = 'current' | 'resume' | 'favorites' | 'ondeck' | 'quick'
 const RAIL_META: Record<RailId, { label: string }> = {
+  current: { label: 'En cours' },
   resume: { label: 'Reprendre' },
   favorites: { label: 'Mes favoris' },
   ondeck: { label: 'À suivre sur Plex' },
   quick: { label: 'Accès rapide' },
 }
 const DEFAULT_RAILS: { id: RailId; on: boolean }[] = [
-  { id: 'resume', on: true }, { id: 'favorites', on: true }, { id: 'ondeck', on: true }, { id: 'quick', on: true },
+  { id: 'current', on: true }, { id: 'resume', on: true }, { id: 'favorites', on: true }, { id: 'ondeck', on: true }, { id: 'quick', on: true },
 ]
+
+const KIND_LABEL: Record<string, string> = { series: 'Série', show: 'Série', playlist: 'Playlist', movie: 'Film', vod: 'Film' }
 
 // Fusionne les prefs stockées avec la liste par défaut (ids inconnus ignorés, manquants ajoutés).
 function normalizeRails(prefs: DashboardPrefs | null | undefined): { id: RailId; on: boolean }[] {
@@ -87,6 +91,7 @@ function Rail({ icon: Icon, title, count, children }: { icon: typeof Tv; title: 
 export default function UserDashboard() {
   const { currentUser, adminUnlocked } = useUser()
   const { favorites, toggle } = useFavorites()
+  const { picks } = useCurrent()
   const navigate = useNavigate()
   const [devices, setDevices] = useState<Device[]>([])
   const { deviceId, setDeviceId, reconcile } = usePersistentDevice()
@@ -178,6 +183,19 @@ export default function UserDashboard() {
     } catch (e: any) { flash(`Échec : ${e.message}`, false) } finally { setLaunching(null) }
   }
 
+  // « En cours » (favori du moment) : image résolue selon la source, ouverture ciblée.
+  const pickImg = (p: typeof picks[number]): string => {
+    if (!p.thumb) return ''
+    if (p.kind === 'playlist') return p.thumb
+    if (p.app === 'plex') return api.plex.imageUrl(p.thumb)
+    if (p.app === 'iptv') return api.iptv.imageUrl(p.thumb)
+    return p.thumb
+  }
+  const openPick = (p: typeof picks[number]) => {
+    if (p.kind === 'playlist' && p.playlist_id != null) { navigate(`/playlists/${p.playlist_id}`); return }
+    navigate(p.app === 'plex' ? '/catalog/plex' : '/catalog/iptv')
+  }
+
   // ── Hero : le dernier média en cours, sinon le 1er « à suivre » Plex ────────
   const heroResume = resume[0]
   const heroOnDeck = !heroResume ? onDeck[0] : undefined
@@ -245,6 +263,28 @@ export default function UserDashboard() {
 
       {/* Rangées (ordre + visibilité selon les prefs du profil) */}
       {enabled.map(id => {
+        if (id === 'current') {
+          if (!picks.length) return null
+          return (
+            <Rail key={id} icon={Bookmark} title={RAIL_META.current.label} count={picks.length}>
+              {picks.map(p => (
+                <button key={p.key} onClick={() => openPick(p)}
+                  className="hover-pop group relative w-44 shrink-0 snap-start text-left">
+                  <div className="relative w-full aspect-video bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden group-hover:border-amber-500/60 transition-colors">
+                    {pickImg(p)
+                      ? <img src={pickImg(p)} alt={p.title ?? ''} loading="lazy" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
+                      : <div className="w-full h-full flex items-center justify-center text-zinc-700">{p.kind === 'playlist' ? <ListMusic size={26} /> : <Film size={26} />}</div>}
+                    <div className="absolute top-1.5 left-1.5 bg-black/65 backdrop-blur-sm rounded px-1.5 py-0.5 flex items-center gap-1">
+                      <Bookmark size={10} className="text-amber-300" fill="currentColor" />
+                      <span className="text-[9px] font-bold uppercase tracking-wide text-amber-300">{KIND_LABEL[p.kind] ?? p.kind}</span>
+                    </div>
+                  </div>
+                  <div className="text-sm mt-1.5 truncate">{p.title}</div>
+                </button>
+              ))}
+            </Rail>
+          )
+        }
         if (id === 'resume') {
           if (!resume.length) return null
           return (

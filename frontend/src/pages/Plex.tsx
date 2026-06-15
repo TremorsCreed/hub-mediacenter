@@ -6,6 +6,7 @@ import { usePersistedState } from '../usePersistedState'
 import { Search, Play, Loader2, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, X, ChevronDown, Check, Film, Tv, Music, Image, Library } from 'lucide-react'
 import FavoriteButton from '../components/FavoriteButton'
 import WatchedButton from '../components/WatchedButton'
+import CurrentButton from '../components/CurrentButton'
 import AddToPlaylist from '../components/AddToPlaylist'
 import { CatalogDndProvider, DraggableMedia } from '../components/CatalogDnd'
 import Toast from '../components/Toast'
@@ -545,6 +546,11 @@ export default function Plex() {
                   {showDetail?.info.summary && (
                     <p className="text-sm text-zinc-300 mt-3 line-clamp-4">{showDetail.info.summary}</p>
                   )}
+                  <CurrentButton
+                    item={{ key: `plex:${selectedShow.ratingKey}`, kind: 'show', app: 'plex', ref_id: selectedShow.ratingKey, title: showDetail?.info.title ?? selectedShow.title, thumb: showDetail?.info.thumb || selectedShow.thumb }}
+                    label="Suivre cette série"
+                    className="mt-3 border border-zinc-700 px-3 py-1.5 hover:border-amber-500/50"
+                  />
                 </div>
               </div>
             </div>

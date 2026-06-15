@@ -4,6 +4,7 @@ import { api, IptvSeriesInfo, UpNextItem, WatchedInput } from '../api'
 import { useModalA11y } from '../useModalA11y'
 import { useWatched } from '../WatchedContext'
 import WatchedButton from './WatchedButton'
+import CurrentButton from './CurrentButton'
 import { ChevronDown, ChevronRight, Loader2, Play, X, Check, Eye } from 'lucide-react'
 
 // Durée Xtream → ms. Accepte "HH:MM:SS", "MM:SS" ou un nombre de secondes.
@@ -144,6 +145,11 @@ export default function IptvSeriesModal({
               {detail?.info.plot && (
                 <p className="text-sm text-zinc-300 mt-3 line-clamp-4">{detail.info.plot}</p>
               )}
+              <CurrentButton
+                item={{ key: `iptv:${seriesId}`, kind: 'series', app: 'iptv', ref_id: seriesId, title: detail?.info.name ?? titleFallback, thumb: detail?.info.cover || coverFallback }}
+                label="Suivre cette série"
+                className="mt-3 border border-zinc-700 px-3 py-1.5 hover:border-amber-500/50"
+              />
             </div>
           </div>
         </div>

@@ -118,6 +118,21 @@ export interface WatchedItem extends WatchedInput {
   watched_at: number
 }
 
+// « Favori du moment » / en cours : série ou playlist épinglée par le profil.
+export interface CurrentInput {
+  key: string            // 'playlist:<id>' ou '<app>:<ref_id>'
+  kind: string           // 'series' | 'show' | 'playlist' | 'movie' …
+  app?: string
+  ref_id?: string
+  playlist_id?: number
+  title?: string
+  thumb?: string
+}
+export interface CurrentPick extends CurrentInput {
+  id: number
+  created_at: number
+}
+
 export interface PlaylistItem {
   id: number
   playlist_id: number
@@ -592,6 +607,11 @@ export const api = {
     addBulk: (items: WatchedInput[]) => post<{ ok: boolean; count: number }>('/watched/bulk', { items }),
     remove: (app: string, ref_id: string) => del<{ ok: boolean }>(`/watched?app=${encodeURIComponent(app)}&ref_id=${encodeURIComponent(ref_id)}`),
     removeBulk: (app: string, ref_ids: string[]) => post<{ ok: boolean }>('/watched/unbulk', { app, ref_ids }),
+  },
+  current: {
+    list: () => get<CurrentPick[]>('/current'),
+    add: (c: CurrentInput) => post<{ ok: boolean }>('/current', c),
+    remove: (key: string) => del<{ ok: boolean }>(`/current?key=${encodeURIComponent(key)}`),
   },
   playlists: {
     list: () => get<Playlist[]>('/playlists'),

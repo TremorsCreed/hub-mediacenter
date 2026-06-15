@@ -366,6 +366,18 @@ class HubService : Service() {
                 cmdHandler.postDelayed({ try { reportActiveSession() } catch (_: Exception) {} }, 1500L)
                 cmdHandler.postDelayed({ try { reportActiveSession() } catch (_: Exception) {} }, 3500L)
                 cmdHandler.postDelayed({ try { reportActiveSession() } catch (_: Exception) {} }, 6000L)
+                // Reprise : Just Player seek à la position mais reste EN PAUSE (API_POSITION
+                // ne déclenche pas playWhenReady, et aucun extra ne force le play). On relance
+                // donc la lecture une fois la session prête (2 tentatives pour la fiabilité).
+                if (cmd.resumeMs > 0) {
+                    cmdHandler.postDelayed({ try { activeMediaController()?.transportControls?.play() } catch (_: Exception) {} }, 2500L)
+                    cmdHandler.postDelayed({
+                        try {
+                            val c = activeMediaController()
+                            if (c != null && c.playbackState?.state != PlaybackState.STATE_PLAYING) c.transportControls.play()
+                        } catch (_: Exception) {}
+                    }, 4500L)
+                }
             }
             is LaunchResult.AppNotInstalled -> { Log.e(TAG, "Not installed: ${r.pkg}"); sendState("error", cmd.catalogId, cmd.app) }
             is LaunchResult.Error -> { Log.e(TAG, "Error: ${r.reason}"); sendState("error", cmd.catalogId, cmd.app) }

@@ -7,6 +7,7 @@ import Toast from './Toast'
 import {
   Play, Pause, Square, Rewind, FastForward, Radio, Pin, PinOff, Music, MonitorPlay,
   Volume2, VolumeX, Minus, Plus, ArrowRightLeft, SkipForward, X, PanelRight, PanelBottom,
+  ChevronUp, ChevronDown, ChevronLeft, ChevronRight, CircleDot, Undo2, Home, Menu, Power,
 } from 'lucide-react'
 
 export type Dock = 'bottom' | 'right'
@@ -121,14 +122,56 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
     </button>
   )
 
+  // ── Commandes du device, toujours disponibles (même sans lecture) ───────────
+  // Volume (CEC relatif) + mini-télécommande de navigation (DPAD/back/home/menu/power,
+  // injectée via ADB côté backend). Utilisées dans le panneau vertical (droite).
+  const muted = !!now?.muted
+  const VolIcon = muted ? VolumeX : Volume2
+  const volBtn = 'inline-flex items-center justify-center min-w-11 min-h-11 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors'
+  const volumeControls = (
+    <div className="flex items-center justify-center gap-1">
+      <button onClick={() => api.control.send(deviceId, 'volume_down').catch(() => {})} title="Baisser le volume" className={volBtn}><Minus size={18} /></button>
+      <button onClick={() => api.control.send(deviceId, 'mute').catch(() => {})} title={muted ? 'Réactiver le son' : 'Couper le son'}
+        className={`inline-flex items-center justify-center min-w-11 min-h-11 rounded transition-colors ${muted ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}><VolIcon size={18} /></button>
+      <button onClick={() => api.control.send(deviceId, 'volume_up').catch(() => {})} title="Monter le volume" className={volBtn}><Plus size={18} /></button>
+    </div>
+  )
+  const nav = (key: 'up' | 'down' | 'left' | 'right' | 'ok' | 'back' | 'home' | 'menu' | 'power') => api.control.nav(deviceId, key).catch(() => {})
+  const navCls = 'inline-flex items-center justify-center w-11 h-11 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white active:bg-amber-500/30 transition-colors'
+  const miniRemote = (
+    <div className="space-y-1.5">
+      <div className="grid grid-cols-3 gap-1.5 w-fit mx-auto">
+        <span /><button onClick={() => nav('up')} title="Haut" className={navCls}><ChevronUp size={18} /></button><span />
+        <button onClick={() => nav('left')} title="Gauche" className={navCls}><ChevronLeft size={18} /></button>
+        <button onClick={() => nav('ok')} title="OK" className={`${navCls} text-amber-400`}><CircleDot size={18} /></button>
+        <button onClick={() => nav('right')} title="Droite" className={navCls}><ChevronRight size={18} /></button>
+        <span /><button onClick={() => nav('down')} title="Bas" className={navCls}><ChevronDown size={18} /></button><span />
+      </div>
+      <div className="flex justify-center gap-1.5">
+        <button onClick={() => nav('back')} title="Retour" className={navCls}><Undo2 size={16} /></button>
+        <button onClick={() => nav('home')} title="Accueil" className={navCls}><Home size={16} /></button>
+        <button onClick={() => nav('menu')} title="Menu" className={navCls}><Menu size={16} /></button>
+        <button onClick={() => nav('power')} title="Veille / Power" className={navCls}><Power size={16} /></button>
+      </div>
+    </div>
+  )
+  const deviceControls = (
+    <div className="space-y-3 pt-1">
+      <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-semibold text-center">Commandes du device</div>
+      {volumeControls}
+      {miniRemote}
+    </div>
+  )
+
   // ── Repos (épinglé, rien en lecture) ───────────────────────────────────────
   if (!hasMedia) {
     if (isRight) return (
-      <aside className="w-80 shrink-0 bg-zinc-900 border-l border-zinc-800 flex flex-col">
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-zinc-600 p-6">
-          <Music size={30} />
-          <div className="text-sm text-zinc-500 text-center">Rien en lecture{device ? ` sur ${device.name}` : ''}</div>
+      <aside className="w-80 shrink-0 bg-zinc-900 border-l border-zinc-800 flex flex-col overflow-y-auto">
+        <div className="flex flex-col items-center gap-2 text-zinc-500 p-6 pb-2">
+          <Music size={28} className="text-zinc-600" />
+          <div className="text-sm text-center">Rien en lecture{device ? ` sur ${device.name}` : ''}</div>
         </div>
+        <div className="px-4 pb-4 flex-1">{deviceControls}</div>
         <div className="flex items-center justify-center gap-1 p-2 border-t border-zinc-800">{RemoteBtn}{DockBtn}{PinBtn}</div>
       </aside>
     )
@@ -199,7 +242,6 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
       }
     })
   }
-  const VolIcon = m.muted ? VolumeX : Volume2
 
   // Fragments de contrôle partagés (mêmes handlers, réutilisés bas/droite).
   const transport = (
@@ -291,8 +333,8 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
           )}
 
           <div className="flex justify-center">{transport}</div>
-          <div className="flex justify-center">{volume}</div>
           {transferControl}
+          {deviceControls}
         </div>
         <div className="flex items-center justify-center gap-1 p-2 border-t border-zinc-800">{RemoteBtn}{DockBtn}{PinBtn}</div>
         {toast && <Toast msg={toast.msg} ok={toast.ok} />}

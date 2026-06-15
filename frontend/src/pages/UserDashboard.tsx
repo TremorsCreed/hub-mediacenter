@@ -7,7 +7,7 @@ import { useFavorites } from '../FavoritesContext'
 import Toast from '../components/Toast'
 import {
   Heart, Play, Loader2, Tv, Film, Gamepad2, MonitorPlay, Radio, Compass, ListMusic,
-  RotateCcw, Settings2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, X,
+  RotateCcw, Settings2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, X, Youtube,
 } from 'lucide-react'
 
 // ── Rangées disponibles + ordre par défaut ───────────────────────────────────
@@ -124,6 +124,9 @@ export default function UserDashboard() {
 
   // ── Lancements ─────────────────────────────────────────────────────────────
   const resumePlay = async (it: ProgressItem) => {
+    // Reprise non disponible pour les contenus lancés hors Hub (YouTube, etc.) : pas
+    // d'identifiant relançable. On le signale plutôt que d'échouer silencieusement.
+    if (!it.plex_id && !it.iptv_stream_id) { flash('Reprise non disponible pour ce contenu (lancé hors du Hub)', false); return }
     if (!deviceId) { flash('Choisis un device', false); return }
     setLaunching(`resume:${it.media_key}`)
     try {
@@ -252,9 +255,11 @@ export default function UserDashboard() {
                   <button key={it.media_key} onClick={() => resumePlay(it)} disabled={busy}
                     className="group relative w-60 shrink-0 snap-start text-left disabled:opacity-50">
                     <div className="relative w-full aspect-video bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden group-hover:border-amber-500/60 transition-colors">
-                      {it.thumb
-                        ? <img src={it.thumb} alt={it.title ?? ''} loading="lazy" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
-                        : <div className="w-full h-full flex items-center justify-center text-zinc-700"><Film size={28} /></div>}
+                      {it.app === 'youtube'
+                        ? <div className="w-full h-full flex items-center justify-center bg-red-600/90"><Youtube size={40} className="text-white" /></div>
+                        : it.thumb
+                          ? <img src={it.thumb} alt={it.title ?? ''} loading="lazy" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
+                          : <div className="w-full h-full flex items-center justify-center text-zinc-700"><Film size={28} /></div>}
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
                         <div className="w-11 h-11 rounded-full bg-amber-500/90 text-zinc-950 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                           <Play size={18} fill="currentColor" />

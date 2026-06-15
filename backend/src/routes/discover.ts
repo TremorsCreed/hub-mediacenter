@@ -39,7 +39,7 @@ function slug(s: string): string {
 }
 
 // Exécute adb (binaire android-tools dans l'image). Renvoie code + sortie fusionnée.
-function adb(args: string[], timeoutMs = 30000): Promise<{ code: number; out: string }> {
+export function adb(args: string[], timeoutMs = 30000): Promise<{ code: number; out: string }> {
   return new Promise(resolve => {
     execFile('adb', args, { timeout: timeoutMs }, (err: any, stdout, stderr) => {
       resolve({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, out: `${stdout || ''}${stderr || ''}` })
@@ -68,7 +68,7 @@ async function installApp(serial: string, app: StoreApp): Promise<{ ok: boolean;
 }
 
 // connect + vérifie l'autorisation ADB. Renvoie ok, ou un statut à relayer.
-async function ensureReady(serial: string): Promise<{ ok: true } | { ok: false; code: number; body: any }> {
+export async function ensureReady(serial: string): Promise<{ ok: true } | { ok: false; code: number; body: any }> {
   await adb(['connect', serial], 12000)
   const devs = await adb(['devices'], 10000)
   if (devs.out.includes(`${serial}\tunauthorized`)) {

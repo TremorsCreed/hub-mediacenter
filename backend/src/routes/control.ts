@@ -2,8 +2,30 @@ import { Router } from 'express'
 import { sendControl, isConnected } from '../ws'
 import { db } from '../db'
 import { notifyOverlay, hideOverlay } from '../notify'
+import { adb, ensureReady } from './discover'
 
 const router = Router()
+
+// Mini-télécommande de navigation : injectée via ADB (un agent ne peut pas envoyer de
+// touches DPAD aux autres apps sans permission système). Nécessite l'IP du device + ADB
+// autorisé (cas des devices déjà déployés par le Hub). Indépendant de la lecture.
+const NAV_KEYCODES: Record<string, string> = {
+  up: 'KEYCODE_DPAD_UP', down: 'KEYCODE_DPAD_DOWN', left: 'KEYCODE_DPAD_LEFT', right: 'KEYCODE_DPAD_RIGHT',
+  ok: 'KEYCODE_DPAD_CENTER', back: 'KEYCODE_BACK', home: 'KEYCODE_HOME', menu: 'KEYCODE_MENU', power: 'KEYCODE_POWER',
+}
+
+router.post('/:deviceId/nav/:key', async (req, res) => {
+  const code = NAV_KEYCODES[req.params.key]
+  if (!code) return res.status(400).json({ error: 'unknown key', key: req.params.key })
+  const { rows } = await db.execute({ sql: 'SELECT ip FROM devices WHERE id = ?', args: [req.params.deviceId] })
+  const ip = (rows[0] as any)?.ip as string | undefined
+  if (!ip) return res.status(404).json({ error: 'device ip unknown — scanne/déploie le device d\'abord' })
+  const serial = `${ip}:5555`
+  const ready = await ensureReady(serial)
+  if (!ready.ok) return res.status(ready.code).json(ready.body)
+  const r = await adb(['-s', serial, 'shell', 'input', 'keyevent', code], 8000)
+  res.json({ ok: r.code === 0 })
+})
 
 const ALLOWED_ACTIONS = new Set([
   'play_pause', 'play', 'pause', 'stop', 'next', 'previous',

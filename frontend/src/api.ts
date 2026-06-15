@@ -664,6 +664,9 @@ export const api = {
     // Autoplay « épisode suivant » : annuler le compte à rebours / lancer tout de suite.
     cancelNext: (deviceId: string) => post<{ ok: boolean }>(`/play/cancel-next/${deviceId}`, {}),
     playNextNow: (deviceId: string) => post<{ ok: boolean }>(`/play/play-next-now/${deviceId}`, {}),
+    // Mini-télécommande (navigation TV via ADB) : up/down/left/right/ok/back/home/menu/power.
+    nav: (deviceId: string, key: 'up' | 'down' | 'left' | 'right' | 'ok' | 'back' | 'home' | 'menu' | 'power') =>
+      post<{ ok: boolean; status?: string; message?: string }>(`/control/${deviceId}/nav/${key}`, {}),
   },
   iptv: {
     credentials: () => get<{ id: number; name: string }[]>('/iptv/credentials'),

@@ -5,6 +5,7 @@ import { usePersistentDevice } from '../usePersistentDevice'
 import { usePersistedState } from '../usePersistedState'
 import { Search, Play, Loader2, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, X, ChevronDown, Check, Film, Tv, Music, Image, Library } from 'lucide-react'
 import FavoriteButton from '../components/FavoriteButton'
+import WatchedButton from '../components/WatchedButton'
 import AddToPlaylist from '../components/AddToPlaylist'
 import { CatalogDndProvider, DraggableMedia } from '../components/CatalogDnd'
 import Toast from '../components/Toast'
@@ -479,6 +480,10 @@ export default function Plex() {
               <AddToPlaylist
                 item={{ app: 'plex', ref_id: item.ratingKey, ref_type: item.type, title: item.title, year: item.year, thumb: item.thumb }}
                 className="reveal absolute top-1.5 left-10 z-10 w-7 h-7"
+              />
+              <WatchedButton
+                item={{ app: 'plex', ref_id: item.ratingKey, ref_type: item.type, title: item.title, thumb: item.thumb }}
+                className="reveal absolute top-1.5 left-[4.75rem] z-10 w-7 h-7"
               />
 
               {/* Mini bouton "recommencer du début" sur les en-cours (visible au hover) */}

@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { UserProvider } from './UserContext'
 import { FavoritesProvider } from './FavoritesContext'
+import { WatchedProvider } from './WatchedContext'
 import './index.css'
 
 createRoot(document.getElementById('root')!).render(
@@ -11,7 +12,9 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <UserProvider>
         <FavoritesProvider>
-          <App />
+          <WatchedProvider>
+            <App />
+          </WatchedProvider>
         </FavoritesProvider>
       </UserProvider>
     </BrowserRouter>

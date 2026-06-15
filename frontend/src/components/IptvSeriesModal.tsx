@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { api, IptvSeriesInfo, UpNextItem } from '../api'
+import { api, IptvSeriesInfo, UpNextItem, WatchedInput } from '../api'
 import { useModalA11y } from '../useModalA11y'
-import { ChevronDown, ChevronRight, Loader2, Play, X } from 'lucide-react'
+import { useWatched } from '../WatchedContext'
+import WatchedButton from './WatchedButton'
+import { ChevronDown, ChevronRight, Loader2, Play, X, Check, Eye } from 'lucide-react'
 
 // Durée Xtream → ms. Accepte "HH:MM:SS", "MM:SS" ou un nombre de secondes.
 function durMs(s?: string): number | undefined {
@@ -42,6 +44,13 @@ export default function IptvSeriesModal({
   const [openSeasons, setOpenSeasons] = useState<Set<number>>(new Set([1]))
   const [launching, setLaunching] = useState<string | null>(null)
   const modalRef = useModalA11y(true, onClose)
+  const { isWatched, markMany, unmarkMany } = useWatched()
+
+  const epWatchedItem = (season: number, ep: { episode_id: string; episode_num: number; title: string }): WatchedInput => ({
+    app: 'iptv', ref_id: ep.episode_id, ref_type: 'episode', parent_id: seriesId,
+    title: `${detail?.info.name ?? titleFallback ?? 'Série'} — S${season}E${ep.episode_num} ${ep.title}`,
+    thumb: coverFallback,
+  })
 
   useEffect(() => {
     setLoading(true)
@@ -150,45 +159,63 @@ export default function IptvSeriesModal({
           )}
           {!loading && detail?.seasons.map(season => {
             const isOpen = openSeasons.has(season.season_number)
+            const seasonAllSeen = season.episodes.length > 0 && season.episodes.every(ep => isWatched('iptv', ep.episode_id))
+            const toggleSeasonSeen = () => seasonAllSeen
+              ? unmarkMany('iptv', season.episodes.map(ep => ep.episode_id))
+              : markMany(season.episodes.map(ep => epWatchedItem(season.season_number, ep)))
             return (
               <div key={season.season_number} className="border-t border-zinc-800 first:border-t-0">
-                <button
-                  onClick={() => toggleSeason(season.season_number)}
-                  className="w-full flex items-center gap-2 py-3 text-left hover:text-amber-400 transition-colors"
-                >
-                  {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                  <span className="font-medium">{season.name}</span>
-                  <span className="text-xs text-zinc-500">
-                    · {season.episode_count} épisode{season.episode_count > 1 ? 's' : ''}
-                  </span>
-                </button>
+                <div className="flex items-center">
+                  <button
+                    onClick={() => toggleSeason(season.season_number)}
+                    className="flex-1 flex items-center gap-2 py-3 text-left hover:text-amber-400 transition-colors"
+                  >
+                    {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    <span className="font-medium">{season.name}</span>
+                    <span className="text-xs text-zinc-500">
+                      · {season.episode_count} épisode{season.episode_count > 1 ? 's' : ''}
+                    </span>
+                    {seasonAllSeen && <Check size={13} className="text-green-500 ml-1" />}
+                  </button>
+                  <button
+                    onClick={toggleSeasonSeen}
+                    title={seasonAllSeen ? 'Marquer la saison comme non vue' : 'Marquer la saison comme vue'}
+                    className={`inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-colors ${seasonAllSeen ? 'text-green-400 hover:text-green-300' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  >
+                    {seasonAllSeen ? <Check size={14} /> : <Eye size={14} />}
+                    <span className="hidden sm:inline">{seasonAllSeen ? 'Saison vue' : 'Saison vue'}</span>
+                  </button>
+                </div>
                 {isOpen && (
                   <div className="space-y-1 pb-3">
                     {season.episodes.map(ep => {
                       const busy = launching === `ep-${ep.episode_id}`
+                      const seen = isWatched('iptv', ep.episode_id)
                       return (
-                        <button
-                          key={ep.episode_id}
-                          onClick={() => playEpisode(
-                            ep.episode_id,
-                            ep.container_extension,
-                            `${detail?.info.name ?? titleFallback ?? 'Série'} — S${season.season_number}E${ep.episode_num} ${ep.title}`,
-                          )}
-                          disabled={busy}
-                          className="w-full flex items-center gap-3 px-2 py-2 rounded hover:bg-zinc-800 text-left disabled:opacity-50 transition-colors"
-                        >
-                          <div className="text-xs text-zinc-500 w-12 shrink-0">
-                            S{season.season_number}E{ep.episode_num}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm truncate">{ep.title}</div>
-                            {ep.air_date && <div className="text-[11px] text-zinc-600">{ep.air_date}</div>}
-                          </div>
-                          {busy
-                            ? <Loader2 size={14} className="animate-spin text-amber-400" />
-                            : <Play size={12} className="text-zinc-600" fill="currentColor" />
-                          }
-                        </button>
+                        <div key={ep.episode_id} className="flex items-center gap-1 group">
+                          <button
+                            onClick={() => playEpisode(
+                              ep.episode_id,
+                              ep.container_extension,
+                              `${detail?.info.name ?? titleFallback ?? 'Série'} — S${season.season_number}E${ep.episode_num} ${ep.title}`,
+                            )}
+                            disabled={busy}
+                            className="flex-1 min-w-0 flex items-center gap-3 px-2 py-2 rounded hover:bg-zinc-800 text-left disabled:opacity-50 transition-colors"
+                          >
+                            <div className={`text-xs w-12 shrink-0 ${seen ? 'text-green-500' : 'text-zinc-500'}`}>
+                              S{season.season_number}E{ep.episode_num}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className={`text-sm truncate ${seen ? 'text-zinc-400' : ''}`}>{ep.title}</div>
+                              {ep.air_date && <div className="text-[11px] text-zinc-600">{ep.air_date}</div>}
+                            </div>
+                            {busy
+                              ? <Loader2 size={14} className="animate-spin text-amber-400" />
+                              : <Play size={12} className="text-zinc-600" fill="currentColor" />
+                            }
+                          </button>
+                          <WatchedButton item={epWatchedItem(season.season_number, ep)} size={13} className="w-8 h-8 shrink-0" />
+                        </div>
                       )
                     })}
                   </div>

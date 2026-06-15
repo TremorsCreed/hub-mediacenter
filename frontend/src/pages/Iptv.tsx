@@ -9,6 +9,7 @@ const catKey = (type: string) => `hub.iptv.cat.${type}`
 const saveCat = (type: string, id: string) => { try { localStorage.setItem(catKey(type), id) } catch { /* */ } }
 import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight, ChevronLeft, Lock, Info } from 'lucide-react'
 import FavoriteButton from '../components/FavoriteButton'
+import WatchedButton from '../components/WatchedButton'
 import AddToPlaylist from '../components/AddToPlaylist'
 import { CatalogDndProvider, DraggableMedia } from '../components/CatalogDnd'
 import EpgGuide from '../components/EpgGuide'
@@ -589,6 +590,10 @@ export default function Iptv() {
                   <AddToPlaylist
                     item={{ app: 'iptv', ref_id: s.stream_id, ref_type: s.type, title: s.name, thumb: s.logo }}
                     className="reveal absolute top-2 right-11 w-7 h-7"
+                  />
+                  <WatchedButton
+                    item={{ app: 'iptv', ref_id: s.stream_id, ref_type: s.type, title: s.name, thumb: s.logo }}
+                    className="reveal absolute top-2 right-20 w-7 h-7"
                   />
                 </DraggableMedia>
               ))}

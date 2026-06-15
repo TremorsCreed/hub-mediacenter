@@ -126,6 +126,23 @@ export async function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);
 
+    -- Suivi « vu » par profil : films, séries, saisons, épisodes, jeux. parent_id relie
+    -- un épisode/saison à sa série (pour agréger plus tard côté algo de reco).
+    CREATE TABLE IF NOT EXISTS watched (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      app TEXT NOT NULL,
+      ref_id TEXT NOT NULL,
+      ref_type TEXT,
+      title TEXT,
+      thumb TEXT,
+      parent_id TEXT,
+      watched_at INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(user_id, app, ref_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_watched_user ON watched(user_id);
+
     CREATE TABLE IF NOT EXISTS playlists (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       owner_user_id INTEGER NOT NULL,

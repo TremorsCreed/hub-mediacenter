@@ -104,6 +104,20 @@ export interface Favorite extends FavoriteInput {
   created_at: number
 }
 
+// Suivi « vu » (film/série/saison/épisode/jeu). parent_id relie un épisode/saison à sa série.
+export interface WatchedInput {
+  app: string
+  ref_id: string
+  ref_type?: string
+  title?: string
+  thumb?: string
+  parent_id?: string
+}
+export interface WatchedItem extends WatchedInput {
+  id: number
+  watched_at: number
+}
+
 export interface PlaylistItem {
   id: number
   playlist_id: number
@@ -571,6 +585,13 @@ export const api = {
     list: () => get<Favorite[]>('/favorites'),
     add: (f: FavoriteInput) => post<{ ok: boolean }>('/favorites', f),
     remove: (app: string, ref_id: string) => del<{ ok: boolean }>(`/favorites?app=${encodeURIComponent(app)}&ref_id=${encodeURIComponent(ref_id)}`),
+  },
+  watched: {
+    list: () => get<WatchedItem[]>('/watched'),
+    add: (w: WatchedInput) => post<{ ok: boolean }>('/watched', w),
+    addBulk: (items: WatchedInput[]) => post<{ ok: boolean; count: number }>('/watched/bulk', { items }),
+    remove: (app: string, ref_id: string) => del<{ ok: boolean }>(`/watched?app=${encodeURIComponent(app)}&ref_id=${encodeURIComponent(ref_id)}`),
+    removeBulk: (app: string, ref_ids: string[]) => post<{ ok: boolean }>('/watched/unbulk', { app, ref_ids }),
   },
   playlists: {
     list: () => get<Playlist[]>('/playlists'),

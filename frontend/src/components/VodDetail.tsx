@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { api, IptvStream, IptvVodInfo } from '../api'
 import { X, Play, Film, Star, Clock, Calendar, Loader2 } from 'lucide-react'
 import FavoriteButton from './FavoriteButton'
+import WatchedButton from './WatchedButton'
 import AddToPlaylist from './AddToPlaylist'
 import { useModalA11y } from '../useModalA11y'
 
@@ -108,6 +109,7 @@ export default function VodDetail({ credId, stream, deviceName, onPlay, onClose 
               </button>
             )}
             <FavoriteButton fav={{ app: 'iptv', ref_id: stream.stream_id, ref_type: 'vod', title, thumb: cover }} className="w-10 h-10 border border-zinc-700 rounded-lg" />
+            <WatchedButton item={{ app: 'iptv', ref_id: stream.stream_id, ref_type: 'vod', title, thumb: cover }} className="w-10 h-10 border border-zinc-700 rounded-lg" />
             <AddToPlaylist item={{ app: 'iptv', ref_id: stream.stream_id, ref_type: 'vod', title, thumb: cover }} className="w-10 h-10 border border-zinc-700 rounded-lg" />
           </div>
 

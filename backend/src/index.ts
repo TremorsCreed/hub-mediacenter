@@ -16,6 +16,7 @@ import controlRouter from './routes/control'
 import launchboxRouter from './routes/launchbox'
 import usersRouter from './routes/users'
 import favoritesRouter from './routes/favorites'
+import watchedRouter from './routes/watched'
 import playlistsRouter from './routes/playlists'
 import senscritiqueRouter from './routes/senscritique'
 import spotifyRouter from './routes/spotify'
@@ -32,6 +33,7 @@ app.use(attachUser) // attache req.userId depuis le header X-User-Id
 
 app.use('/api/users', usersRouter)
 app.use('/api/favorites', favoritesRouter)
+app.use('/api/watched', watchedRouter)
 app.use('/api/playlists', playlistsRouter)
 app.use('/api/senscritique', senscritiqueRouter)
 app.use('/api/spotify', spotifyRouter)

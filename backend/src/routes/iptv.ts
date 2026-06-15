@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path'
 
 const router = Router()
 
-async function getXtreamCred(id: string) {
+export async function getXtreamCred(id: string) {
   const { rows } = await db.execute({ sql: 'SELECT data FROM credentials WHERE id = ? AND type = ?', args: [id, 'xtream'] })
   if (!rows.length) return null
   const data = JSON.parse((rows[0] as any).data as string)
@@ -24,7 +24,7 @@ async function getXtreamCred(id: string) {
   }
 }
 
-async function xtreamCall(cred: NonNullable<Awaited<ReturnType<typeof getXtreamCred>>>, action: string, extra: Record<string, string> = {}) {
+export async function xtreamCall(cred: NonNullable<Awaited<ReturnType<typeof getXtreamCred>>>, action: string, extra: Record<string, string> = {}) {
   const params = new URLSearchParams({ username: cred.user, password: cred.pass, action, ...extra })
   const url = `${cred.server}/player_api.php?${params}`
   const r = await fetch(url)

@@ -367,6 +367,18 @@ export interface MediaNow {
   updated_at: number // ms epoch — pour extrapoler la position pendant la lecture
 }
 
+// Métadonnées étendues du média en cours (panneau « lecture en cours »), résolues
+// côté serveur depuis la source (Plex ou IPTV VOD).
+export interface NowMeta {
+  source: string
+  plot?: string
+  genre?: string
+  cast?: string
+  director?: string
+  year?: number | string
+  rating?: number | string
+}
+
 // Fiche détaillée d'un film VOD (façon Plex), agrégée par le provider (TMDB)
 export interface IptvVodInfo {
   name: string; o_name: string
@@ -702,6 +714,7 @@ export const api = {
     setVolume: (deviceId: string, level: number) =>
       post<{ ok: boolean; action: string }>(`/control/${deviceId}/set_volume?level=${Math.max(0, Math.min(100, Math.round(level)))}`, {}),
     now: (deviceId: string) => get<MediaNow | null>(`/state/now/${deviceId}`),
+    nowMeta: (deviceId: string) => get<NowMeta | null>(`/state/now-meta/${deviceId}`),
     // Autoplay « épisode suivant » : annuler le compte à rebours / lancer tout de suite.
     cancelNext: (deviceId: string) => post<{ ok: boolean }>(`/play/cancel-next/${deviceId}`, {}),
     playNextNow: (deviceId: string) => post<{ ok: boolean }>(`/play/play-next-now/${deviceId}`, {}),

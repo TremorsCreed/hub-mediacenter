@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { db } from '../db'
 import { isConnected, mediaStates, getPendingAutoplay } from '../ws'
 import { isValidAdminToken } from '../auth'
+import { getXtreamCred, xtreamCall } from './iptv'
 
 const router = Router()
 
@@ -50,6 +51,63 @@ router.get('/progress', async (_req, res) => {
     ...r,
     percent: r.duration > 0 ? Math.min(100, Math.round((r.position / r.duration) * 100)) : 0,
   })))
+})
+
+// GET /now-meta/:deviceId — métadonnées étendues du média en cours (synopsis, genre,
+// casting…) résolues depuis la source (Plex ou IPTV VOD) via le catalog_id persisté.
+// null si rien d'exploitable (live, série IPTV par épisode, etc.).
+router.get('/now-meta/:deviceId', async (req, res) => {
+  const { rows } = await db.execute({ sql: 'SELECT catalog_id FROM playback_state WHERE device_id = ?', args: [req.params.deviceId] })
+  const catId = (rows[0] as any)?.catalog_id as string | undefined
+  if (!catId) return res.json(null)
+  try {
+    if (catId.startsWith('plex:')) {
+      const rk = catId.slice(5)
+      const { rows: pc } = await db.execute('SELECT auth_token, server_url FROM plex_config WHERE id = 1')
+      const cfg = pc[0] as any
+      if (!cfg?.auth_token || !cfg?.server_url) return res.json(null)
+      const r = await fetch(`${cfg.server_url}/library/metadata/${rk}?X-Plex-Token=${cfg.auth_token}`,
+        { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(5000) as any })
+      if (!r.ok) return res.json(null)
+      const d: any = await r.json()
+      const m = d?.MediaContainer?.Metadata?.[0]
+      if (!m) return res.json(null)
+      const tags = (arr: any[]) => (arr ?? []).map((x: any) => x.tag).filter(Boolean)
+      return res.json({
+        source: 'plex',
+        plot: m.summary || undefined,
+        genre: tags(m.Genre).slice(0, 4).join(', ') || undefined,
+        cast: tags(m.Role).slice(0, 5).join(', ') || undefined,
+        director: tags(m.Director).join(', ') || undefined,
+        year: m.year || undefined,
+        rating: m.rating || undefined,
+      })
+    }
+    const mv = catId.match(/^iptv:vod:(.+)$/)
+    if (mv) {
+      const { rows: dc } = await db.execute({ sql: 'SELECT xtream_credential_id FROM device_config WHERE device_id = ?', args: [req.params.deviceId] })
+      let credId = (dc[0] as any)?.xtream_credential_id
+      if (!credId) {
+        const { rows: any1 } = await db.execute("SELECT id FROM credentials WHERE type='xtream' ORDER BY id LIMIT 1")
+        credId = (any1[0] as any)?.id
+      }
+      if (!credId) return res.json(null)
+      const cred = await getXtreamCred(String(credId))
+      if (!cred) return res.json(null)
+      const d: any = await xtreamCall(cred, 'get_vod_info', { vod_id: mv[1] })
+      const info = d?.info || {}
+      return res.json({
+        source: 'iptv',
+        plot: info.plot || info.description || undefined,
+        genre: info.genre || undefined,
+        cast: info.cast || info.actors || undefined,
+        director: info.director || undefined,
+        year: String(info.releasedate || info.release_date || '').slice(0, 4) || undefined,
+        rating: info.rating || undefined,
+      })
+    }
+    return res.json(null)
+  } catch { return res.json(null) }
 })
 
 router.get('/', async (_req, res) => {

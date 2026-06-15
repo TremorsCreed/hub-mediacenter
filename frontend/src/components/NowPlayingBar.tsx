@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, MediaNow, Device } from '../api'
+import { api, MediaNow, Device, NowMeta } from '../api'
 import { useCurrentDeviceId } from '../usePersistentDevice'
 import { usePersistedState } from '../usePersistedState'
 import { launchRemote, canRemote } from '../remote'
@@ -53,8 +53,19 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [pinned, setPinned] = usePersistedState('hub.nowplaying.pin', false)
+  const [meta, setMeta] = useState<NowMeta | null>(null)
   const nullStreak = useRef(0)
   const isRight = dock === 'right'
+
+  // Métadonnées étendues (synopsis/genre/casting) du média en cours — seulement en
+  // panneau droit, refetch quand le titre change (pas à chaque tick de position).
+  useEffect(() => {
+    if (dock !== 'right' || !deviceId || !now?.title || now.state === 'stopped' || now.up_next) { setMeta(null); return }
+    let alive = true
+    api.control.nowMeta(deviceId).then(mm => { if (alive) setMeta(mm) }).catch(() => {})
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceId, dock, now?.title, now?.state])
 
   useEffect(() => { api.devices.list().then(setDevices).catch(() => {}) }, [])
 
@@ -315,6 +326,20 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
             <div className="text-base text-zinc-100 font-semibold mt-1.5 line-clamp-3">{m.title || 'Lecture en cours'}</div>
             {device && <div className="text-xs text-zinc-400 mt-0.5">sur {device.name}</div>}
           </div>
+
+          {meta && (meta.plot || meta.genre || meta.cast) && (
+            <div className="space-y-1.5">
+              {(meta.year || meta.genre || meta.rating) && (
+                <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-zinc-500">
+                  {meta.year && <span>{meta.year}</span>}
+                  {meta.genre && <span>· {meta.genre}</span>}
+                  {meta.rating && <span>· ★ {meta.rating}</span>}
+                </div>
+              )}
+              {meta.plot && <p className="text-xs text-zinc-300 leading-relaxed line-clamp-5">{meta.plot}</p>}
+              {meta.cast && <div className="text-[11px] text-zinc-500 line-clamp-2">Avec {meta.cast}</div>}
+            </div>
+          )}
 
           {hasBar ? (
             <div>

@@ -107,12 +107,17 @@ class HubService : Service() {
         // postDelayed plutôt que post : laisse le temps à la connexion WS de s'établir.
         cmdHandler.removeCallbacks(sessionMonitor)
         cmdHandler.postDelayed(sessionMonitor, 4000L)
+        // Event-driven : notification instantanée des changements de session/métadonnées
+        // (un peu après, le temps que la permission notif soit prête).
+        cmdHandler.postDelayed({ startSessionListener() }, 4500L)
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        try { watchedController?.unregisterCallback(mediaCallback) } catch (_: Exception) {}
+        try { (getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager)?.removeOnActiveSessionsChangedListener(sessionsChangedListener) } catch (_: Exception) {}
         webSocket?.close(1000, "Service stopped")
         client.dispatcher.executorService.shutdown()
         super.onDestroy()
@@ -381,6 +386,60 @@ class HubService : Service() {
             try { reportActiveSession() } catch (e: Exception) { Log.w(TAG, "session monitor", e) }
             cmdHandler.postDelayed(this, 2000L)
         }
+    }
+
+    // ── Suivi event-driven des MediaSessions ────────────────────────────────────
+    // Au lieu d'attendre le tick de 2s, on s'abonne aux changements : Just Player qui
+    // swappe son flux (onMetadataChanged) ou une nouvelle app qui ouvre une session
+    // (OnActiveSessionsChangedListener) → on remonte l'info au Hub quasi instantanément.
+    @Volatile private var watchedController: android.media.session.MediaController? = null
+
+    private val mediaCallback = object : android.media.session.MediaController.Callback() {
+        override fun onMetadataChanged(metadata: android.media.MediaMetadata?) { reportActiveSessionSoon() }
+        override fun onPlaybackStateChanged(state: PlaybackState?) { reportActiveSessionSoon() }
+        override fun onSessionDestroyed() { reportActiveSessionSoon() }
+    }
+
+    private val sessionsChangedListener =
+        MediaSessionManager.OnActiveSessionsChangedListener { attachActiveSession() }
+
+    private val reportSoonRunnable = Runnable { try { reportActiveSession() } catch (_: Exception) {} }
+
+    // Coalesce les rafales d'événements (un swap émet plusieurs callbacks) en un seul report.
+    private fun reportActiveSessionSoon() {
+        cmdHandler.removeCallbacks(reportSoonRunnable)
+        cmdHandler.postDelayed(reportSoonRunnable, 150L)
+    }
+
+    // (Ré)attache le callback à la session active courante quand elle change.
+    private fun attachActiveSession() {
+        try {
+            val mgr = getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager ?: return
+            val component = ComponentName(this, HubNotificationListener::class.java)
+            val ctrl = mgr.getActiveSessions(component).firstOrNull {
+                val s = it.playbackState?.state
+                s == PlaybackState.STATE_PLAYING || s == PlaybackState.STATE_PAUSED || s == PlaybackState.STATE_BUFFERING
+            }
+            if (ctrl?.sessionToken != watchedController?.sessionToken) {
+                watchedController?.let { try { it.unregisterCallback(mediaCallback) } catch (_: Exception) {} }
+                watchedController = ctrl
+                ctrl?.registerCallback(mediaCallback, cmdHandler)
+            }
+            reportActiveSessionSoon()
+        } catch (_: SecurityException) { /* permission notif pas encore accordée */ }
+        catch (e: Exception) { Log.w(TAG, "attachActiveSession: ${e.message}") }
+    }
+
+    private fun startSessionListener() {
+        try {
+            val mgr = getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager ?: return
+            val component = ComponentName(this, HubNotificationListener::class.java)
+            mgr.addOnActiveSessionsChangedListener(sessionsChangedListener, component, cmdHandler)
+            attachActiveSession()
+            Log.i(TAG, "Session listener event-driven actif")
+        } catch (e: SecurityException) {
+            Log.w(TAG, "startSessionListener: permission Notification access manquante")
+        } catch (e: Exception) { Log.w(TAG, "startSessionListener: ${e.message}") }
     }
 
     private fun reportActiveSession() {

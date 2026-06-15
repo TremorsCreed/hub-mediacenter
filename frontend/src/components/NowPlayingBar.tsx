@@ -35,7 +35,7 @@ function fmt(ms: number): string {
               : `${m}:${String(s).padStart(2, '0')}`
 }
 
-const POLL_MS = 1500
+const POLL_MS = 1000
 const HIDE_AFTER_NULLS = 3 // garde la barre ~4,5s après la fin (lisse les transitions entre films)
 
 interface Props { dock: Dock; onToggleDock: () => void }

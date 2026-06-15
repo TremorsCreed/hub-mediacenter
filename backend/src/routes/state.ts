@@ -4,6 +4,27 @@ import { db } from '../db'
 import { isConnected, mediaStates, getPendingAutoplay, lastCatalog } from '../ws'
 import { isValidAdminToken } from '../auth'
 import { getXtreamCred, xtreamCall } from './iptv'
+import { normalizeTitle, findIptvVodMatch } from '../iptvVodCache'
+
+// Deux titres désignent-ils le même média ? (normalisés : minuscules, sans préfixe de
+// langue ni ponctuation). Égalité, ou inclusion si assez long (évite les faux positifs).
+function titleMatch(a?: string, b?: string): boolean {
+  if (!a || !b) return false
+  const na = normalizeTitle(a), nb = normalizeTitle(b)
+  if (!na || !nb) return false
+  if (na === nb) return true
+  return (na.includes(nb) && nb.length >= 6) || (nb.includes(na) && na.length >= 6)
+}
+
+async function resolveCredId(deviceId: string): Promise<number | null> {
+  const { rows: dc } = await db.execute({ sql: 'SELECT xtream_credential_id FROM device_config WHERE device_id = ?', args: [deviceId] })
+  let credId = (dc[0] as any)?.xtream_credential_id
+  if (!credId) {
+    const { rows: a } = await db.execute("SELECT id FROM credentials WHERE type='xtream' ORDER BY id LIMIT 1")
+    credId = (a[0] as any)?.id
+  }
+  return credId ? Number(credId) : null
+}
 
 const router = Router()
 
@@ -57,11 +78,31 @@ router.get('/progress', async (_req, res) => {
 // casting…) résolues depuis la source (Plex ou IPTV VOD) via le catalog_id persisté.
 // null si rien d'exploitable (live, série IPTV par épisode, etc.).
 router.get('/now-meta/:deviceId', async (req, res) => {
-  // catalog_id : la mémoire du dernier lancement d'abord (fiable), sinon playback_state.
-  let catId = lastCatalog.get(req.params.deviceId)
+  const deviceId = req.params.deviceId
+  // On ne renvoie des infos que pour CE qui joue réellement (mediaStates) ET seulement
+  // si on sait à quel média source ça correspond (titre vérifié) → jamais d'info périmée.
+  const cur = mediaStates.get(deviceId)
+  if (!cur || cur.state === 'stopped') return res.json(null)
+  const curTitle = cur.title
+
+  let catId: string | undefined
+  // 1) Dernier lancement Hub, si le titre correspond à ce qui joue.
+  const lc = lastCatalog.get(deviceId)
+  if (lc && titleMatch(lc.title, curTitle)) catId = lc.catalog_id
+  // 2) playback_state (titre vérifié aussi).
   if (!catId) {
-    const { rows } = await db.execute({ sql: 'SELECT catalog_id FROM playback_state WHERE device_id = ?', args: [req.params.deviceId] })
-    catId = (rows[0] as any)?.catalog_id as string | undefined
+    const { rows } = await db.execute({ sql: 'SELECT catalog_id, title FROM playback_state WHERE device_id = ?', args: [deviceId] })
+    const ps = rows[0] as any | undefined
+    if (ps?.catalog_id && titleMatch(ps.title, curTitle)) catId = ps.catalog_id as string
+  }
+  // 3) Lancé hors Hub (télécommande physique…) : retrouver le média IPTV VOD par son
+  //    titre via le cache (Plex hors Hub non couvert ici).
+  if (!catId && curTitle && ['justplayer', 'vlc', 'mxplayer', 'iptv', 'tivimate'].includes(cur.app || '')) {
+    const credId = await resolveCredId(deviceId)
+    if (credId) {
+      const m = await findIptvVodMatch(credId, curTitle).catch(() => null)
+      if (m && (m as any).stream_id) catId = `iptv:vod:${(m as any).stream_id}`
+    }
   }
   if (!catId) return res.json(null)
   try {

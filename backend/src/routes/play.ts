@@ -390,7 +390,7 @@ async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, 
   setUpNext(target_device_id, up_next as UpNextItem[] | undefined, userId, series_duration_ms ?? 0)
   // catalog_id fiable (résolution des métadonnées du média en cours, cf. now-meta) :
   // survit aux reconnexions agent contrairement à playback_state.
-  lastCatalog.set(target_device_id, entry.id)
+  lastCatalog.set(target_device_id, { catalog_id: entry.id, title: entry.title })
 
   // 3. Resolve app
   const { rows: devRows } = await db.execute({ sql: 'SELECT capabilities FROM devices WHERE id = ?', args: [target_device_id] })

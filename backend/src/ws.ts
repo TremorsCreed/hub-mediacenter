@@ -317,8 +317,9 @@ export interface UpNextItem {
   iptv_ext?: string
   title?: string
   thumb?: string
+  duration_ms?: number   // durée attendue (utile quand le lecteur IPTV ne la rapporte pas)
 }
-interface UpNextState { items: UpNextItem[]; userId: number | null }
+interface UpNextState { items: UpNextItem[]; userId: number | null; expectedMs: number }
 const upNext = new Map<string, UpNextState>()
 
 interface PendingAutoplay { title: string; launchesAt: number; timer: ReturnType<typeof setTimeout>; next: UpNextItem; rest: UpNextItem[]; userId: number | null }
@@ -334,9 +335,11 @@ let autoplayLauncher: AutoplayLauncher | null = null
 export function setAutoplayLauncher(fn: AutoplayLauncher) { autoplayLauncher = fn }
 
 // Définit/écrase la file du device. Tout nouveau play annule un compte à rebours en cours.
-export function setUpNext(deviceId: string, items: UpNextItem[] | undefined, userId: number | null) {
+// expectedMs = durée attendue de l'épisode COURANT (repli si la MediaSession ne donne
+// pas de durée — fréquent avec les lecteurs IPTV).
+export function setUpNext(deviceId: string, items: UpNextItem[] | undefined, userId: number | null, expectedMs = 0) {
   cancelAutoplay(deviceId)
-  if (items && items.length) upNext.set(deviceId, { items, userId })
+  if (items && items.length) upNext.set(deviceId, { items, userId, expectedMs })
   else upNext.delete(deviceId)
 }
 
@@ -363,12 +366,16 @@ export function fireAutoplayNow(deviceId: string): boolean {
 // Déclenché quand une lecture s'arrête : si l'épisode était quasi terminé et qu'une
 // file existe (autoplay activé pour le profil), arme le compte à rebours vers le suivant.
 async function maybeAutoplayNext(deviceId: string, prev: MediaState | undefined): Promise<void> {
-  if (!prev || !prev.duration || prev.duration <= 0) return
-  const ratio = prev.position / prev.duration
-  const remaining = prev.duration - prev.position
-  if (ratio < FINISH_RATIO && remaining > FINISH_REMAIN_MS) return  // arrêt en cours de route → pas d'autoplay
+  if (!prev) return
   const q = upNext.get(deviceId)
   if (!q || !q.items.length) return
+  // Durée de référence : celle de la MediaSession si dispo, sinon la durée attendue
+  // transmise au lancement (les lecteurs IPTV ne rapportent souvent pas de durée).
+  const effDuration = prev.duration > 0 ? prev.duration : q.expectedMs
+  if (effDuration <= 0) return                       // impossible de juger « terminé » → on s'abstient
+  const ratio = prev.position / effDuration
+  const remaining = effDuration - prev.position
+  if (ratio < FINISH_RATIO && remaining > FINISH_REMAIN_MS) return  // arrêt en cours de route → pas d'autoplay
   // Respect du réglage par profil (autoplay_next, défaut activé)
   if (q.userId != null) {
     try {

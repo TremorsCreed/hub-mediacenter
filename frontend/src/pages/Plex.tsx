@@ -279,7 +279,7 @@ export default function Plex() {
     const flat: { id: string; item: UpNextItem }[] = []
     for (const s of showDetail?.seasons ?? [])
       for (const e of s.episodes)
-        flat.push({ id: e.ratingKey, item: { plex_id: e.ratingKey, title: `${name} — S${s.season_number}E${e.episode_number} ${e.title}`, thumb: e.thumb || selectedShow?.thumb } })
+        flat.push({ id: e.ratingKey, item: { plex_id: e.ratingKey, title: `${name} — S${s.season_number}E${e.episode_number} ${e.title}`, thumb: e.thumb || selectedShow?.thumb, duration_ms: e.duration } })
     const idx = flat.findIndex(f => f.id === ep.ratingKey)
     const up_next = idx >= 0 ? flat.slice(idx + 1).map(f => f.item) : undefined
     try {

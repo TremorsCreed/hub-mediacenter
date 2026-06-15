@@ -47,6 +47,8 @@ const QUICK_TILES: { label: string; to: string; icon: typeof Tv; grad: string }[
 ]
 
 const APP_ICON: Record<string, typeof Tv> = { iptv: Radio, plex: Film, launchbox: Gamepad2, catalog: MonitorPlay }
+// Libellé de la source d'un favori (Plex / IPTV / Jeu …), affiché en badge sur la carte.
+const SOURCE_LABEL: Record<string, string> = { iptv: 'IPTV', plex: 'Plex', launchbox: 'Jeu', catalog: 'Catalogue' }
 function favImg(f: Favorite): string {
   if (!f.thumb) return ''
   if (f.app === 'launchbox') return f.thumb
@@ -294,7 +296,10 @@ export default function UserDashboard() {
                         </div>
                       </div>
                       {busy && <div className="absolute inset-0 bg-black/70 flex items-center justify-center"><Loader2 size={18} className="animate-spin text-amber-400" /></div>}
-                      <div className="absolute top-1.5 left-1.5 bg-black/55 backdrop-blur-sm rounded p-1"><Icon size={12} className="text-white/90" /></div>
+                      <div className="absolute top-1.5 left-1.5 bg-black/65 backdrop-blur-sm rounded px-1.5 py-0.5 flex items-center gap-1">
+                        <Icon size={11} className="text-white/90" />
+                        <span className="text-[9px] font-bold uppercase tracking-wide text-white/90">{SOURCE_LABEL[f.app] ?? f.app}</span>
+                      </div>
                     </button>
                     <button onClick={() => toggle(f)} title="Retirer des favoris"
                       className="tap-target reveal absolute top-1.5 right-1.5 w-7 h-7 flex items-center justify-center rounded-full bg-black/55 backdrop-blur-sm hover:bg-black/75">

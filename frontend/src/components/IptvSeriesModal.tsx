@@ -4,6 +4,20 @@ import { api, IptvSeriesInfo, UpNextItem } from '../api'
 import { useModalA11y } from '../useModalA11y'
 import { ChevronDown, ChevronRight, Loader2, Play, X } from 'lucide-react'
 
+// Durée Xtream → ms. Accepte "HH:MM:SS", "MM:SS" ou un nombre de secondes.
+function durMs(s?: string): number | undefined {
+  if (!s) return undefined
+  const t = s.trim()
+  if (t.includes(':')) {
+    const p = t.split(':').map(Number)
+    if (p.some(isNaN)) return undefined
+    const sec = p.reduce((acc, n) => acc * 60 + n, 0)
+    return sec > 0 ? sec * 1000 : undefined
+  }
+  const n = Number(t)
+  return isFinite(n) && n > 0 ? n * 1000 : undefined
+}
+
 export interface Props {
   credId: number
   seriesId: string
@@ -54,6 +68,7 @@ export default function IptvSeriesModal({
           item: {
             iptv_stream_id: ep.episode_id, iptv_type: 'series', iptv_ext: ep.container_extension,
             title: `${name} — S${s.season_number}E${ep.episode_num} ${ep.title}`, thumb: coverFallback,
+            duration_ms: durMs(ep.duration),
           },
         })
     return out
@@ -65,6 +80,7 @@ export default function IptvSeriesModal({
     const flat = flatEpisodes()
     const idx = flat.findIndex(f => f.id === epId)
     const up_next = idx >= 0 ? flat.slice(idx + 1).map(f => f.item) : undefined
+    const series_duration_ms = idx >= 0 ? flat[idx].item.duration_ms : undefined
     try {
       const r = await api.play({
         iptv_stream_id: epId,
@@ -73,6 +89,7 @@ export default function IptvSeriesModal({
         title,
         thumb: coverFallback,
         up_next,
+        series_duration_ms,
         app: 'iptv',
         device_id: deviceId,
         requester: 'manual',

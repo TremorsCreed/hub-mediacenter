@@ -105,10 +105,15 @@ async function plexRemotePlay(deviceIp: string, ratingKey: string, plexToken: st
   try {
     // 1. Créer un PlayQueue sur le serveur Plex
     const uri = `server://${machineId}/com.plexapp.plugins.library/library/metadata/${ratingKey}`
+    // continuous=1 : Plex enchaîne nativement les épisodes suivants de la série (son
+    // propre « À suivre »). Plus fiable que toute détection côté Hub. La file upNext
+    // du Hub reste en place comme filet : entre deux épisodes en mode continu il n'y a
+    // PAS d'arrêt → le Hub ne déclenche pas ; il ne prend le relais que si le client
+    // Plex a l'autoplay désactivé (auquel cas un vrai 'stopped' survient).
     const queueParams = new URLSearchParams({
       type: 'video',
       uri,
-      continuous: '0',
+      continuous: '1',
       shuffle: '0',
       repeat: '0',
       includeChapters: '1',
@@ -206,7 +211,10 @@ const PlaySchema = z.object({
     iptv_ext: z.string().optional(),
     title: z.string().optional(),
     thumb: z.string().optional(),
+    duration_ms: z.number().optional(),
   })).nullable().optional().transform(v => v ?? undefined),
+  // Durée attendue de l'épisode courant (repli détection fin si le lecteur ne la donne pas).
+  series_duration_ms: z.number().nullable().optional().transform(v => v ?? undefined),
   device_id: z.string().optional(),
   app: z.string().optional(),
   requester: z.enum(['zaparoo', 'llm', 'n8n', 'manual', 'ha']).default('manual')
@@ -289,7 +297,7 @@ type PlayResult = { status: number; body: any }
 // POST /play/transfer (« continuer sur… »). Retourne { status, body } au lieu d'écrire
 // la réponse, pour que les deux routes décident du code HTTP.
 async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, req: any): Promise<PlayResult> {
-  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, iptv_ext, external_url, external_platform, spotify_uri, spotify_device_id, title, thumb, resume, resume_position_ms, up_next, device_id, app, requester } = input
+  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, iptv_ext, external_url, external_platform, spotify_uri, spotify_device_id, title, thumb, resume, resume_position_ms, up_next, series_duration_ms, device_id, app, requester } = input
 
   // 0. Spotify : flux à part — contrôle Spotify Connect via Web API, pas le catalogue
   //    ni l'agent WS. Le token « suit le profil actif » : on lit avec le compte du
@@ -379,7 +387,7 @@ async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, 
 
   // File d'attente autoplay : ce play (épisode courant) définit la suite. Un play sans
   // up_next efface toute file/compte à rebours en cours pour ce device.
-  setUpNext(target_device_id, up_next as UpNextItem[] | undefined, userId)
+  setUpNext(target_device_id, up_next as UpNextItem[] | undefined, userId, series_duration_ms ?? 0)
 
   // 3. Resolve app
   const { rows: devRows } = await db.execute({ sql: 'SELECT capabilities FROM devices WHERE id = ?', args: [target_device_id] })
@@ -615,6 +623,7 @@ setAutoplayLauncher((deviceId, item, rest, userId) => {
     title: item.title,
     thumb: item.thumb,
     up_next: rest,
+    series_duration_ms: item.duration_ms,
     requester: 'manual',
   })
   doPlay(input, userId, fakeReq)

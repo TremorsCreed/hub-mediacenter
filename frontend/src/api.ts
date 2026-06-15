@@ -265,6 +265,7 @@ export interface PlayIntent {
   resume?: boolean
   resume_position_ms?: number  // reprise à une position précise (continue watching)
   up_next?: UpNextItem[]   // file des épisodes suivants (autoplay)
+  series_duration_ms?: number  // durée attendue de l'épisode courant (détection fin IPTV)
   device_id?: string
   app?: string
   requester: string
@@ -319,6 +320,7 @@ export interface UpNextItem {
   iptv_ext?: string
   title?: string
   thumb?: string
+  duration_ms?: number   // durée attendue (repli détection fin côté IPTV)
 }
 
 export interface MediaNow {

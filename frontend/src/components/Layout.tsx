@@ -3,12 +3,14 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { Library, History, Film, Radio, Compass, Gamepad2, ChevronLeft, ChevronRight, ShieldCheck, Home, ListVideo } from 'lucide-react'
 import { api } from '../api'
 import { useUser, initials } from '../UserContext'
-import NowPlayingBar from './NowPlayingBar'
+import { usePersistedState } from '../usePersistedState'
+import NowPlayingBar, { type Dock } from './NowPlayingBar'
 import RemoteScreen from './RemoteScreen'
 
 export default function Layout() {
   const [modules, setModules] = useState<{ plex: boolean; iptv: boolean; discover: boolean; launchbox: boolean }>({ plex: false, iptv: false, discover: false, launchbox: false })
   const [collapsed, setCollapsed] = useState(false)
+  const [dock, setDock] = usePersistedState<Dock>('hub.nowplaying.dock', 'bottom')
   const location = useLocation()
   const { currentUser, switchProfile } = useUser()
   // Modules « immersifs » qui gèrent leur propre layout interne (sidebars latérales)
@@ -164,10 +166,13 @@ export default function Layout() {
       <main className={`flex-1 ${isImmersive ? 'overflow-hidden' : 'overflow-y-auto p-6'}`}>
         <Outlet />
       </main>
+
+      {/* Contrôle média ancré à droite (panneau vertical riche) */}
+      {dock === 'right' && <NowPlayingBar dock="right" onToggleDock={() => setDock(d => d === 'right' ? 'bottom' : 'right')} />}
       </div>
 
-      {/* Barre globale « lecture en cours » (se masque si rien ne joue) */}
-      <NowPlayingBar />
+      {/* …ou ancré en bas (barre horizontale). Se masque si rien ne joue. */}
+      {dock === 'bottom' && <NowPlayingBar dock="bottom" onToggleDock={() => setDock(d => d === 'right' ? 'bottom' : 'right')} />}
 
       {/* Modale miroir d'écran (ws-scrcpy), ouverte par les boutons « Remote » */}
       <RemoteScreen />

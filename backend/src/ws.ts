@@ -2,6 +2,16 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { IncomingMessage, Server } from 'http'
 import { db } from './db'
 import { WsMessage, WsPlayCommand, DeviceCapability } from './types'
+import { normalizeTitle } from './iptvVodCache'
+
+// Deux titres désignent-ils le même média ? (normalisés). Sert à ne pas coller les
+// infos d'un lancement précédent sur ce qui joue réellement.
+function sameTitle(a?: string | null, b?: string | null): boolean {
+  if (!a || !b) return false
+  const na = normalizeTitle(a), nb = normalizeTitle(b)
+  if (!na || !nb) return false
+  return na === nb || (na.includes(nb) && nb.length >= 6) || (nb.includes(na) && na.length >= 6)
+}
 
 interface ConnectedAgent {
   ws: WebSocket
@@ -287,12 +297,18 @@ async function persistProgress(deviceId: string, m: MediaState): Promise<void> {
       args: [deviceId],
     })
     const ps = rows[0] as any | undefined
-    const catalogId = (ps?.catalog_id as string) || null
-    const app = m.app || (ps?.app as string) || null
-    const title = m.title || (ps?.title as string) || null
+    // On ne réutilise catalog_id/thumb (de lastCatalog ou playback_state) QUE si leur
+    // titre correspond à ce qui joue réellement — sinon on laisse fuiter le média/poster
+    // d'un lancement précédent (ex. poster d'Alien collé sur « Distant »).
+    const lc = lastCatalog.get(deviceId)
+    const lcMatch = !!(lc && sameTitle(lc.title, m.title))
+    const psMatch = !!(ps && sameTitle(ps.title as string, m.title))
+    const catalogId = lcMatch ? lc!.catalog_id : (psMatch ? (ps.catalog_id as string) || null : null)
+    const app = m.app || (psMatch ? (ps.app as string) : null) || null
+    const title = m.title || (psMatch ? (ps.title as string) : null) || null
     const mediaKey = catalogId || (app && title ? `${app}|${title}` : null)
     if (!mediaKey) return
-    const thumb = m.art || (ps?.thumb as string) || null
+    const thumb = m.art || (psMatch ? (ps.thumb as string) : null) || null
     await db.execute({
       sql: `INSERT INTO playback_progress
               (media_key, catalog_id, app, title, thumb, position, duration, seekable, device_id, updated_at)

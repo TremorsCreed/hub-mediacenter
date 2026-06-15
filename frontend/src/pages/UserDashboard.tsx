@@ -111,6 +111,11 @@ export default function UserDashboard() {
 
   const flash = (msg: string, ok: boolean) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3000) }
 
+  const removeProgress = async (mediaKey: string) => {
+    setResume(prev => prev.filter(r => r.media_key !== mediaKey))
+    await api.state.removeProgress(mediaKey).catch(() => {})
+  }
+
   // ── Persistance perso (self-service) ───────────────────────────────────────
   const saveRails = (next: { id: RailId; on: boolean }[]) => {
     setRails(next)
@@ -292,8 +297,9 @@ export default function UserDashboard() {
               {resume.map(it => {
                 const busy = launching === `resume:${it.media_key}`
                 return (
-                  <button key={it.media_key} onClick={() => resumePlay(it)} disabled={busy}
-                    className="hover-pop group relative w-60 shrink-0 snap-start text-left disabled:opacity-50">
+                  <div key={it.media_key} className="hover-pop group relative w-60 shrink-0 snap-start">
+                  <button onClick={() => resumePlay(it)} disabled={busy}
+                    className="w-full text-left disabled:opacity-50 block">
                     <div className="relative w-full aspect-video bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden group-hover:border-amber-500/60 transition-colors">
                       {it.app === 'youtube'
                         ? <div className="w-full h-full flex items-center justify-center bg-red-600/90"><Youtube size={40} className="text-white" /></div>
@@ -313,6 +319,11 @@ export default function UserDashboard() {
                     <div className="text-sm mt-1.5 truncate">{it.title}</div>
                     <div className="text-[11px] text-zinc-500">{fmt(it.duration - it.position)} restantes</div>
                   </button>
+                  <button onClick={() => removeProgress(it.media_key)} title="Retirer de Reprendre"
+                    className="reveal tap-target absolute top-1.5 right-1.5 w-7 h-7 flex items-center justify-center rounded-full bg-black/55 backdrop-blur-sm hover:bg-black/75">
+                    <X size={14} className="text-white/90" />
+                  </button>
+                  </div>
                 )
               })}
             </Rail>

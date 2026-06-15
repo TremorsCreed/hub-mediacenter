@@ -155,6 +155,14 @@ router.get('/now-meta/:deviceId', async (req, res) => {
   } catch { return res.json(null) }
 })
 
+// DELETE /progress?key=<media_key> — retire une entrée de « Reprendre » (bouton ✕).
+router.delete('/progress', async (req, res) => {
+  const key = req.query.key as string | undefined
+  if (!key) return res.status(400).json({ error: 'key requis' })
+  await db.execute({ sql: 'DELETE FROM playback_progress WHERE media_key = ?', args: [key] })
+  res.json({ ok: true })
+})
+
 router.get('/', async (_req, res) => {
   // Title : prefer playback_state.title (rempli pour les plays directs Plex/IPTV),
   // fallback sur catalog.title pour les plays via entrée catalog.

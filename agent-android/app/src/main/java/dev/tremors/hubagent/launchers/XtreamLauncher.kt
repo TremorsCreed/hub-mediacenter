@@ -145,30 +145,30 @@ class XtreamLauncher(private val config: XtreamConfig) : BaseLauncher {
         val playerPkg = pickPlayer(pm, cmd.player, cmd.iptvType)
         Log.i(TAG, "Préférence='${cmd.player ?: "auto"}' type='${cmd.iptvType}' → lecteur: ${playerPkg ?: "(system chooser)"}")
 
-        // À partir du 2e flux de la session : on tue le lecteur en cours pour repartir
-        // sur un décodeur/surface neufs (sinon image gelée / pause au changement de flux).
-        if (aStreamWasLaunched) killRunningPlayers(ctx)
+        // Just Player (com.brouken.player) est singleTask + onNewIntent : un nouvel
+        // ACTION_VIEW en SINGLE_TOP est remis à l'instance en cours qui swappe le flux
+        // proprement (setMediaItem) — pas besoin de tuer le process. C'est le kill+relaunch
+        // qui créait du résiduel (surface/MediaSession recréées) sur les switchs rapides.
+        // Les AUTRES lecteurs gardent le kill + CLEAR_TASK (comportement éprouvé contre le gel).
+        val isJustPlayer = playerPkg == "com.brouken.player"
+        if (aStreamWasLaunched && !isJustPlayer) killRunningPlayers(ctx)
 
         return try {
             val mime = mimeFor(cmd.iptvContainer, cmd.iptvType)
-            Log.i(TAG, "MIME='$mime' (container=${cmd.iptvContainer}, type=${cmd.iptvType})")
+            Log.i(TAG, "MIME='$mime' (container=${cmd.iptvContainer}, type=${cmd.iptvType}) justPlayer=$isJustPlayer")
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(Uri.parse(streamUrl), mime)
-                // CLEAR_TASK : relance le lecteur dans une tâche neuve à chaque flux →
-                // le décodeur/surface vidéo est réinitialisé. Évite "image gelée / audio
-                // continue" quand on change de flux dans une instance VLC déjà ouverte
-                // (CLEAR_TOP|SINGLE_TOP réutilisait l'instance sans reset).
+                // Just Player : SINGLE_TOP → onNewIntent swappe le flux en place (pas de
+                // reset de tâche). Autres : CLEAR_TASK → tâche neuve (décodeur/surface reset).
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    (if (isJustPlayer) Intent.FLAG_ACTIVITY_SINGLE_TOP else Intent.FLAG_ACTIVITY_CLEAR_TASK)
                 )
-                // Titre affiché par le lecteur (MX Player / VLC le lisent)
+                // Titre affiché par le lecteur (Just Player API_TITLE / MX / VLC)
                 putExtra("title", cmd.title)
-                // Reprise « continuer sur… » : Just Player (ExoPlayer, lecteur VOD par
-                // défaut) lit l'extra "position" en ms (Long). MX Player free l'attend en
-                // Int → reprise non garantie pour lui (repli début, acceptable).
                 if (cmd.resumeMs > 0) {
-                    putExtra("position", cmd.resumeMs)
+                    // Just Player API_POSITION = Int (ms). MX Player aussi (Int). Long était ignoré.
+                    putExtra("position", cmd.resumeMs.toInt())
                     Log.i(TAG, "Reprise à ${cmd.resumeMs}ms")
                 } else {
                     // VLC : démarre du début sans la pop-up "reprendre la lecture ?"

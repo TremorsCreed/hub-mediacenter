@@ -69,7 +69,6 @@ export default function Iptv() {
   const [langPanelOpen, setLangPanelOpen] = useState(false)
   // Cascade : média développé à la 1re entrée ; se réduit au clic d'un type pour
   // laisser apparaître la sidebar catégories. Persisté pour retrouver l'état exact.
-  const [mediaCollapsed, setMediaCollapsed] = usePersistedState('hub.iptv.mediacollapsed', false)
   // Contrôle parental : une catégorie verrouillée demande le PIN à l'ouverture et
   // reste déverrouillée tant qu'on n'en sort pas (changement de catégorie/type).
   const [unlockedCat, setUnlockedCat] = useState<string | null>(null)
@@ -293,53 +292,8 @@ export default function Iptv() {
     <CatalogDndProvider>
     <div className="flex h-full">
 
-      {/* ── Sidebar type de média (collapsible) ───────────────────── */}
-      <aside
-        className={`${mediaCollapsed ? 'w-14 cursor-pointer' : 'w-36'} shrink-0 bg-zinc-950/60 border-r border-zinc-800 flex flex-col transition-[width] duration-200 overflow-hidden`}
-        // Vue élargie d'un simple clic n'importe où sur la sidebar réduite
-        // (hors boutons, qui gardent leur action).
-        onClick={e => {
-          if (mediaCollapsed && !(e.target as HTMLElement).closest('button')) setMediaCollapsed(false)
-        }}
-      >
-        <div className="h-[53px] shrink-0 border-b border-zinc-800 flex items-center px-3">
-          {mediaCollapsed
-            ? <Tv size={16} strokeWidth={1.8} className="mx-auto text-zinc-500" />
-            : <span className="text-sm font-semibold text-white truncate">IPTV</span>
-          }
-        </div>
-        <nav className="flex-1 py-1">
-          {MEDIA_TYPES.map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              onClick={() => { setType(key); setCategoryId(''); setUnlockedCat(null); setMediaCollapsed(true) }}
-              title={mediaCollapsed ? label : undefined}
-              className={`w-full flex items-center py-3 text-sm transition-colors text-left border-l-2 ${
-                mediaCollapsed ? 'justify-center px-0' : 'gap-2.5 px-4'
-              } ${
-                type === key
-                  ? 'bg-zinc-800 text-white border-amber-500'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 border-transparent'
-              }`}
-            >
-              <Icon size={15} strokeWidth={1.8} />
-              {!mediaCollapsed && label}
-            </button>
-          ))}
-        </nav>
-        <div className="h-[45px] shrink-0 border-t border-zinc-800 flex items-center px-3">
-          <button
-            onClick={() => setMediaCollapsed(v => !v)}
-            title={mediaCollapsed ? 'Agrandir' : 'Réduire'}
-            className={`text-zinc-600 hover:text-zinc-300 transition-colors ${mediaCollapsed ? 'mx-auto' : 'ml-auto'}`}
-          >
-            {mediaCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-          </button>
-        </div>
-      </aside>
-
-      {/* ── Sidebar catégories (apparaît quand un type est ouvert) ── */}
-      <aside className={`${mediaCollapsed ? 'w-48 border-r border-zinc-800' : 'w-0'} shrink-0 bg-zinc-950/40 flex flex-col transition-[width] duration-200 overflow-hidden`}>
+      {/* ── Sidebar catégories (toujours visible ; le type se choisit en header) ── */}
+      <aside className="w-48 shrink-0 border-r border-zinc-800 bg-zinc-950/40 flex flex-col overflow-hidden">
         <div className="h-[53px] shrink-0 flex items-center px-3 border-b border-zinc-800 text-[10px] uppercase tracking-widest text-zinc-600 font-medium">
           Catégories
         </div>
@@ -384,6 +338,21 @@ export default function Iptv() {
 
         {/* Barre de contrôles */}
         <div className="flex items-center gap-2 px-4 min-h-[53px] border-b border-zinc-800 shrink-0 flex-wrap">
+          {/* Type de média (ex-sidebar) : segment en header pour aller plus vite */}
+          <div className="flex items-center gap-0.5 bg-zinc-900 border border-zinc-800 rounded-lg p-0.5 mr-1">
+            {MEDIA_TYPES.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => { setType(key); setCategoryId(''); setUnlockedCat(null) }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+                  type === key ? 'bg-amber-500 text-zinc-950 font-semibold' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                }`}
+              >
+                <Icon size={14} strokeWidth={2} /> {label}
+              </button>
+            ))}
+          </div>
+
           <select
             className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
             value={credId ?? ''}

@@ -4,7 +4,7 @@ import { db } from '../db'
 import { isConnected, mediaStates, getPendingAutoplay, lastCatalog } from '../ws'
 import { isValidAdminToken } from '../auth'
 import { getXtreamCred, xtreamCall } from './iptv'
-import { normalizeTitle, findIptvVodMatch } from '../iptvVodCache'
+import { normalizeTitle, findIptvVodMatch, getSeriesList } from '../iptvVodCache'
 
 // Deux titres désignent-ils le même média ? (normalisés : minuscules, sans préfixe de
 // langue ni ponctuation). Égalité, ou inclusion si assez long (évite les faux positifs).
@@ -71,8 +71,25 @@ router.get('/now/:deviceId', async (req, res) => {
       thumb = cached.thumb
     } else {
       const credId = await resolveCredId(req.params.deviceId)
-      const match = credId ? await findIptvVodMatch(credId, m.title).catch(() => null) : null
-      thumb = match?.logo ? `/api/iptv/image?url=${encodeURIComponent(match.logo)}` : undefined
+      if (credId) {
+        const img = (logo?: string) => logo ? `/api/iptv/image?url=${encodeURIComponent(logo)}` : undefined
+        // 1) film VOD par titre
+        const vod = await findIptvVodMatch(credId, m.title).catch(() => null)
+        thumb = img(vod?.logo)
+        // 2) sinon série : extraire le nom (avant « SxxExx ») et chercher la série
+        if (!thumb) {
+          const sm = m.title.match(/^(.*?)\s*[-–]\s*s\d{1,2}\s*e\d{1,3}/i)
+          if (sm) {
+            const n = normalizeTitle(sm[1])
+            const list = await getSeriesList(credId).catch(() => [])
+            const hit = list.find(s => {
+              const sn = normalizeTitle(s.name)
+              return sn === n || (sn.includes(n) && n.length >= 6) || (n.includes(sn) && sn.length >= 6)
+            })
+            thumb = img(hit?.logo)
+          }
+        }
+      }
       nowThumbCache.set(req.params.deviceId, { title: m.title, thumb })
     }
   }

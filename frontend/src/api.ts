@@ -742,6 +742,7 @@ export const api = {
       if (opts.sort) p.set('sort', opts.sort)
       return get<{ total: number; start: number; size: number; items: IptvStream[] }>(`/iptv/${credId}/streams?${p}`)
     },
+    refresh: (credId: number, type: 'live' | 'vod' | 'series') => post<{ ok: boolean; count: number }>(`/iptv/${credId}/refresh?type=${type}`, {}),
     seriesInfo: (credId: number, seriesId: string) => get<IptvSeriesInfo>(`/iptv/${credId}/series/${seriesId}`),
     vodInfo: (credId: number, streamId: string) => get<IptvVodInfo>(`/iptv/${credId}/vod-info/${streamId}`),
     epgBatch: (credId: number, streamIds: string[]) => post<Record<string, EpgEntry[]>>(`/iptv/${credId}/epg/batch`, { stream_ids: streamIds }),

@@ -58,9 +58,12 @@ async function fetchCred(credId: number) {
   }
 }
 
-async function fetchAll(credId: number, kind: Kind): Promise<StreamEntry[]> {
+// Retourne null en cas d'échec (credential invalide, erreur HTTP, timeout, réseau),
+// pour que l'appelant distingue « le provider n'a rien renvoyé » d'une vraie liste vide
+// et puisse conserver la dernière liste valide en cache.
+async function fetchAll(credId: number, kind: Kind): Promise<StreamEntry[] | null> {
   const cred = await fetchCred(credId)
-  if (!cred) return []
+  if (!cred) return null
   const action = kind === 'vod' ? 'get_vod_streams'
                 : kind === 'series' ? 'get_series'
                 : 'get_live_streams'
@@ -69,7 +72,7 @@ async function fetchAll(credId: number, kind: Kind): Promise<StreamEntry[]> {
   const t0 = Date.now()
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(45000) } as any)
-    if (!r.ok) { console.warn(`[iptv-cache] fetch ${kind} ${credId} returned ${r.status}`); return [] }
+    if (!r.ok) { console.warn(`[iptv-cache] fetch ${kind} ${credId} returned ${r.status}`); return null }
     const data = await r.json() as any[]
     const items: StreamEntry[] = (data ?? []).map(s => {
       const name = String(s.name ?? '')
@@ -90,7 +93,7 @@ async function fetchAll(credId: number, kind: Kind): Promise<StreamEntry[]> {
     return items
   } catch (e) {
     console.warn(`[iptv-cache] fetch ${kind} ${credId} failed:`, (e as Error).message)
-    return []
+    return null
   }
 }
 
@@ -100,11 +103,19 @@ export async function getList(credId: number, kind: Kind): Promise<StreamEntry[]
   const c = cache.get(k)
   if (c && (now - c.loadedAt) < TTL_MS) return c.items
   if (c?.inFlight) return c.inFlight
+  const prev = c?.items ?? []
+  const prevLoadedAt = c?.loadedAt ?? 0
   const promise = fetchAll(credId, kind).then(items => {
+    if (items === null) {
+      // Échec upstream : on garde la dernière liste valide et on NE rafraîchit PAS
+      // loadedAt — le TTL reste expiré, donc le prochain appel réessaiera.
+      cache.set(k, { items: prev, loadedAt: prevLoadedAt })
+      return prev
+    }
     cache.set(k, { items, loadedAt: Date.now() })
     return items
   })
-  cache.set(k, { items: c?.items ?? [], loadedAt: c?.loadedAt ?? 0, inFlight: promise })
+  cache.set(k, { items: prev, loadedAt: prevLoadedAt, inFlight: promise })
   return promise
 }
 
@@ -208,4 +219,19 @@ export function invalidate(credId: number) {
   cache.delete(key('vod', credId))
   cache.delete(key('live', credId))
   cache.delete(key('series', credId))
+}
+
+// Force le rechargement d'une liste (vod/live/series) depuis l'upstream et attend
+// le résultat. Utilisé par le bouton « Rafraîchir » de l'UI : purge l'entrée
+// (y compris une promise inFlight d'un fetch précédent qui aurait renvoyé vide)
+// puis relance un fetchAll complet et renvoie le nombre d'items obtenus.
+export async function refresh(credId: number, kind: Kind): Promise<number> {
+  const k = key(kind, credId)
+  const c = cache.get(k)
+  // Expire le TTL (loadedAt=0) sans jeter une éventuelle promise inFlight ni la
+  // dernière liste valide : getList relancera un fetch, et conservera l'ancienne
+  // liste en fallback si l'upstream échoue.
+  cache.set(k, { items: c?.items ?? [], loadedAt: 0 })
+  const items = await getList(credId, kind)
+  return items.length
 }

@@ -7,7 +7,7 @@ import { usePersistedState } from '../usePersistedState'
 // Dernière catégorie active mémorisée par type (live/vod/series)
 const catKey = (type: string) => `hub.iptv.cat.${type}`
 const saveCat = (type: string, id: string) => { try { localStorage.setItem(catKey(type), id) } catch { /* */ } }
-import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight, ChevronLeft, Lock, Info } from 'lucide-react'
+import { Search, Play, Loader2, AlertCircle, Tv, Film, Languages, MonitorPlay, X, ChevronDown, ChevronRight, ChevronLeft, Lock, Info, RefreshCw } from 'lucide-react'
 import FavoriteButton from '../components/FavoriteButton'
 import WatchedButton from '../components/WatchedButton'
 import AddToPlaylist from '../components/AddToPlaylist'
@@ -54,6 +54,8 @@ export default function Iptv() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0) // bump pour forcer un rechargement des streams
   const [sort, setSort] = usePersistedState('hub.iptv.sort', '') // '' = ordre provider
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
@@ -158,7 +160,7 @@ export default function Iptv() {
       })
       .catch(() => { setStreams([]); setTotal(0); fetchedRef.current = 0 })
       .finally(() => setLoading(false))
-  }, [credId, type, categoryId, debouncedSearch, selectedLangs, sort])
+  }, [credId, type, categoryId, debouncedSearch, selectedLangs, sort, reloadKey])
 
   const loadMore = async () => {
     if (!credId || loadingMore || loading) return
@@ -190,6 +192,23 @@ export default function Iptv() {
     obs.observe(el)
     return () => obs.disconnect()
   }, [credId, type, categoryId, debouncedSearch, selectedLangs, sort, total, loadingMore, loading])
+
+  // Rafraîchit la liste : purge le cache backend du type courant, le recharge
+  // depuis l'upstream Xtream, puis force un rechargement des streams affichés.
+  const refreshList = async () => {
+    if (!credId || refreshing) return
+    setRefreshing(true)
+    try {
+      const r = await api.iptv.refresh(credId, type)
+      setReloadKey(k => k + 1)
+      setToast({ msg: `Liste rafraîchie — ${r.count.toLocaleString()} éléments`, ok: true })
+    } catch (e: any) {
+      setToast({ msg: `Échec du rafraîchissement : ${e.message}`, ok: false })
+    } finally {
+      setRefreshing(false)
+      setTimeout(() => setToast(null), 3500)
+    }
+  }
 
   const play = async (s: IptvStream) => {
     if (s.type === 'series') {
@@ -446,6 +465,17 @@ export default function Iptv() {
               </div>
             )}
           </div>
+
+          {/* Rafraîchir la liste (purge le cache serveur et recharge depuis le provider) */}
+          <button
+            onClick={refreshList}
+            disabled={refreshing || !credId}
+            title="Rafraîchir la liste"
+            className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-300 hover:border-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">{refreshing ? 'Rafraîchissement…' : 'Rafraîchir'}</span>
+          </button>
 
           {/* Recherche */}
           <div className="relative flex-1 min-w-[180px]">

@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db'
 import { requireAdmin } from '../auth'
-import { getList, normalizeTitle } from '../iptvVodCache'
+import { getList, normalizeTitle, refresh as refreshList } from '../iptvVodCache'
 import { warmImages } from '../iptvImageWarmer'
 import { isDead, markDead } from '../imageNegCache'
 import { createHash } from 'node:crypto'
@@ -254,6 +254,23 @@ router.get('/:credId/categories', async (req, res) => {
         .map(c => effective.get(c.id) === 'locked' ? { ...c, state: 'locked' as CatState } : c)
     }
     res.json(cats)
+  } catch (e: any) {
+    res.status(502).json({ error: e.message })
+  }
+})
+
+// POST /api/iptv/:credId/refresh?type=live|vod|series
+// Purge le cache de la liste demandée et la recharge depuis l'upstream Xtream.
+// Sert au bouton « Rafraîchir » : utile quand la liste expirée a été servie vide
+// (timeout/erreur provider) ou que le provider a ajouté/retiré des contenus.
+router.post('/:credId/refresh', async (req, res) => {
+  const credId = parseInt(req.params.credId)
+  if (!credId) return res.status(404).json({ error: 'invalid credential id' })
+  const typeRaw = req.query.type as string
+  const type = (typeRaw === 'vod' ? 'vod' : typeRaw === 'series' ? 'series' : 'live') as 'vod' | 'live' | 'series'
+  try {
+    const count = await refreshList(credId, type)
+    res.json({ ok: true, count })
   } catch (e: any) {
     res.status(502).json({ error: e.message })
   }

@@ -332,6 +332,25 @@ export async function initDb() {
     )
   `)
 
+  // ── Trakt : un compte Trakt lié par profil hub (token suit le profil actif) ──
+  // Device flow OAuth. user_id = id du profil hub. Sert au scrobbling universel,
+  // au « prochain épisode » multi-sources et à la publication de listes.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS trakt_accounts (
+      user_id INTEGER PRIMARY KEY,
+      trakt_user_id TEXT,
+      username TEXT,
+      name TEXT,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT NOT NULL,
+      expires_at INTEGER NOT NULL DEFAULT 0,
+      scopes TEXT NOT NULL DEFAULT '',
+      image TEXT,
+      created_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0
+    )
+  `)
+
   // Seed : crée un profil Admin par défaut (PIN 0000) si aucun utilisateur n'existe.
   const { rows: userCount } = await db.execute("SELECT COUNT(*) as n FROM users")
   if (Number((userCount[0] as any).n) === 0) {

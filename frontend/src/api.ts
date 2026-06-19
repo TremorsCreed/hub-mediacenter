@@ -106,6 +106,23 @@ export interface ScListResult {
   likes: number
   item_count?: number
 }
+export interface TraktAccount {
+  user_id: number
+  username?: string | null
+  name?: string | null
+  image?: string | null
+}
+export interface TraktStatus {
+  app_configured: boolean
+  accounts: TraktAccount[]
+}
+export interface TraktDeviceStart {
+  device_code: string
+  user_code: string
+  verification_url: string
+  interval: number
+  expires_in: number
+}
 
 // app : 'iptv' | 'plex' | 'launchbox' | 'catalog'
 export interface FavoriteInput {
@@ -660,6 +677,12 @@ export const api = {
   trakt: {
     scrape: (url: string) => post<ScrapedList>('/trakt/scrape', { url }),
     search: (q: string) => get<ScListResult[]>(`/trakt/search?q=${encodeURIComponent(q)}`),
+    auth: {
+      status: () => get<TraktStatus>('/trakt/auth/status'),
+      deviceStart: (userId: number) => post<TraktDeviceStart>(`/trakt/auth/device/start?user_id=${userId}`, {}),
+      devicePoll: (device_code: string) => post<{ status: 'pending' | 'linked' | 'expired' | 'denied' | 'error'; profile?: { username: string; name: string; image?: string } }>('/trakt/auth/device/poll', { device_code }),
+      unlink: (userId: number) => del<{ ok: boolean }>(`/trakt/auth/unlink/${userId}`),
+    },
   },
   play: (intent: PlayIntent) => post<{ ok: boolean; title: string; device_id: string; app: string }>('/play', intent),
   // « Continuer la lecture sur… » : enregistre la position, stoppe la source, relance sur la cible.

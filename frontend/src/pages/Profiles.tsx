@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { api, User, Device, SpotifyStatus } from '../api'
+import { api, User, Device, SpotifyStatus, TraktStatus } from '../api'
 import { useUser, initials } from '../UserContext'
-import { ShieldCheck, Plus, Trash2, Pencil, X, Loader2, Nfc, Music2 } from 'lucide-react'
+import { ShieldCheck, Plus, Trash2, Pencil, X, Loader2, Nfc, Music2, Clapperboard } from 'lucide-react'
+import TraktLinkModal from '../components/TraktLinkModal'
 
 // Lecteurs IPTV proposés comme défaut de profil ('' = suit le réglage du device)
 const PLAYERS = [
@@ -40,12 +41,22 @@ export default function Profiles() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [spotify, setSpotify] = useState<SpotifyStatus | null>(null)
+  const [trakt, setTrakt] = useState<TraktStatus | null>(null)
+  const [traktLink, setTraktLink] = useState<{ userId: number; name: string } | null>(null)
   const [linking, setLinking] = useState<number | null>(null)
   const [devices, setDevices] = useState<Device[]>([])
 
   const load = () => api.users.list().then(setUsers).catch(() => {})
   const loadSpotify = () => api.spotify.status().then(setSpotify).catch(() => setSpotify(null))
-  useEffect(() => { load(); loadSpotify(); api.devices.list().then(setDevices).catch(() => {}) }, [])
+  const loadTrakt = () => api.trakt.auth.status().then(setTrakt).catch(() => setTrakt(null))
+  useEffect(() => { load(); loadSpotify(); loadTrakt(); api.devices.list().then(setDevices).catch(() => {}) }, [])
+
+  const traktFor = (userId: number) => trakt?.accounts.find(a => a.user_id === userId) ?? null
+  const unlinkTrakt = async (userId: number, name: string) => {
+    if (!confirm(`Délier le compte Trakt de « ${name} » ?`)) return
+    try { await api.trakt.auth.unlink(userId); loadTrakt() }
+    catch (e: any) { alert(e.message || 'Échec') }
+  }
 
   // Lie un compte Spotify à un profil via une popup OAuth (le callback poste un
   // message à la fenêtre parente quand c'est terminé). cf. routes/spotify.ts.
@@ -169,12 +180,25 @@ export default function Profiles() {
                 {u.is_admin && <ShieldCheck size={13} className="text-amber-400" />}
                 {u.has_nfc && <Nfc size={13} className="text-cyan-400" />}
                 {spotifyFor(u.id) && <Music2 size={13} className="text-green-400" />}
+                {traktFor(u.id) && <Clapperboard size={13} className="text-red-400" />}
               </div>
               <div className="text-xs text-zinc-500">
                 {u.is_admin ? 'Administrateur' : 'Membre'}{u.has_nfc ? ' · carte NFC' : ''}
                 {(() => { const a = spotifyFor(u.id); return a ? ` · Spotify : ${a.display_name ?? a.spotify_user_id}${a.product && a.product !== 'premium' ? ` (${a.product})` : ''}` : '' })()}
+                {(() => { const a = traktFor(u.id); return a ? ` · Trakt : ${a.name ?? a.username}` : '' })()}
               </div>
             </div>
+            {trakt?.app_configured && (
+              traktFor(u.id) ? (
+                <button onClick={() => unlinkTrakt(u.id, u.name)} className="text-red-400 hover:text-red-300 p-1.5 transition-colors" title="Délier Trakt">
+                  <Clapperboard size={15} />
+                </button>
+              ) : (
+                <button onClick={() => setTraktLink({ userId: u.id, name: u.name })} className="text-zinc-500 hover:text-red-400 p-1.5 transition-colors" title="Lier Trakt">
+                  <Clapperboard size={15} />
+                </button>
+              )
+            )}
             {spotify?.app_configured && (
               spotifyFor(u.id) ? (
                 <button onClick={() => unlinkSpotify(u.id, u.name)} className="text-green-500 hover:text-red-400 p-1.5 transition-colors" title="Délier Spotify">
@@ -235,6 +259,31 @@ export default function Profiles() {
           </>
         )}
       </div>
+
+      {/* Trakt : suivi d'activité (scrobbling), prochain épisode, listes — un compte par profil */}
+      <div className="space-y-2 pt-2">
+        <h2 className="text-sm font-semibold text-zinc-400 flex items-center gap-1.5">
+          <Clapperboard size={14} className="text-red-400" /> Trakt
+        </h2>
+        {!trakt?.app_configured ? (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-xs text-zinc-400">
+            L'app Trakt n'est pas configurée. Définis <span className="text-zinc-200">TRAKT_CLIENT_ID</span> / <span className="text-zinc-200">TRAKT_CLIENT_SECRET</span> dans l'environnement du stack, puis chaque membre pourra lier son compte (icône <Clapperboard size={11} className="inline text-red-400" />).
+          </div>
+        ) : (
+          <p className="text-[11px] text-zinc-600">
+            Lie ton compte Trakt sur ton profil ci-dessus (icône <Clapperboard size={11} className="inline text-red-400" />) pour le suivi automatique « vu », le prochain épisode et la publication de listes.
+          </p>
+        )}
+      </div>
+
+      {traktLink && (
+        <TraktLinkModal
+          userId={traktLink.userId}
+          name={traktLink.name}
+          onClose={() => setTraktLink(null)}
+          onLinked={() => { setTraktLink(null); loadTrakt() }}
+        />
+      )}
 
       {/* Formulaire création / édition */}
       {form && (

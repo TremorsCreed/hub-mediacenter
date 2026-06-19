@@ -21,6 +21,7 @@ import currentRouter from './routes/current'
 import playlistsRouter from './routes/playlists'
 import senscritiqueRouter from './routes/senscritique'
 import traktRouter from './routes/trakt'
+import traktAuthRouter from './routes/traktAuth'
 import spotifyRouter from './routes/spotify'
 import { attachUser, requireAdmin } from './auth'
 import { preloadAll as preloadIptvVod } from './iptvVodCache'
@@ -39,6 +40,7 @@ app.use('/api/watched', watchedRouter)
 app.use('/api/current', currentRouter)
 app.use('/api/playlists', playlistsRouter)
 app.use('/api/senscritique', senscritiqueRouter)
+app.use('/api/trakt', traktAuthRouter)
 app.use('/api/trakt', traktRouter)
 app.use('/api/spotify', spotifyRouter)
 app.use('/api/devices/:id/config', requireAdmin, configRouter)

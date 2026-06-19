@@ -17,13 +17,6 @@ import {
   Users, Lock, AlertTriangle, Check, Eye, EyeOff, RotateCcw, Replace,
 } from 'lucide-react'
 
-// Reconstruit l'identifiant d'historique (entry.id) d'un item pour le marquage « vu ».
-const playedKey = (it: PlaylistItem): string | null => {
-  if (it.app === 'plex' && it.ref_id) return `plex:${it.ref_id}`
-  if (it.app === 'iptv' && it.ref_id) return `iptv:${it.ref_type ?? 'vod'}:${it.ref_id}`
-  return null
-}
-
 const APP_ICON: Record<string, typeof Tv> = { iptv: Radio, plex: Film, launchbox: Gamepad2, catalog: MonitorPlay }
 
 function itemImg(it: PlaylistItem): string {
@@ -119,7 +112,6 @@ export default function PlaylistDetail() {
   const { deviceId, setDeviceId, reconcile } = usePersistentDevice()
   const [busy, setBusy] = useState<number | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
-  const [played, setPlayed] = useState<Set<string>>(new Set())
   const [progress, setProgress] = useState<ProgressItem[]>([])
   const [resolveTarget, setResolveTarget] = useState<PlaylistItem | null>(null)
 
@@ -134,12 +126,9 @@ export default function PlaylistDetail() {
   const load = () => api.playlists.get(plId).then(p => { setPl(p); setItems(p.items ?? []) }).catch(() => navigate('/playlists'))
   useEffect(() => { load() }, [plId])
 
-  // Marquage « vu » : identifiants déjà lancés par le profil courant
-  const loadPlayed = () => api.state.played().then(arr => setPlayed(new Set(arr))).catch(() => {})
-  useEffect(() => { loadPlayed() }, [])
-
-  // « En cours » : positions de reprise (continue watching), pour reprendre à la bonne seconde.
-  const loadProgress = () => api.state.progress().then(setProgress).catch(() => {})
+  // « En cours » : positions de reprise (mode all = inclut les lectures à peine entamées),
+  // pour reprendre à la bonne seconde même après un arrêt précoce.
+  const loadProgress = () => api.state.progress(true).then(setProgress).catch(() => {})
   useEffect(() => { loadProgress() }, [])
 
   // Position de reprise d'un item, si entamé (cross-ref playback_progress).
@@ -197,9 +186,8 @@ export default function PlaylistDetail() {
         const r = await api.play({ plex_id: it.ref_id, title: it.title, thumb: it.thumb, resume: true, resume_position_ms: prog?.position, app: 'plex', device_id: deviceId, requester: 'manual' })
         flash(prog ? `⟲ ${r.title}` : `▶ ${r.title}`, true)
       }
-      // rafraîchit le marquage « vu » après un lancement
-      const k = playedKey(it)
-      if (k) setPlayed(prev => new Set(prev).add(k))
+      // recharge la progression peu après (la position « En cours » se met à jour côté agent)
+      setTimeout(loadProgress, 4000)
     } catch (e: any) {
       flash(`Échec : ${e.message}`, false)
     } finally {
@@ -207,11 +195,9 @@ export default function PlaylistDetail() {
     }
   }
 
-  // « Vu » pour la playlist : lancé (historique) OU marqué explicitement par le profil.
-  const isSeen = (it: PlaylistItem): boolean => {
-    const k = playedKey(it)
-    return (!!k && played.has(k)) || (!!it.ref_id && isWatched(it.app, it.ref_id))
-  }
+  // « Vu » pour la playlist : marquage explicite par le profil (toggle œil). On ne se base
+  // PLUS sur « lancé » — un film à peine ouvert ne doit pas être considéré vu ni sauté.
+  const isSeen = (it: PlaylistItem): boolean => !!it.ref_id && isWatched(it.app, it.ref_id)
   const isMissing = (it: PlaylistItem) => it.status === 'missing' || it.app === 'unresolved'
 
   const onToggleSeen = (it: PlaylistItem) => {

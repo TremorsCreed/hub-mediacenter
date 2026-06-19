@@ -100,16 +100,22 @@ router.get('/now/:deviceId', async (req, res) => {
 // commencés ni quasi terminés, triés par récence. Fournit les identifiants de reprise
 // (plex/iptv) + la position pour relancer à la bonne seconde. Progression globale en v1
 // (pas de scoping par profil — viendra avec la session active par device).
-router.get('/progress', async (_req, res) => {
+router.get('/progress', async (req, res) => {
+  // ?all=1 : relâche le plancher (un film à peine entamé compte aussi) et élargit la
+  // fenêtre — utilisé pour « reprendre une playlist » où même 1 min comptée doit reprendre.
+  const all = req.query.all === '1'
+  const lowBound = all ? 'position > 30000' : 'position > duration * 0.02'
+  const highBound = all ? 'position < duration * 0.98' : 'position < duration * 0.95'
+  const limit = all ? 200 : 24
   const { rows } = await db.execute(`
     SELECT media_key, catalog_id, app, title, thumb, plex_id, iptv_stream_id, iptv_type, iptv_ext,
            position, duration, updated_at
     FROM playback_progress
     WHERE seekable = 1 AND duration > 0
-      AND position > duration * 0.02 AND position < duration * 0.95
+      AND ${lowBound} AND ${highBound}
       AND iptv_type IS NOT 'live'
     ORDER BY updated_at DESC
-    LIMIT 24
+    LIMIT ${limit}
   `)
   res.json(rows.map((r: any) => ({
     ...r,

@@ -625,7 +625,7 @@ export const api = {
     deleteHistory: (id: number) => del<{ ok: boolean }>(`/state/history/${id}`),
     clearHistory: (userFilter?: string) => del<{ ok: boolean }>(`/state/history${userFilter ? `?user_id=${userFilter}` : ''}`),
     played: () => get<string[]>('/state/played'),
-    progress: () => get<ProgressItem[]>('/state/progress'),
+    progress: (all = false) => get<ProgressItem[]>(`/state/progress${all ? '?all=1' : ''}`),
     removeProgress: (mediaKey: string) => del<{ ok: boolean }>(`/state/progress?key=${encodeURIComponent(mediaKey)}`),
   },
   users: {

@@ -8,11 +8,12 @@ import { CSS } from '@dnd-kit/utilities'
 import { api, Device, Playlist, PlaylistItem } from '../api'
 import { usePersistentDevice } from '../usePersistentDevice'
 import { useUser } from '../UserContext'
+import { useWatched } from '../WatchedContext'
 import Toast from '../components/Toast'
 import CurrentButton from '../components/CurrentButton'
 import {
   ArrowLeft, Play, Loader2, Trash2, GripVertical, Film, Tv, Gamepad2, Radio, MonitorPlay,
-  Users, Lock, AlertTriangle, Check,
+  Users, Lock, AlertTriangle, Check, Eye, EyeOff, RotateCcw,
 } from 'lucide-react'
 
 // Reconstruit l'identifiant d'historique (entry.id) d'un item pour le marquage « vu ».
@@ -31,9 +32,10 @@ function itemImg(it: PlaylistItem): string {
   return api.iptv.imageUrl(it.thumb)
 }
 
-function SortableRow({ it, index, canEdit, onPlay, onRemove, busy, watched }: {
+function SortableRow({ it, index, canEdit, onPlay, onRemove, onToggleSeen, busy, seen }: {
   it: PlaylistItem; index: number; canEdit: boolean
-  onPlay: (it: PlaylistItem) => void; onRemove: (it: PlaylistItem) => void; busy: boolean; watched: boolean
+  onPlay: (it: PlaylistItem) => void; onRemove: (it: PlaylistItem) => void; onToggleSeen: (it: PlaylistItem) => void
+  busy: boolean; seen: boolean
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: it.id })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
@@ -42,7 +44,7 @@ function SortableRow({ it, index, canEdit, onPlay, onRemove, busy, watched }: {
 
   return (
     <div ref={setNodeRef} style={style} {...attributes}
-      className={`flex items-center gap-3 bg-zinc-900 border rounded-lg pr-2 ${isDragging ? 'border-amber-500/60 shadow-lg' : 'border-zinc-800'}`}>
+      className={`flex items-center gap-3 bg-zinc-900 border rounded-lg pr-2 ${isDragging ? 'border-amber-500/60 shadow-lg' : 'border-zinc-800'} ${seen && !isDragging ? 'opacity-60' : ''}`}>
       {/* Zone draggable (appui long ~1s) : poignée + n° + visuel + titre */}
       <div
         {...(canEdit ? listeners : {})}
@@ -54,8 +56,8 @@ function SortableRow({ it, index, canEdit, onPlay, onRemove, busy, watched }: {
           {itemImg(it)
             ? <img src={itemImg(it)} alt="" loading="lazy" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
             : <Icon size={16} className="text-zinc-600" />}
-          {watched && (
-            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-green-500 ring-2 ring-zinc-900 flex items-center justify-center" title="Déjà lancé">
+          {seen && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-green-500 ring-2 ring-zinc-900 flex items-center justify-center" title="Vu">
               <Check size={10} className="text-black" strokeWidth={3} />
             </span>
           )}
@@ -71,6 +73,12 @@ function SortableRow({ it, index, canEdit, onPlay, onRemove, busy, watched }: {
         </div>
       </div>
 
+      {!missing && (
+        <button onClick={() => onToggleSeen(it)} title={seen ? 'Marquer non vu' : 'Marquer vu'}
+          className={`shrink-0 p-1.5 transition-colors ${seen ? 'text-green-500 hover:text-green-400' : 'text-zinc-600 hover:text-zinc-300'}`}>
+          {seen ? <Eye size={15} /> : <EyeOff size={15} />}
+        </button>
+      )}
       {!missing && (
         <button onClick={() => onPlay(it)} disabled={busy} title="Lancer"
           className="shrink-0 text-zinc-500 hover:text-amber-400 p-1.5 disabled:opacity-50 transition-colors">
@@ -91,6 +99,7 @@ export default function PlaylistDetail() {
   const plId = Number(id)
   const navigate = useNavigate()
   const { currentUser, adminUnlocked } = useUser()
+  const { isWatched, toggle: toggleWatched } = useWatched()
   const [pl, setPl] = useState<Playlist | null>(null)
   const [items, setItems] = useState<PlaylistItem[]>([])
   const [devices, setDevices] = useState<Device[]>([])
@@ -170,6 +179,26 @@ export default function PlaylistDetail() {
     }
   }
 
+  // « Vu » pour la playlist : lancé (historique) OU marqué explicitement par le profil.
+  const isSeen = (it: PlaylistItem): boolean => {
+    const k = playedKey(it)
+    return (!!k && played.has(k)) || (!!it.ref_id && isWatched(it.app, it.ref_id))
+  }
+  const isMissing = (it: PlaylistItem) => it.status === 'missing' || it.app === 'unresolved'
+
+  const onToggleSeen = (it: PlaylistItem) => {
+    if (!it.ref_id) return
+    toggleWatched({ app: it.app, ref_id: it.ref_id, ref_type: it.ref_type, title: it.title, thumb: it.thumb })
+  }
+
+  // Reprend la playlist : joue le 1er item non-vu non-manquant ; si tout est vu, repart du début.
+  const resume = () => {
+    const playable = items.filter(it => !isMissing(it))
+    if (!playable.length) { flash('Aucun élément jouable', false); return }
+    const next = playable.find(it => !isSeen(it)) ?? playable[0]
+    play(next)
+  }
+
   const toggleShared = async () => {
     if (!pl || !canEdit) return
     await api.playlists.update(pl.id, { is_shared: !pl.is_shared }).catch(() => {})
@@ -183,6 +212,10 @@ export default function PlaylistDetail() {
   }
 
   if (!pl) return <div className="flex justify-center py-16 text-zinc-600"><Loader2 size={20} className="animate-spin" /></div>
+
+  const playableItems = items.filter(it => !isMissing(it))
+  const seenCount = playableItems.filter(isSeen).length
+  const allSeen = playableItems.length > 0 && seenCount === playableItems.length
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -228,6 +261,23 @@ export default function PlaylistDetail() {
         {canEdit && <span className="text-[11px] text-zinc-600">Appui long (~1s) sur une ligne pour la déplacer.</span>}
       </div>
 
+      {/* Reprendre la playlist : joue le 1er non-vu */}
+      {playableItems.length > 0 && (
+        <div className="flex items-center gap-3">
+          <button onClick={resume}
+            className="flex items-center gap-2 bg-amber-500 text-black font-medium rounded-lg px-5 py-2.5 hover:bg-amber-400 transition-colors">
+            {allSeen ? <RotateCcw size={18} /> : <Play size={18} fill="currentColor" />}
+            {allSeen ? 'Revoir depuis le début' : seenCount > 0 ? 'Reprendre' : 'Lancer la playlist'}
+          </button>
+          <span className="text-xs text-zinc-500">
+            {seenCount}/{playableItems.length} vu{seenCount > 1 ? 's' : ''}
+            {!allSeen && playableItems.find(it => !isSeen(it)) && (
+              <> · prochain : <span className="text-zinc-300">{playableItems.find(it => !isSeen(it))!.title}</span></>
+            )}
+          </span>
+        </div>
+      )}
+
       {/* Liste */}
       {items.length === 0 ? (
         <div className="text-sm text-zinc-600 bg-zinc-900/50 border border-zinc-800 rounded-lg py-10 text-center">
@@ -237,12 +287,9 @@ export default function PlaylistDetail() {
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}>
             <div className="space-y-1.5">
-              {items.map((it, idx) => {
-                const k = playedKey(it)
-                return (
-                  <SortableRow key={it.id} it={it} index={idx} canEdit={canEdit} onPlay={play} onRemove={removeItem} busy={busy === it.id} watched={!!k && played.has(k)} />
-                )
-              })}
+              {items.map((it, idx) => (
+                <SortableRow key={it.id} it={it} index={idx} canEdit={canEdit} onPlay={play} onRemove={removeItem} onToggleSeen={onToggleSeen} busy={busy === it.id} seen={isSeen(it)} />
+              ))}
             </div>
           </SortableContext>
         </DndContext>

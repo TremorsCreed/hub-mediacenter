@@ -12,6 +12,8 @@ services:
       - DATA_DIR=/data
       - PORT=8020
       - MARQUESAS_URL=${MARQUESAS_URL:-http://192.168.1.223:8090}
+      - TRAKT_CLIENT_ID=${TRAKT_CLIENT_ID:-}
+      - TRAKT_CLIENT_SECRET=${TRAKT_CLIENT_SECRET:-}
     volumes:
       - hub_data:/data
       - hub_adb:/root/.android      # clé adb du backend (persistée → 1 autorisation/device)

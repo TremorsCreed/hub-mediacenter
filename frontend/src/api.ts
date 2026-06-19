@@ -67,12 +67,27 @@ export interface ProgressItem {
   updated_at: number
 }
 
+export interface MediaIds {
+  imdb?: string
+  tmdb?: number
+  trakt?: number
+  tvdb?: number
+  plex_guid?: string
+}
 export interface ScrapedListItem {
   position: number
   title: string
   original_title?: string | null
   year?: number | null
   type: 'movie' | 'series'
+  // Granularité Trakt (optionnelle ; SensCritique ne les fournit pas).
+  kind?: 'movie' | 'episode' | 'show'
+  show_title?: string
+  season?: number | null
+  episode?: number | null
+  episode_title?: string | null
+  ids?: MediaIds
+  show_ids?: MediaIds
 }
 export interface ScrapedList {
   title: string
@@ -89,6 +104,7 @@ export interface ScListResult {
   url: string
   cover?: string | null
   likes: number
+  item_count?: number
 }
 
 // app : 'iptv' | 'plex' | 'launchbox' | 'catalog'
@@ -639,6 +655,10 @@ export const api = {
   senscritique: {
     scrape: (url: string) => post<ScrapedList>('/senscritique/scrape', { url }),
     search: (q: string) => get<ScListResult[]>(`/senscritique/search?q=${encodeURIComponent(q)}`),
+  },
+  trakt: {
+    scrape: (url: string) => post<ScrapedList>('/trakt/scrape', { url }),
+    search: (q: string) => get<ScListResult[]>(`/trakt/search?q=${encodeURIComponent(q)}`),
   },
   play: (intent: PlayIntent) => post<{ ok: boolean; title: string; device_id: string; app: string }>('/play', intent),
   // « Continuer la lecture sur… » : enregistre la position, stoppe la source, relance sur la cible.

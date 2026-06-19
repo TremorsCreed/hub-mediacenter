@@ -1,10 +1,18 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, ScrapedList, ScrapedListItem, ScListResult, PlexSection, PlaylistItemInput } from '../api'
+import { api, ScrapedList, ScrapedListItem, ScListResult, PlexSection, PlexShowDetail, PlaylistItemInput } from '../api'
 import { useUser } from '../UserContext'
 import { ArrowLeft, Download, Loader2, Link2, Heart, Film, Tv, Check, AlertTriangle, Search } from 'lucide-react'
 
 const LANGS = ['FR', 'EN', 'DE', 'ES', 'IT', 'MULTI']
+type Provider = 'senscritique' | 'trakt'
+const PROVIDERS: { id: Provider; label: string; placeholder: string; urlPlaceholder: string }[] = [
+  { id: 'senscritique', label: 'SensCritique', placeholder: 'Rechercher une liste (ex. chronologie MCU, James Bond…)', urlPlaceholder: 'https://www.senscritique.com/liste/…' },
+  { id: 'trakt', label: 'Trakt', placeholder: 'Rechercher une liste (ex. MCU chronological, Alien…)', urlPlaceholder: 'https://trakt.tv/users/<user>/lists/<slug>' },
+]
+
+// Cache de résolution Plex partagé sur la durée d'un import (évite de re-fetch un show par épisode).
+type ResolveCache = { shows: Map<string, PlexShowDetail | null> }
 
 const norm = (s?: string | null) =>
   (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
@@ -17,6 +25,7 @@ const titleMatches = (a?: string, b?: string) => {
 export default function ImportPlaylist() {
   const navigate = useNavigate()
   const { currentUser } = useUser()
+  const [provider, setProvider] = useState<Provider>('senscritique')
   const [mode, setMode] = useState<'search' | 'url'>('search')
   const [q, setQ] = useState('')
   const [searching, setSearching] = useState(false)
@@ -36,7 +45,7 @@ export default function ImportPlaylist() {
     if (!target || loading) return
     setLoading(true); setError(null); setScraped(null)
     try {
-      const r = await api.senscritique.scrape(target)
+      const r = await api[provider].scrape(target)
       setScraped(r); setName(r.title)
     } catch (e: any) {
       setError(e.message || 'Échec du chargement')
@@ -47,14 +56,50 @@ export default function ImportPlaylist() {
     if (q.trim().length < 2 || searching) return
     setSearching(true); setError(null)
     try {
-      setResults(await api.senscritique.search(q.trim()))
+      setResults(await api[provider].search(q.trim()))
     } catch (e: any) {
       setError(e.message || 'Recherche indisponible')
     } finally { setSearching(false) }
   }
 
-  // Résout un item SensCritique vers Plex (prioritaire) puis IPTV (langue préférée).
-  const resolveItem = async (item: ScrapedListItem, sections: PlexSection[], credId: number | null): Promise<PlaylistItemInput> => {
+  // Change de fournisseur : on repart d'une page vierge.
+  const switchProvider = (p: Provider) => {
+    if (p === provider) return
+    setProvider(p); setResults([]); setScraped(null); setError(null); setUrl(''); setQ('')
+  }
+
+  // Trouve (et met en cache) le détail d'un show Plex à partir de son titre.
+  const findPlexShow = async (showTitle: string, year: number | null | undefined, sections: PlexSection[], cache: ResolveCache): Promise<PlexShowDetail | null> => {
+    const key = norm(showTitle)
+    if (cache.shows.has(key)) return cache.shows.get(key)!
+    let detail: PlexShowDetail | null = null
+    for (const sec of sections.filter(s => s.type === 'show')) {
+      try {
+        const r = await api.plex.sectionItems(sec.id, { size: 6, search: showTitle })
+        const best =
+          r.items.find(c => titleMatches(c.title, showTitle) && !!year && !!c.year && Math.abs((c.year ?? 0) - year) <= 1) ||
+          r.items.find(c => titleMatches(c.title, showTitle))
+        if (best) { detail = await api.plex.show(best.ratingKey); break }
+      } catch { /* section KO, on continue */ }
+    }
+    cache.shows.set(key, detail)
+    return detail
+  }
+
+  // Résout un épisode Trakt vers l'épisode Plex précis ; sinon « manquant ».
+  const resolveEpisode = async (item: ScrapedListItem, sections: PlexSection[], cache: ResolveCache): Promise<PlaylistItemInput> => {
+    const show = await findPlexShow(item.show_title ?? item.title, item.year, sections, cache)
+    if (show && item.season != null && item.episode != null) {
+      const season = show.seasons.find(s => s.season_number === item.season)
+      const ep = season?.episodes.find(e => e.episode_number === item.episode)
+      if (ep) return { app: 'plex', ref_id: ep.ratingKey, ref_type: 'episode', title: item.title, year: item.year ?? undefined, thumb: ep.thumb ?? show.info.thumb, status: 'resolved' }
+    }
+    return { app: 'unresolved', ref_type: 'episode', title: item.title, year: item.year ?? undefined, status: 'missing' }
+  }
+
+  // Résout un film/série vers Plex (prioritaire) puis IPTV (langue préférée).
+  const resolveItem = async (item: ScrapedListItem, sections: PlexSection[], credId: number | null, cache: ResolveCache): Promise<PlaylistItemInput> => {
+    if (item.kind === 'episode') return resolveEpisode(item, sections, cache)
     const wantShow = item.type === 'series'
     const secs = sections.filter(s => (wantShow ? s.type === 'show' : s.type === 'movie'))
     for (const sec of secs) {
@@ -90,7 +135,7 @@ export default function ImportPlaylist() {
         cover: scraped.cover ?? undefined,
         description: scraped.description ?? undefined,
         is_shared: shared,
-        source: 'senscritique',
+        source: provider,
         source_url: scraped.source_url,
       })
       const [sections, creds] = await Promise.all([
@@ -98,10 +143,11 @@ export default function ImportPlaylist() {
         api.iptv.credentials().catch(() => [] as { id: number; name: string }[]),
       ])
       const credId = creds[0]?.id ?? null
+      const cache: ResolveCache = { shows: new Map() }
 
       let matched = 0
       for (let i = 0; i < scraped.items.length; i++) {
-        const resolved = await resolveItem(scraped.items[i], sections, credId)
+        const resolved = await resolveItem(scraped.items[i], sections, credId, cache)
         if (resolved.status === 'resolved') matched++
         await api.playlists.addItem(created.id, resolved).catch(() => {})
         setProgress({ done: i + 1, total: scraped.items.length, matched })
@@ -121,7 +167,24 @@ export default function ImportPlaylist() {
 
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Importer une playlist</h1>
-        <p className="text-sm text-zinc-500 mt-1">Depuis SensCritique (ex. une chronologie MCU). On résout chaque titre vers ton Plex et ton IPTV.</p>
+        <p className="text-sm text-zinc-500 mt-1">
+          {provider === 'trakt'
+            ? 'Depuis Trakt (chronologies épisode par épisode, ex. MCU). On résout chaque épisode vers ton Plex.'
+            : 'Depuis SensCritique (ex. une chronologie MCU). On résout chaque titre vers ton Plex et ton IPTV.'}
+        </p>
+      </div>
+
+      {/* Fournisseur */}
+      <div className="flex gap-2">
+        {PROVIDERS.map(p => (
+          <button
+            key={p.id}
+            onClick={() => switchProvider(p.id)}
+            className={`px-3 py-1.5 text-sm rounded border transition-colors ${provider === p.id ? 'bg-zinc-100 text-black border-zinc-100 font-medium' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200 hover:border-zinc-600'}`}
+          >
+            {p.label}
+          </button>
+        ))}
       </div>
 
       {/* Onglets */}
@@ -142,7 +205,7 @@ export default function ImportPlaylist() {
               value={url}
               onChange={e => setUrl(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') preview() }}
-              placeholder="https://www.senscritique.com/liste/…"
+              placeholder={PROVIDERS.find(p => p.id === provider)!.urlPlaceholder}
               className="w-full bg-zinc-900 border border-zinc-800 rounded pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-amber-500/60"
             />
           </div>
@@ -159,7 +222,7 @@ export default function ImportPlaylist() {
                 value={q}
                 onChange={e => setQ(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') runSearch() }}
-                placeholder="Rechercher une liste (ex. chronologie MCU, James Bond…)"
+                placeholder={PROVIDERS.find(p => p.id === provider)!.placeholder}
                 className="w-full bg-zinc-900 border border-zinc-800 rounded pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-amber-500/60"
               />
             </div>
@@ -183,7 +246,10 @@ export default function ImportPlaylist() {
                       <Heart size={10} fill="currentColor" /> {r.likes}
                     </span>
                   </div>
-                  <div className="p-2.5 text-sm font-medium line-clamp-2">{r.title}</div>
+                  <div className="p-2.5">
+                    <div className="text-sm font-medium line-clamp-2">{r.title}</div>
+                    {r.item_count != null && <div className="text-[11px] text-zinc-500 mt-0.5">{r.item_count} élément{r.item_count > 1 ? 's' : ''}</div>}
+                  </div>
                 </button>
               ))}
             </div>

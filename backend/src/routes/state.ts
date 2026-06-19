@@ -138,14 +138,22 @@ router.get('/now-meta/:deviceId', async (req, res) => {
   const curTitle = cur.title
 
   let catId: string | undefined
-  // 1) Dernier lancement Hub, si le titre correspond à ce qui joue.
   const lc = lastCatalog.get(deviceId)
+  const { rows: psRows } = await db.execute({ sql: 'SELECT catalog_id, title FROM playback_state WHERE device_id = ?', args: [deviceId] })
+  const ps = psRows[0] as any | undefined
+  // 1) Dernier lancement Hub, si le titre correspond à ce qui joue.
   if (lc && titleMatch(lc.title, curTitle)) catId = lc.catalog_id
   // 2) playback_state (titre vérifié aussi).
+  if (!catId && ps?.catalog_id && titleMatch(ps.title, curTitle)) catId = ps.catalog_id as string
+  // 2bis) Lecture Plex : l'app Plex (com.plexapp.android) n'expose AUCUN titre dans sa
+  //   MediaSession → le match par titre échoue toujours. Comme on connaît le catalog_id
+  //   plex:<rk> lancé par le Hub et que l'app courante est Plex, on lui fait confiance.
   if (!catId) {
-    const { rows } = await db.execute({ sql: 'SELECT catalog_id, title FROM playback_state WHERE device_id = ?', args: [deviceId] })
-    const ps = rows[0] as any | undefined
-    if (ps?.catalog_id && titleMatch(ps.title, curTitle)) catId = ps.catalog_id as string
+    const isPlex = cur.app === 'plex' || /plex/i.test(cur.package || '')
+    const cand = (typeof lc?.catalog_id === 'string' && lc.catalog_id.startsWith('plex:')) ? lc.catalog_id
+               : (typeof ps?.catalog_id === 'string' && ps.catalog_id.startsWith('plex:')) ? (ps.catalog_id as string)
+               : undefined
+    if (isPlex && cand) catId = cand
   }
   // 3) Lancé hors Hub (télécommande physique…) : retrouver le média IPTV VOD par son
   //    titre via le cache (Plex hors Hub non couvert ici).

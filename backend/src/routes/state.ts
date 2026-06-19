@@ -10,7 +10,10 @@ import { normalizeTitle, findIptvVodMatch, getSeriesList } from '../iptvVodCache
 // langue ni ponctuation). Égalité, ou inclusion si assez long (évite les faux positifs).
 function titleMatch(a?: string, b?: string): boolean {
   if (!a || !b) return false
-  const na = normalizeTitle(a), nb = normalizeTitle(b)
+  // On ignore une année finale (« Prey (2022) » vs « Prey ») avant comparaison, sinon un
+  // titre court (< 6 lettres) ne matche jamais par inclusion et la description manque.
+  const strip = (s: string) => normalizeTitle(s).replace(/\s*(19|20)\d{2}\s*$/, '').trim()
+  const na = strip(a), nb = strip(b)
   if (!na || !nb) return false
   if (na === nb) return true
   return (na.includes(nb) && nb.length >= 6) || (nb.includes(na) && na.length >= 6)

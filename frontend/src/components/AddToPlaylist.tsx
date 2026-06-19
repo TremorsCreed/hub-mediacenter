@@ -58,7 +58,7 @@ export default function AddToPlaylist({ item, className = '' }: { item: Playlist
       </button>
 
       {open && createPortal(
-        <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={e => { e.stopPropagation(); setOpen(false) }}>
+        <div className="fixed inset-0 z-[210] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={e => { e.stopPropagation(); setOpen(false) }}>
           <div ref={modalRef} className="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-sm p-4 relative" onClick={e => e.stopPropagation()}>
             <button onClick={() => setOpen(false)} className="absolute top-3 right-3 text-zinc-500 hover:text-white"><X size={18} /></button>
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><ListVideo size={16} className="text-amber-400" /> Ajouter à une playlist</h3>

@@ -5,15 +5,16 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { api, Device, Playlist, PlaylistItem } from '../api'
+import { api, Device, Playlist, PlaylistItem, ProgressItem } from '../api'
 import { usePersistentDevice } from '../usePersistentDevice'
 import { useUser } from '../UserContext'
 import { useWatched } from '../WatchedContext'
 import Toast from '../components/Toast'
 import CurrentButton from '../components/CurrentButton'
+import ResolveItemModal from '../components/ResolveItemModal'
 import {
   ArrowLeft, Play, Loader2, Trash2, GripVertical, Film, Tv, Gamepad2, Radio, MonitorPlay,
-  Users, Lock, AlertTriangle, Check, Eye, EyeOff, RotateCcw,
+  Users, Lock, AlertTriangle, Check, Eye, EyeOff, RotateCcw, Replace,
 } from 'lucide-react'
 
 // Reconstruit l'identifiant d'historique (entry.id) d'un item pour le marquage « vu ».
@@ -32,10 +33,10 @@ function itemImg(it: PlaylistItem): string {
   return api.iptv.imageUrl(it.thumb)
 }
 
-function SortableRow({ it, index, canEdit, onPlay, onRemove, onToggleSeen, busy, seen }: {
+function SortableRow({ it, index, canEdit, onPlay, onRemove, onToggleSeen, onResolve, busy, seen, progressPct }: {
   it: PlaylistItem; index: number; canEdit: boolean
   onPlay: (it: PlaylistItem) => void; onRemove: (it: PlaylistItem) => void; onToggleSeen: (it: PlaylistItem) => void
-  busy: boolean; seen: boolean
+  onResolve: (it: PlaylistItem) => void; busy: boolean; seen: boolean; progressPct: number | null
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: it.id })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
@@ -69,7 +70,13 @@ function SortableRow({ it, index, canEdit, onPlay, onRemove, onToggleSeen, busy,
           </div>
           <div className="text-xs text-zinc-500 flex items-center gap-1.5">
             <Icon size={11} /> {it.app}{it.year ? ` · ${it.year}` : ''}{it.lang ? ` · ${it.lang}` : ''}
+            {progressPct != null && <span className="text-amber-400 font-medium">· En cours {progressPct}%</span>}
           </div>
+          {progressPct != null && (
+            <div className="h-1 bg-zinc-800 rounded overflow-hidden mt-1 max-w-[160px]">
+              <div className="h-full bg-amber-500" style={{ width: `${progressPct}%` }} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -83,6 +90,12 @@ function SortableRow({ it, index, canEdit, onPlay, onRemove, onToggleSeen, busy,
         <button onClick={() => onPlay(it)} disabled={busy} title="Lancer"
           className="shrink-0 text-zinc-500 hover:text-amber-400 p-1.5 disabled:opacity-50 transition-colors">
           {busy ? <Loader2 size={15} className="animate-spin text-amber-400" /> : <Play size={15} fill="currentColor" />}
+        </button>
+      )}
+      {canEdit && (
+        <button onClick={() => onResolve(it)} title={missing ? 'Résoudre' : 'Changer la version'}
+          className={`shrink-0 p-1.5 transition-colors ${missing ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-600 hover:text-zinc-300'}`}>
+          <Replace size={15} />
         </button>
       )}
       {canEdit && (
@@ -107,6 +120,8 @@ export default function PlaylistDetail() {
   const [busy, setBusy] = useState<number | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [played, setPlayed] = useState<Set<string>>(new Set())
+  const [progress, setProgress] = useState<ProgressItem[]>([])
+  const [resolveTarget, setResolveTarget] = useState<PlaylistItem | null>(null)
 
   const canEdit = !!pl && (adminUnlocked || pl.owner_user_id === currentUser?.id)
 
@@ -122,6 +137,18 @@ export default function PlaylistDetail() {
   // Marquage « vu » : identifiants déjà lancés par le profil courant
   const loadPlayed = () => api.state.played().then(arr => setPlayed(new Set(arr))).catch(() => {})
   useEffect(() => { loadPlayed() }, [])
+
+  // « En cours » : positions de reprise (continue watching), pour reprendre à la bonne seconde.
+  const loadProgress = () => api.state.progress().then(setProgress).catch(() => {})
+  useEffect(() => { loadProgress() }, [])
+
+  // Position de reprise d'un item, si entamé (cross-ref playback_progress).
+  const progressFor = (it: PlaylistItem): ProgressItem | undefined => {
+    if (!it.ref_id) return undefined
+    if (it.app === 'plex') return progress.find(p => p.plex_id === it.ref_id)
+    if (it.app === 'iptv') return progress.find(p => p.iptv_stream_id === it.ref_id)
+    return undefined
+  }
 
   useEffect(() => {
     api.devices.list().then(ds => {
@@ -152,6 +179,7 @@ export default function PlaylistDetail() {
     if (it.app === 'plex' && it.ref_type === 'show') { navigate('/catalog/plex'); return }
     if (it.app !== 'launchbox' && !deviceId) { flash('Choisis un device', false); return }
     if (!it.ref_id) return
+    const prog = progressFor(it)
     setBusy(it.id)
     try {
       if (it.app === 'launchbox') {
@@ -163,11 +191,11 @@ export default function PlaylistDetail() {
         if (!r.ok) throw new Error('échec')
         flash(`▶ ${it.title}`, true)
       } else if (it.app === 'iptv') {
-        const r = await api.play({ iptv_stream_id: it.ref_id, iptv_type: (it.ref_type as any) ?? 'vod', iptv_ext: it.ext ?? undefined, title: it.title, thumb: it.thumb, app: 'iptv', device_id: deviceId, requester: 'manual' })
-        flash(`▶ ${r.title}`, true)
+        const r = await api.play({ iptv_stream_id: it.ref_id, iptv_type: (it.ref_type as any) ?? 'vod', iptv_ext: it.ext ?? undefined, title: it.title, thumb: it.thumb, resume_position_ms: prog?.position, app: 'iptv', device_id: deviceId, requester: 'manual' })
+        flash(prog ? `⟲ ${r.title}` : `▶ ${r.title}`, true)
       } else if (it.app === 'plex') {
-        const r = await api.play({ plex_id: it.ref_id, title: it.title, thumb: it.thumb, resume: true, app: 'plex', device_id: deviceId, requester: 'manual' })
-        flash(`▶ ${r.title}`, true)
+        const r = await api.play({ plex_id: it.ref_id, title: it.title, thumb: it.thumb, resume: true, resume_position_ms: prog?.position, app: 'plex', device_id: deviceId, requester: 'manual' })
+        flash(prog ? `⟲ ${r.title}` : `▶ ${r.title}`, true)
       }
       // rafraîchit le marquage « vu » après un lancement
       const k = playedKey(it)
@@ -191,11 +219,22 @@ export default function PlaylistDetail() {
     toggleWatched({ app: it.app, ref_id: it.ref_id, ref_type: it.ref_type, title: it.title, thumb: it.thumb })
   }
 
-  // Reprend la playlist : joue le 1er item non-vu non-manquant ; si tout est vu, repart du début.
+  // Item entamé le plus récent (En cours) — il prime sur le « 1er non-vu ».
+  const inProgressItem = (): PlaylistItem | null => {
+    const withProg = items
+      .filter(it => !isMissing(it))
+      .map(it => ({ it, p: progressFor(it) }))
+      .filter(x => x.p) as { it: PlaylistItem; p: ProgressItem }[]
+    if (!withProg.length) return null
+    withProg.sort((a, b) => b.p.updated_at - a.p.updated_at)
+    return withProg[0].it
+  }
+
+  // Reprend la playlist : item entamé en priorité, sinon 1er non-vu, sinon début.
   const resume = () => {
     const playable = items.filter(it => !isMissing(it))
     if (!playable.length) { flash('Aucun élément jouable', false); return }
-    const next = playable.find(it => !isSeen(it)) ?? playable[0]
+    const next = inProgressItem() ?? playable.find(it => !isSeen(it)) ?? playable[0]
     play(next)
   }
 
@@ -216,6 +255,9 @@ export default function PlaylistDetail() {
   const playableItems = items.filter(it => !isMissing(it))
   const seenCount = playableItems.filter(isSeen).length
   const allSeen = playableItems.length > 0 && seenCount === playableItems.length
+  const ongoing = inProgressItem()
+  const ongoingPct = ongoing ? progressFor(ongoing)?.percent ?? null : null
+  const nextUnseen = playableItems.find(it => !isSeen(it)) ?? null
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -261,19 +303,21 @@ export default function PlaylistDetail() {
         {canEdit && <span className="text-[11px] text-zinc-600">Appui long (~1s) sur une ligne pour la déplacer.</span>}
       </div>
 
-      {/* Reprendre la playlist : joue le 1er non-vu */}
+      {/* Reprendre la playlist : item entamé en priorité, sinon 1er non-vu */}
       {playableItems.length > 0 && (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button onClick={resume}
             className="flex items-center gap-2 bg-amber-500 text-black font-medium rounded-lg px-5 py-2.5 hover:bg-amber-400 transition-colors">
-            {allSeen ? <RotateCcw size={18} /> : <Play size={18} fill="currentColor" />}
-            {allSeen ? 'Revoir depuis le début' : seenCount > 0 ? 'Reprendre' : 'Lancer la playlist'}
+            {ongoing ? <RotateCcw size={18} /> : allSeen ? <RotateCcw size={18} /> : <Play size={18} fill="currentColor" />}
+            {ongoing ? 'Reprendre' : allSeen ? 'Revoir depuis le début' : seenCount > 0 ? 'Reprendre' : 'Lancer la playlist'}
           </button>
           <span className="text-xs text-zinc-500">
             {seenCount}/{playableItems.length} vu{seenCount > 1 ? 's' : ''}
-            {!allSeen && playableItems.find(it => !isSeen(it)) && (
-              <> · prochain : <span className="text-zinc-300">{playableItems.find(it => !isSeen(it))!.title}</span></>
-            )}
+            {ongoing ? (
+              <> · reprise : <span className="text-amber-400">{ongoing.title}</span>{ongoingPct != null ? ` (${ongoingPct}%)` : ''}</>
+            ) : nextUnseen ? (
+              <> · prochain : <span className="text-zinc-300">{nextUnseen.title}</span></>
+            ) : null}
           </span>
         </div>
       )}
@@ -288,11 +332,21 @@ export default function PlaylistDetail() {
           <SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}>
             <div className="space-y-1.5">
               {items.map((it, idx) => (
-                <SortableRow key={it.id} it={it} index={idx} canEdit={canEdit} onPlay={play} onRemove={removeItem} onToggleSeen={onToggleSeen} busy={busy === it.id} seen={isSeen(it)} />
+                <SortableRow key={it.id} it={it} index={idx} canEdit={canEdit} onPlay={play} onRemove={removeItem} onToggleSeen={onToggleSeen} onResolve={setResolveTarget} busy={busy === it.id} seen={isSeen(it)} progressPct={progressFor(it)?.percent ?? null} />
               ))}
             </div>
           </SortableContext>
         </DndContext>
+      )}
+
+      {resolveTarget && (
+        <ResolveItemModal
+          playlistId={plId}
+          item={resolveTarget}
+          defaultLang={resolveTarget.lang || currentUser?.preferred_lang || 'FR'}
+          onClose={() => setResolveTarget(null)}
+          onDone={() => { load(); flash('Version mise à jour', true) }}
+        />
       )}
 
       {toast && <Toast msg={toast.msg} ok={toast.ok} />}

@@ -145,6 +145,49 @@ router.post('/:id/items', async (req, res) => {
   res.json({ ok: true, id: (rows[0] as any).id })
 })
 
+// PUT /:id/items/:itemId — ré-lie un item à une autre source/version (résolution manuelle,
+// choix d'une version précise). Ne touche pas à la position.
+const ItemRebindSchema = z.object({
+  app: z.string().min(1),
+  ref_id: z.string().nullable().optional(),
+  ref_type: z.string().nullable().optional(),
+  title: z.string().nullable().optional(),
+  year: z.number().nullable().optional(),
+  thumb: z.string().nullable().optional(),
+  lang: z.string().nullable().optional(),
+  ext: z.string().nullable().optional(),
+  status: z.enum(['resolved', 'missing']).optional(),
+})
+router.put('/:id/items/:itemId', async (req, res) => {
+  const pl = await loadPlaylist(parseInt(req.params.id, 10))
+  if (!pl) return res.status(404).json({ error: 'introuvable' })
+  if (!await canEdit(req, pl)) return res.status(403).json({ error: 'forbidden' })
+  const parsed = ItemRebindSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
+  const d = parsed.data
+  const { rows: cur } = await db.execute({ sql: 'SELECT * FROM playlist_items WHERE id = ? AND playlist_id = ?', args: [parseInt(req.params.itemId, 10), pl.id] })
+  const it = cur[0] as any
+  if (!it) return res.status(404).json({ error: 'item introuvable' })
+  await db.execute({
+    sql: `UPDATE playlist_items SET app = ?, ref_id = ?, ref_type = ?, title = ?, year = ?, thumb = ?, lang = ?, ext = ?, status = ?
+          WHERE id = ? AND playlist_id = ?`,
+    args: [
+      d.app,
+      d.ref_id === undefined ? it.ref_id : d.ref_id,
+      d.ref_type === undefined ? it.ref_type : d.ref_type,
+      d.title === undefined ? it.title : d.title,
+      d.year === undefined ? it.year : d.year,
+      d.thumb === undefined ? it.thumb : d.thumb,
+      d.lang === undefined ? it.lang : d.lang,
+      d.ext === undefined ? it.ext : d.ext,
+      d.status ?? 'resolved',
+      it.id, pl.id,
+    ],
+  })
+  await db.execute({ sql: 'UPDATE playlists SET updated_at = ? WHERE id = ?', args: [Date.now(), pl.id] })
+  res.json({ ok: true })
+})
+
 router.delete('/:id/items/:itemId', async (req, res) => {
   const pl = await loadPlaylist(parseInt(req.params.id, 10))
   if (!pl) return res.status(404).json({ error: 'introuvable' })

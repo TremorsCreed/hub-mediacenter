@@ -26,6 +26,7 @@ import spotifyRouter from './routes/spotify'
 import { attachUser, requireAdmin } from './auth'
 import { preloadAll as preloadIptvVod } from './iptvVodCache'
 import { startReminderChecker } from './epgReminders'
+import { startScrobbler } from './scrobble'
 
 const app = express()
 const PORT = parseInt(process.env.PORT ?? '8020', 10)
@@ -63,6 +64,7 @@ async function start() {
   // soit instantané. Ne bloque pas le démarrage.
   preloadIptvVod().catch(() => {})
   startReminderChecker()
+  startScrobbler()
   const server = http.createServer(app)
   setupWebSocket(server)
   server.listen(PORT, () => {

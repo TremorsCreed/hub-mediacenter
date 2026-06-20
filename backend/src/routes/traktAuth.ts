@@ -161,6 +161,36 @@ router.post('/auth/device/poll', async (req, res) => {
   res.json({ status: 'linked', profile: prof })
 })
 
+// Historique « vu » du profil (films + séries/épisodes) pour marquer auto les playlists.
+// Renvoie titres+années (matching côté client par titre, les items Hub n'ont pas d'ID).
+router.get('/watched', async (req, res) => {
+  const userId = req.query.user_id !== undefined ? parseInt(String(req.query.user_id), 10) : (req as any).userId
+  if (userId == null || !Number.isFinite(userId)) return res.json({ movies: [], shows: [] })
+  if (!(await getAccountRow(userId))) return res.json({ movies: [], shows: [] })
+  try {
+    const [mr, sr] = await Promise.all([
+      traktFetch(userId, '/sync/watched/movies'),
+      traktFetch(userId, '/sync/watched/shows'),
+    ])
+    const moviesRaw = (mr.ok ? await mr.json() : []) as any[]
+    const showsRaw = (sr.ok ? await sr.json() : []) as any[]
+    const movies = moviesRaw
+      .map(x => ({ title: x.movie?.title, year: x.movie?.year ?? null }))
+      .filter(m => m.title)
+    const shows = showsRaw
+      .map(x => ({
+        title: x.show?.title,
+        year: x.show?.year ?? null,
+        // clés "saison-épisode" vues, pour matcher les items épisode des playlists.
+        episodes: (x.seasons ?? []).flatMap((se: any) => (se.episodes ?? []).map((e: any) => `${se.number}-${e.number}`)),
+      }))
+      .filter(s => s.title)
+    res.json({ movies, shows })
+  } catch (e: any) {
+    res.status(502).json({ error: `Trakt indisponible : ${e.message}` })
+  }
+})
+
 // Délier un compte.
 router.delete('/auth/unlink/:userId', async (req, res) => {
   const userId = parseInt(req.params.userId, 10)

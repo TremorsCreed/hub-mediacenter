@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent,
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { api, Device, Playlist, PlaylistItem, ProgressItem } from '../api'
+import { api, Device, Playlist, PlaylistItem, ProgressItem, TraktWatched } from '../api'
 import { usePersistentDevice } from '../usePersistentDevice'
 import { useUser } from '../UserContext'
 import { useWatched } from '../WatchedContext'
@@ -16,6 +16,10 @@ import {
   ArrowLeft, Play, Loader2, Trash2, GripVertical, Film, Tv, Gamepad2, Radio, MonitorPlay,
   Users, Lock, AlertTriangle, Check, Eye, EyeOff, RotateCcw, Replace,
 } from 'lucide-react'
+
+// Normalisation de titre pour le matching « vu » Trakt (sans accents/ponctuation).
+const tnorm = (s?: string | null) =>
+  (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
 
 const APP_ICON: Record<string, typeof Tv> = { iptv: Radio, plex: Film, launchbox: Gamepad2, catalog: MonitorPlay }
 
@@ -113,6 +117,7 @@ export default function PlaylistDetail() {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [progress, setProgress] = useState<ProgressItem[]>([])
   const [resolveTarget, setResolveTarget] = useState<PlaylistItem | null>(null)
+  const [traktWatched, setTraktWatched] = useState<TraktWatched | null>(null)
 
   const canEdit = !!pl && (adminUnlocked || pl.owner_user_id === currentUser?.id)
 
@@ -129,6 +134,28 @@ export default function PlaylistDetail() {
   // pour reprendre à la bonne seconde même après un arrêt précoce.
   const loadProgress = () => api.state.progress(true).then(setProgress).catch(() => {})
   useEffect(() => { loadProgress() }, [])
+
+  // « Vu » Trakt : historique de visionnage du profil (alimenté par le scrobbling).
+  useEffect(() => { api.trakt.watched().then(setTraktWatched).catch(() => {}) }, [])
+  const traktSets = useMemo(() => {
+    const movies = new Set((traktWatched?.movies ?? []).map(m => tnorm(m.title)))
+    const shows = new Map<string, Set<string>>()
+    for (const s of traktWatched?.shows ?? []) shows.set(tnorm(s.title), new Set(s.episodes))
+    return { movies, shows }
+  }, [traktWatched])
+
+  // Item vu d'après Trakt (film par titre, série par titre, épisode par "Show · SxxExx").
+  const isSeenTrakt = (it: PlaylistItem): boolean => {
+    if (!traktWatched) return false
+    if (it.ref_type === 'episode') {
+      const se = (it.title ?? '').match(/s(\d{1,2})e(\d{1,3})/i)
+      if (!se) return false
+      const eps = traktSets.shows.get(tnorm((it.title ?? '').split('·')[0]))
+      return !!eps && eps.has(`${Number(se[1])}-${Number(se[2])}`)
+    }
+    if (it.ref_type === 'series' || it.ref_type === 'show') return traktSets.shows.has(tnorm(it.title))
+    return traktSets.movies.has(tnorm(it.title))
+  }
 
   // Position de reprise d'un item, si entamé (cross-ref playback_progress).
   const progressFor = (it: PlaylistItem): ProgressItem | undefined => {
@@ -194,9 +221,10 @@ export default function PlaylistDetail() {
     }
   }
 
-  // « Vu » pour la playlist : marquage explicite par le profil (toggle œil). On ne se base
-  // PLUS sur « lancé » — un film à peine ouvert ne doit pas être considéré vu ni sauté.
-  const isSeen = (it: PlaylistItem): boolean => !!it.ref_id && isWatched(it.app, it.ref_id)
+  // « Vu » pour la playlist : marquage explicite par le profil (toggle œil) OU historique
+  // Trakt (scrobbling). On ne se base PLUS sur « lancé » (un film à peine ouvert ≠ vu).
+  const isSeen = (it: PlaylistItem): boolean =>
+    (!!it.ref_id && isWatched(it.app, it.ref_id)) || isSeenTrakt(it)
   const isMissing = (it: PlaylistItem) => it.status === 'missing' || it.app === 'unresolved'
 
   const onToggleSeen = (it: PlaylistItem) => {

@@ -123,6 +123,10 @@ export interface TraktDeviceStart {
   interval: number
   expires_in: number
 }
+export interface TraktWatched {
+  movies: { title: string; year: number | null }[]
+  shows: { title: string; year: number | null; episodes: string[] }[]
+}
 
 // app : 'iptv' | 'plex' | 'launchbox' | 'catalog'
 export interface FavoriteInput {
@@ -688,6 +692,7 @@ export const api = {
       devicePoll: (device_code: string) => post<{ status: 'pending' | 'linked' | 'expired' | 'denied' | 'error'; profile?: { username: string; name: string; image?: string } }>('/trakt/auth/device/poll', { device_code }),
       unlink: (userId: number) => del<{ ok: boolean }>(`/trakt/auth/unlink/${userId}`),
     },
+    watched: () => get<TraktWatched>('/trakt/watched'),
   },
   play: (intent: PlayIntent) => post<{ ok: boolean; title: string; device_id: string; app: string }>('/play', intent),
   // « Continuer la lecture sur… » : enregistre la position, stoppe la source, relance sur la cible.

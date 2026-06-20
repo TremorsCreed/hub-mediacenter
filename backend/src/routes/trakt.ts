@@ -140,6 +140,34 @@ router.get('/search', async (req, res) => {
   }
 })
 
+// ── Découverte : tendances (films + séries), client_id seul ──────────────────
+router.get('/discover', async (_req, res) => {
+  if (!CLIENT_ID) return res.status(503).json({ error: 'Trakt non configuré (TRAKT_CLIENT_ID manquant).' })
+  try {
+    const [mv, sh] = await Promise.all([
+      trakt<any[]>('/movies/trending?limit=16&extended=full,images'),
+      trakt<any[]>('/shows/trending?limit=16&extended=full,images'),
+    ])
+    const movies = (mv.data ?? []).map((x: any) => ({
+      type: 'movie' as const,
+      title: clean(x.movie?.title),
+      year: typeof x.movie?.year === 'number' ? x.movie.year : null,
+      ids: pickIds(x.movie?.ids),
+      poster: img(x.movie?.images?.poster?.[0]),
+    })).filter((m: any) => m.title)
+    const shows = (sh.data ?? []).map((x: any) => ({
+      type: 'show' as const,
+      title: clean(x.show?.title),
+      year: typeof x.show?.year === 'number' ? x.show.year : null,
+      ids: pickIds(x.show?.ids),
+      poster: img(x.show?.images?.poster?.[0]),
+    })).filter((s: any) => s.title)
+    res.json({ movies, shows })
+  } catch (e: any) {
+    res.status(502).json({ error: `Découverte Trakt indisponible : ${e.message}` })
+  }
+})
+
 // ── Détail d'une liste (métadonnées + TOUS les items, paginés) ───────────────
 router.post('/scrape', async (req, res) => {
   if (!CLIENT_ID) return res.status(503).json({ error: 'Trakt non configuré (TRAKT_CLIENT_ID manquant).' })

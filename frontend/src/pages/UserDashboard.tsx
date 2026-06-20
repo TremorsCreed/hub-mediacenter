@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, Device, Favorite, ProgressItem, PlexOnDeckItem, DashboardPrefs } from '../api'
+import { api, Device, Favorite, ProgressItem, PlexOnDeckItem, DashboardPrefs, TraktDiscover, TraktDiscoverItem, PlexSection } from '../api'
 import { usePersistentDevice } from '../usePersistentDevice'
 import { useUser, initials } from '../UserContext'
 import { useFavorites } from '../FavoritesContext'
@@ -8,7 +8,7 @@ import { useCurrent } from '../CurrentContext'
 import Toast from '../components/Toast'
 import {
   Heart, Play, Loader2, Tv, Film, Gamepad2, MonitorPlay, Radio, Compass, ListMusic,
-  RotateCcw, Settings2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, X, Youtube, Bookmark,
+  RotateCcw, Settings2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, X, Youtube, Bookmark, TrendingUp,
 } from 'lucide-react'
 
 // ── Rangées disponibles + ordre par défaut ───────────────────────────────────
@@ -99,6 +99,8 @@ export default function UserDashboard() {
   const [onDeck, setOnDeck] = useState<PlexOnDeckItem[]>([])
   const [launching, setLaunching] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [discover, setDiscover] = useState<TraktDiscover | null>(null)
+  const [plexSections, setPlexSections] = useState<PlexSection[]>([])
   const [editing, setEditing] = useState(false)
   const [rails, setRails] = useState(() => normalizeRails(currentUser?.dashboard_prefs))
   const [autoplay, setAutoplay] = useState(currentUser?.autoplay_next ?? true)
@@ -119,6 +121,35 @@ export default function UserDashboard() {
   }, [currentUser])
 
   const flash = (msg: string, ok: boolean) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3000) }
+
+  // Découverte Trakt (tendances) + sections Plex pour résoudre au clic.
+  useEffect(() => {
+    api.trakt.discover().then(setDiscover).catch(() => {})
+    api.plex.sections().then(setPlexSections).catch(() => {})
+  }, [])
+  const dnorm = (s?: string | null) => (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+
+  // Clic sur une tendance : on cherche dans ta biblio Plex. Film trouvé → lecture ;
+  // série → ouverture du module Plex ; rien → toast.
+  const discoverPlay = async (item: TraktDiscoverItem) => {
+    const wantShow = item.type === 'show'
+    const secs = plexSections.filter(s => (wantShow ? s.type === 'show' : s.type === 'movie'))
+    setLaunching(`disc:${item.type}:${item.title}`)
+    try {
+      for (const sec of secs) {
+        const r = await api.plex.sectionItems(sec.id, { size: 6, search: item.title }).catch(() => ({ items: [] as any[] } as any))
+        const best = r.items.find((c: any) => dnorm(c.title) === dnorm(item.title) && (!item.year || !c.year || Math.abs((c.year ?? 0) - item.year) <= 1))
+          || r.items.find((c: any) => dnorm(c.title) === dnorm(item.title))
+        if (best) {
+          if (wantShow) { navigate('/catalog/plex'); return }
+          if (!deviceId) { flash('Choisis un device', false); return }
+          const pr = await api.play({ plex_id: best.ratingKey, title: best.title, thumb: best.thumb, app: 'plex', device_id: deviceId, requester: 'manual' })
+          flash(`▶ ${pr.title}`, true); return
+        }
+      }
+      flash(`« ${item.title} » n'est pas dans ta bibliothèque Plex`, false)
+    } catch (e: any) { flash(`Échec : ${e.message}`, false) } finally { setLaunching(null) }
+  }
 
   const removeProgress = async (mediaKey: string) => {
     setResume(prev => prev.filter(r => r.media_key !== mediaKey))
@@ -428,6 +459,31 @@ export default function UserDashboard() {
         }
         return null
       })}
+
+      {/* Tendances Trakt (toujours affichée si dispo) — films + séries du moment */}
+      {discover && (discover.movies.length > 0 || discover.shows.length > 0) && (
+        <Rail icon={TrendingUp} title="Tendances Trakt">
+          {[...discover.movies.slice(0, 12), ...discover.shows.slice(0, 12)].map((item, i) => {
+            const busy = launching === `disc:${item.type}:${item.title}`
+            return (
+              <button key={`${item.type}-${item.ids?.trakt ?? item.title}-${i}`} onClick={() => discoverPlay(item)}
+                className="hover-pop group relative w-32 shrink-0 snap-start text-left">
+                <div className="relative w-full aspect-[2/3] bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden group-hover:border-amber-500/60 transition-colors">
+                  {item.poster
+                    ? <img src={item.poster} alt={item.title} loading="lazy" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
+                    : <div className="w-full h-full flex items-center justify-center text-zinc-700">{item.type === 'show' ? <Tv size={24} /> : <Film size={24} />}</div>}
+                  <div className="absolute top-1.5 left-1.5 bg-black/65 backdrop-blur-sm rounded px-1.5 py-0.5">
+                    <span className="text-[9px] font-bold uppercase tracking-wide text-amber-300">{item.type === 'show' ? 'Série' : 'Film'}</span>
+                  </div>
+                  {busy && <div className="absolute inset-0 bg-black/60 flex items-center justify-center"><Loader2 size={18} className="animate-spin text-amber-400" /></div>}
+                </div>
+                <div className="text-xs mt-1.5 truncate">{item.title}</div>
+                {item.year && <div className="text-[10px] text-zinc-500">{item.year}</div>}
+              </button>
+            )
+          })}
+        </Rail>
+      )}
 
       {/* Modale de personnalisation */}
       {editing && (

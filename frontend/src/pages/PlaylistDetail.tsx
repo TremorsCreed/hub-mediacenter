@@ -38,7 +38,11 @@ function SortableRow({ it, index, canEdit, onPlay, onRemove, onToggleSeen, onRes
 
   return (
     <div ref={setNodeRef} style={style} {...attributes}
-      className={`flex items-center gap-3 bg-zinc-900 border rounded-lg pr-2 ${isDragging ? 'border-amber-500/60 shadow-lg' : 'border-zinc-800'} ${seen && !isDragging ? 'opacity-60' : ''}`}>
+      className={`relative overflow-hidden flex items-center gap-3 bg-zinc-900 border rounded-lg pr-2 ${isDragging ? 'border-amber-500/60 shadow-lg' : 'border-zinc-800'} ${seen && !isDragging ? 'opacity-60' : ''}`}>
+      {/* Avancée de lecture : remplissage vert en fond, largeur = % du média */}
+      {progressPct != null && (
+        <div className="absolute inset-y-0 left-0 bg-green-500/20 pointer-events-none" style={{ width: `${progressPct}%`, zIndex: -1 }} />
+      )}
       {/* Zone draggable (appui long ~1s) : poignée + n° + visuel + titre */}
       <div
         {...(canEdit ? listeners : {})}
@@ -63,13 +67,8 @@ function SortableRow({ it, index, canEdit, onPlay, onRemove, onToggleSeen, onRes
           </div>
           <div className="text-xs text-zinc-500 flex items-center gap-1.5">
             <Icon size={11} /> {it.app}{it.year ? ` · ${it.year}` : ''}{it.lang ? ` · ${it.lang}` : ''}
-            {progressPct != null && <span className="text-amber-400 font-medium">· En cours {progressPct}%</span>}
+            {progressPct != null && <span className="text-green-400 font-medium">· En cours {progressPct}%</span>}
           </div>
-          {progressPct != null && (
-            <div className="h-1 bg-zinc-800 rounded overflow-hidden mt-1 max-w-[160px]">
-              <div className="h-full bg-amber-500" style={{ width: `${progressPct}%` }} />
-            </div>
-          )}
         </div>
       </div>
 

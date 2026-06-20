@@ -206,7 +206,9 @@ router.get('/now-meta/:deviceId', async (req, res) => {
       const tags = (arr: any[]) => (arr ?? []).map((x: any) => x.tag).filter(Boolean)
       return res.json({
         source: 'plex',
+        app: 'plex', ref_id: rk, ref_type: m.type || 'movie',
         title: m.title || undefined,
+        thumb: m.thumb || undefined,
         plot: m.summary || undefined,
         genre: tags(m.Genre).slice(0, 4).join(', ') || undefined,
         cast: tags(m.Role).slice(0, 5).join(', ') || undefined,
@@ -230,7 +232,9 @@ router.get('/now-meta/:deviceId', async (req, res) => {
       const info = d?.info || {}
       return res.json({
         source: 'iptv',
+        app: 'iptv', ref_id: mv[1], ref_type: 'vod',
         title: info.name || undefined,
+        thumb: info.movie_image || info.cover_big || undefined,
         plot: info.plot || info.description || undefined,
         genre: info.genre || undefined,
         cast: info.cast || info.actors || undefined,

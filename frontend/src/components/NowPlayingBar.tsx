@@ -4,10 +4,11 @@ import { useCurrentDeviceId } from '../usePersistentDevice'
 import { usePersistedState } from '../usePersistedState'
 import { launchRemote, canRemote } from '../remote'
 import Toast from './Toast'
+import AddToPlaylist from './AddToPlaylist'
 import {
   Play, Pause, Square, Rewind, FastForward, Radio, Pin, PinOff, Music, MonitorPlay,
   Volume2, VolumeX, Minus, Plus, ArrowRightLeft, SkipForward, X, PanelRight, PanelBottom,
-  ChevronUp, ChevronDown, ChevronLeft, ChevronRight, CircleDot, Undo2, Home, Menu, Power,
+  ChevronUp, ChevronDown, ChevronLeft, ChevronRight, CircleDot, Undo2, Home, Menu, Power, Gamepad2,
 } from 'lucide-react'
 
 export type Dock = 'bottom' | 'right'
@@ -53,6 +54,7 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [pinned, setPinned] = usePersistedState('hub.nowplaying.pin', false)
+  const [remoteOpen, setRemoteOpen] = usePersistedState('hub.nowplaying.remote', false)
   const [meta, setMeta] = useState<NowMeta | null>(null)
   const nullStreak = useRef(0)
   const isRight = dock === 'right'
@@ -169,11 +171,15 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
       </div>
     </div>
   )
+  // Télécommande « rangeable » : repliée par défaut, dépliée à la demande (persisté).
   const deviceControls = (
-    <div className="space-y-3 pt-1">
-      <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-semibold text-center">Commandes du device</div>
-      {volumeControls}
-      {miniRemote}
+    <div className="space-y-2 pt-1">
+      <button onClick={() => setRemoteOpen(o => !o)}
+        className="w-full flex items-center justify-center gap-1.5 text-[11px] uppercase tracking-wider text-zinc-500 hover:text-zinc-300 font-semibold transition-colors">
+        <Gamepad2 size={12} /> Télécommande
+        {remoteOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+      </button>
+      {remoteOpen && <div className="space-y-3 pt-1">{volumeControls}{miniRemote}</div>}
     </div>
   )
 
@@ -329,6 +335,16 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
             <div className="text-base text-zinc-100 font-semibold mt-1.5 line-clamp-3">{m.title || meta?.title || 'Lecture en cours'}</div>
             {device && <div className="text-xs text-zinc-400 mt-0.5">sur {device.name}</div>}
           </div>
+
+          {meta?.app && meta?.ref_id && (
+            <div className="flex items-center gap-2">
+              <AddToPlaylist
+                item={{ app: meta.app, ref_id: meta.ref_id, ref_type: meta.ref_type, title: meta.title || m.title, thumb: meta.thumb }}
+                className="w-9 h-9 border border-zinc-700 rounded-lg"
+              />
+              <span className="text-xs text-zinc-400">Ajouter à une playlist</span>
+            </div>
+          )}
 
           {meta && (meta.plot || meta.genre || meta.cast) && (
             <div className="space-y-1.5">

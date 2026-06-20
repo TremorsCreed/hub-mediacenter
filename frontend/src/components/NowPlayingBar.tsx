@@ -60,12 +60,15 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
   // Métadonnées étendues (synopsis/genre/casting) du média en cours — seulement en
   // panneau droit, refetch quand le titre change (pas à chaque tick de position).
   useEffect(() => {
-    if (dock !== 'right' || !deviceId || !now?.title || now.state === 'stopped' || now.up_next) { setMeta(null); return }
+    // Plex ne fournit pas de titre en MediaSession : on fetch quand même la méta (le
+    // backend résout via /status/sessions). Pour les autres sources, on attend un titre.
+    const plexNoTitle = now?.app === 'plex'
+    if (dock !== 'right' || !deviceId || (!now?.title && !plexNoTitle) || now?.state === 'stopped' || now?.up_next) { setMeta(null); return }
     let alive = true
     api.control.nowMeta(deviceId).then(mm => { if (alive) setMeta(mm) }).catch(() => {})
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceId, dock, now?.title, now?.state])
+  }, [deviceId, dock, now?.title, now?.state, now?.app])
 
   useEffect(() => { api.devices.list().then(setDevices).catch(() => {}) }, [])
 
@@ -323,7 +326,7 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
         <div className="p-4 space-y-4 flex-1">
           <div>
             <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${appStyle.cls}`}>{appStyle.label}</span>
-            <div className="text-base text-zinc-100 font-semibold mt-1.5 line-clamp-3">{m.title || 'Lecture en cours'}</div>
+            <div className="text-base text-zinc-100 font-semibold mt-1.5 line-clamp-3">{m.title || meta?.title || 'Lecture en cours'}</div>
             {device && <div className="text-xs text-zinc-400 mt-0.5">sur {device.name}</div>}
           </div>
 

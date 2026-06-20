@@ -404,6 +404,7 @@ export interface MediaNow {
 // côté serveur depuis la source (Plex ou IPTV VOD).
 export interface NowMeta {
   source: string
+  title?: string
   plot?: string
   genre?: string
   cast?: string

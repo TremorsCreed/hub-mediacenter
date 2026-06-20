@@ -34,6 +34,30 @@ async function resolveCredId(deviceId: string): Promise<number | null> {
   return credId ? Number(credId) : null
 }
 
+// Récupère le ratingKey RÉELLEMENT joué par un device sur Plex via /status/sessions.
+// Le lecteur Plex (com.plexapp.android) n'expose pas de titre en MediaSession, mais le
+// serveur Plex sait exactement ce que chaque client joue. On matche la session par l'IP
+// du lecteur (Player.address = IP LAN du device), sinon la session unique. Source de
+// vérité du contenu courant (même si lancé/changé hors Hub) + base du scrobbling Trakt.
+async function plexSessionRatingKey(deviceId: string): Promise<string | null> {
+  try {
+    const { rows: dc } = await db.execute({ sql: 'SELECT ip FROM devices WHERE id = ?', args: [deviceId] })
+    const ip = (dc[0] as any)?.ip as string | undefined
+    const { rows: pc } = await db.execute('SELECT auth_token, server_url FROM plex_config WHERE id = 1')
+    const cfg = pc[0] as any
+    if (!cfg?.auth_token || !cfg?.server_url) return null
+    const r = await fetch(`${cfg.server_url}/status/sessions?X-Plex-Token=${cfg.auth_token}`,
+      { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(5000) as any })
+    if (!r.ok) return null
+    const j: any = await r.json()
+    const sessions: any[] = j?.MediaContainer?.Metadata ?? []
+    if (!sessions.length) return null
+    const byIp = ip ? sessions.find(s => s.Player?.address === ip) : undefined
+    const sess = byIp ?? (sessions.length === 1 ? sessions[0] : undefined)
+    return sess?.ratingKey ? String(sess.ratingKey) : null
+  } catch { return null }
+}
+
 const router = Router()
 
 // GET /now/:deviceId — état de lecture temps réel (barre « lecture en cours »).
@@ -145,15 +169,17 @@ router.get('/now-meta/:deviceId', async (req, res) => {
   if (lc && titleMatch(lc.title, curTitle)) catId = lc.catalog_id
   // 2) playback_state (titre vérifié aussi).
   if (!catId && ps?.catalog_id && titleMatch(ps.title, curTitle)) catId = ps.catalog_id as string
-  // 2bis) Lecture Plex : l'app Plex (com.plexapp.android) n'expose AUCUN titre dans sa
-  //   MediaSession → le match par titre échoue toujours. Comme on connaît le catalog_id
-  //   plex:<rk> lancé par le Hub et que l'app courante est Plex, on lui fait confiance.
+  // 2bis) Lecture Plex : le lecteur n'expose pas de titre en MediaSession → le match par
+  //   titre échoue. On demande au serveur Plex ce que ce device joue réellement
+  //   (/status/sessions, source de vérité), avec repli sur le catalog_id lancé par le Hub.
   if (!catId) {
     const isPlex = cur.app === 'plex' || /plex/i.test(cur.package || '')
-    const cand = (typeof lc?.catalog_id === 'string' && lc.catalog_id.startsWith('plex:')) ? lc.catalog_id
-               : (typeof ps?.catalog_id === 'string' && ps.catalog_id.startsWith('plex:')) ? (ps.catalog_id as string)
-               : undefined
-    if (isPlex && cand) catId = cand
+    if (isPlex) {
+      const rk = await plexSessionRatingKey(deviceId)
+      if (rk) catId = `plex:${rk}`
+      else if (typeof lc?.catalog_id === 'string' && lc.catalog_id.startsWith('plex:')) catId = lc.catalog_id
+      else if (typeof ps?.catalog_id === 'string' && ps.catalog_id.startsWith('plex:')) catId = ps.catalog_id as string
+    }
   }
   // 3) Lancé hors Hub (télécommande physique…) : retrouver le média IPTV VOD par son
   //    titre via le cache (Plex hors Hub non couvert ici).
@@ -180,6 +206,7 @@ router.get('/now-meta/:deviceId', async (req, res) => {
       const tags = (arr: any[]) => (arr ?? []).map((x: any) => x.tag).filter(Boolean)
       return res.json({
         source: 'plex',
+        title: m.title || undefined,
         plot: m.summary || undefined,
         genre: tags(m.Genre).slice(0, 4).join(', ') || undefined,
         cast: tags(m.Role).slice(0, 5).join(', ') || undefined,
@@ -203,6 +230,7 @@ router.get('/now-meta/:deviceId', async (req, res) => {
       const info = d?.info || {}
       return res.json({
         source: 'iptv',
+        title: info.name || undefined,
         plot: info.plot || info.description || undefined,
         genre: info.genre || undefined,
         cast: info.cast || info.actors || undefined,

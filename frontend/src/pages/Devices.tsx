@@ -1,8 +1,35 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { QRCodeSVG } from 'qrcode.react'
 import { api, Credential, Device, DeviceConfig } from '../api'
-import { Wifi, WifiOff, Trash2, ChevronDown, ChevronUp, Save, KeyRound, MonitorPlay, Radar, Loader2, CheckCircle2, Download, Upload } from 'lucide-react'
+import { Wifi, WifiOff, Trash2, ChevronDown, ChevronUp, Save, KeyRound, MonitorPlay, Radar, Loader2, CheckCircle2, Download, Upload, Smartphone, X } from 'lucide-react'
 import { launchRemote, canRemote } from '../remote'
+import { useModalA11y } from '../useModalA11y'
 import type { DiscoverResult } from '../api'
+
+// Modale d'appairage : un QR encode l'URL de base du Hub, à scanner depuis l'app
+// companion du téléphone. Repli texte sous le QR si le scan échoue.
+function PairModal({ onClose }: { onClose: () => void }) {
+  const url = window.location.origin
+  const ref = useModalA11y(true, onClose)
+  return createPortal(
+    <div className="fixed inset-0 z-[120] bg-black/75 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
+      <div ref={ref} className="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-sm p-6 relative text-center" onClick={e => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute top-3 right-3 text-zinc-500 hover:text-white"><X size={18} /></button>
+        <h3 className="text-sm font-semibold flex items-center justify-center gap-2 mb-1"><Smartphone size={16} className="text-amber-400" /> Appairer un téléphone companion</h3>
+        <p className="text-xs text-zinc-500 mb-4">Scanne ce QR depuis l'app companion pour pointer sur ce Hub.</p>
+        <div className="inline-block bg-white rounded-lg p-3">
+          <QRCodeSVG value={url} size={196} level="M" />
+        </div>
+        <div className="mt-4">
+          <div className="text-[11px] text-zinc-500 mb-1">Ou saisis l'URL manuellement :</div>
+          <code className="text-sm text-amber-300 break-all">{url}</code>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
 
 const CONTENT_TYPES = ['movie', 'episode', 'live_channel', 'vod', 'music']
 const APP_NAMES: Record<string, string> = { iptv: 'IPTV (Xtream)', plex: 'Plex', kodi: 'Kodi' }
@@ -216,6 +243,7 @@ export default function Devices() {
   const [deployMsg, setDeployMsg] = useState<{ ip: string; ok: boolean; text: string } | null>(null)
   const [players, setPlayers] = useState<{ id: string; label: string; size: number }[]>([])
   const [playerBusy, setPlayerBusy] = useState(false)
+  const [pairOpen, setPairOpen] = useState(false)
 
   const load = async () => setDevices(await api.devices.list())
   const refreshApk = () => api.discover.apkStatus().then(s => setApkPresent(s.present)).catch(() => setApkPresent(null))
@@ -314,16 +342,27 @@ export default function Devices() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight">Devices</h1>
-        <button
-          onClick={runScan}
-          disabled={scanning}
-          className="flex items-center gap-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 rounded px-3 py-1.5 transition-colors"
-          title="Cherche les lecteurs Android avec ADB activé (port 5555) sur le réseau"
-        >
-          {scanning ? <Loader2 size={14} className="animate-spin" /> : <Radar size={14} />}
-          {scanning ? 'Scan en cours…' : 'Scanner le réseau'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPairOpen(true)}
+            className="flex items-center gap-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded px-3 py-1.5 transition-colors"
+            title="Afficher un QR pour appairer un téléphone companion"
+          >
+            <Smartphone size={14} /> Appairer un téléphone
+          </button>
+          <button
+            onClick={runScan}
+            disabled={scanning}
+            className="flex items-center gap-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 rounded px-3 py-1.5 transition-colors"
+            title="Cherche les lecteurs Android avec ADB activé (port 5555) sur le réseau"
+          >
+            {scanning ? <Loader2 size={14} className="animate-spin" /> : <Radar size={14} />}
+            {scanning ? 'Scan en cours…' : 'Scanner le réseau'}
+          </button>
+        </div>
       </div>
+
+      {pairOpen && <PairModal onClose={() => setPairOpen(false)} />}
       <p className="text-sm text-zinc-500">
         Les agents se connectent au Hub au démarrage. La config Xtream est poussée automatiquement à la connexion.
       </p>

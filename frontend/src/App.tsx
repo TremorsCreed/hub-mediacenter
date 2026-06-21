@@ -19,6 +19,8 @@ import Profiles from './pages/Profiles'
 import Playlists from './pages/Playlists'
 import PlaylistDetail from './pages/PlaylistDetail'
 import ImportPlaylist from './pages/ImportPlaylist'
+import Inbox from './pages/Inbox'
+import AdminLlm from './pages/AdminLlm'
 
 export default function App() {
   const { currentUser, loading } = useUser()
@@ -39,6 +41,7 @@ export default function App() {
         <Route path="playlists" element={<Playlists />} />
         <Route path="playlists/import" element={<ImportPlaylist />} />
         <Route path="playlists/:id" element={<PlaylistDetail />} />
+        <Route path="discoveries" element={<Inbox />} />
         <Route path="history" element={<History />} />
 
         {/* Section Admin (protégée par PIN) */}
@@ -48,6 +51,7 @@ export default function App() {
           <Route path="devices" element={<Devices />} />
           <Route path="credentials" element={<Credentials />} />
           <Route path="iptv-categories" element={<IptvCategories />} />
+          <Route path="llm" element={<AdminLlm />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Route>

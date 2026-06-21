@@ -23,6 +23,8 @@ import senscritiqueRouter from './routes/senscritique'
 import traktRouter from './routes/trakt'
 import traktAuthRouter from './routes/traktAuth'
 import spotifyRouter from './routes/spotify'
+import companionRouter from './routes/companion'
+import llmRouter from './routes/llm'
 import { attachUser, requireAdmin } from './auth'
 import { preloadAll as preloadIptvVod } from './iptvVodCache'
 import { startReminderChecker } from './epgReminders'
@@ -44,6 +46,8 @@ app.use('/api/senscritique', senscritiqueRouter)
 app.use('/api/trakt', traktAuthRouter)
 app.use('/api/trakt', traktRouter)
 app.use('/api/spotify', spotifyRouter)
+app.use('/api/companion', companionRouter)
+app.use('/api/llm', requireAdmin, llmRouter)
 app.use('/api/devices/:id/config', requireAdmin, configRouter)
 app.use('/api/devices', devicesRouter)
 app.use('/api/discover', discoverRouter)

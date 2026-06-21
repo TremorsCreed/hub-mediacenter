@@ -351,6 +351,62 @@ export async function initDb() {
     )
   `)
 
+  // ── Companion : boîte de réception des partages (TikTok au départ) ───────────
+  // Un partage entrant (URL + caption résolue via oEmbed) atterrit ici avec une
+  // extraction heuristique du titre candidat. status : 'pending' (à traiter),
+  // 'matched' (rattaché à un item du catalogue), 'wishlist' (existe mais hors
+  // catalogue), 'ignored'. Les champs matched_* sont remplis à la résolution.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS companion_inbox (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      source_platform TEXT NOT NULL DEFAULT 'tiktok',
+      source_url TEXT NOT NULL,
+      resolved_url TEXT,
+      video_id TEXT,
+      caption TEXT,
+      author_name TEXT,
+      author_unique_id TEXT,
+      thumbnail TEXT,
+      hashtags TEXT NOT NULL DEFAULT '[]',
+      title_guess TEXT,
+      year_guess INTEGER,
+      type_guess TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      matched_app TEXT,
+      matched_ref_id TEXT,
+      matched_title TEXT,
+      raw TEXT,
+      created_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0
+    )
+  `)
+  await db.execute("CREATE INDEX IF NOT EXISTS idx_companion_status ON companion_inbox(status, created_at DESC)")
+
+  // ── Connecteur LLM générique : config par fournisseur + fournisseur actif ────
+  // Brancher au choix Claude (Anthropic), ChatGPT (OpenAI), Gemini (Google) ou
+  // Ollama (local). base_url sert surtout à Ollama (ex. http://192.168.1.x:11434).
+  // api_key sert aux 3 fournisseurs cloud. Premier consommateur : le Companion
+  // (extraction de titres de films depuis des commentaires).
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS llm_providers (
+      provider TEXT PRIMARY KEY,
+      api_key TEXT,
+      base_url TEXT,
+      model TEXT,
+      updated_at INTEGER NOT NULL DEFAULT 0
+    )
+  `)
+
+  // Réglage singleton du fournisseur actif (id figé à 1).
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS llm_settings (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      active_provider TEXT
+    )
+  `)
+  await db.execute("INSERT OR IGNORE INTO llm_settings (id) VALUES (1)")
+
   // Seed : crée un profil Admin par défaut (PIN 0000) si aucun utilisateur n'existe.
   const { rows: userCount } = await db.execute("SELECT COUNT(*) as n FROM users")
   if (Number((userCount[0] as any).n) === 0) {

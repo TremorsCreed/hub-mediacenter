@@ -582,6 +582,72 @@ export interface PlexShowDetail {
   seasons: PlexSeasonDetail[]
 }
 
+// ── LLM (Admin) ────────────────────────────────────────────────────────────
+export type LlmProvider = 'claude' | 'chatgpt' | 'gemini' | 'ollama'
+export interface LlmConfig {
+  provider: LlmProvider
+  has_key: boolean
+  base_url?: string | null
+  model?: string | null
+  active: boolean
+}
+export interface LlmTestResult {
+  ok: boolean
+  latency_ms?: number
+  sample?: string
+  error?: string
+}
+export interface LlmUpdateInput {
+  api_key?: string       // vide / absent = ne pas écraser la clé existante
+  base_url?: string | null
+  model?: string | null
+}
+
+// ── Companion (Découvertes) ──────────────────────────────────────────────────
+export type CompanionConfidence = 'high' | 'medium' | 'low'
+export interface CompanionCandidate {
+  type: 'movie' | 'series' | string
+  title?: string
+  year?: number | null
+  confidence?: CompanionConfidence
+  ids?: MediaIds
+}
+export interface CompanionInboxItem {
+  id: number
+  status: 'pending' | 'validated' | 'wishlist' | 'ignored' | string
+  thumb?: string | null
+  caption?: string | null
+  author?: string | null
+  resolved_title?: string | null
+  confidence?: CompanionConfidence
+  candidates?: CompanionCandidate[]
+  created_at?: number
+}
+export interface CompanionFiche {
+  type: 'movie' | 'series' | string
+  ids?: MediaIds
+  poster?: string | null
+  title: string
+  year?: number | null
+  director?: string | null
+  cast?: string[] | null
+  synopsis?: string | null
+  genres?: string[] | null
+  rating?: number | null
+  trailer_youtube_key?: string | null
+}
+export interface CompanionMatchPlatform {
+  platform: string
+  label?: string
+}
+export interface CompanionMatch {
+  status: 'in_catalogue' | 'streaming_only' | 'not_found' | string
+  sources?: string[]              // ex. ["Plex", "IPTV"] pour in_catalogue
+  platforms?: CompanionMatchPlatform[]  // ex. Netflix / Disney+ pour streaming_only
+  // Pour ajout direct à une playlist quand dispo dans le catalogue
+  item?: PlaylistItemInput
+}
+
 async function extractError(r: Response): Promise<Error> {
   const text = await r.text()
   try {
@@ -845,5 +911,21 @@ export const api = {
       return get<{ total: number; start: number; size: number; items: PlexItem[] }>(`/plex/sections/${id}/all?${p}`)
     },
     imageUrl: (path?: string) => path ? `${BASE}/plex/image?path=${encodeURIComponent(path)}` : '',
+  },
+  llm: {
+    list: () => get<LlmConfig[]>('/llm'),
+    save: (provider: LlmProvider, input: LlmUpdateInput) => put<{ ok: boolean }>(`/llm/${provider}`, input),
+    test: (provider: LlmProvider) => post<LlmTestResult>(`/llm/${provider}/test`, {}),
+    remove: (provider: LlmProvider) => del<{ ok: boolean }>(`/llm/${provider}`),
+    setActive: (provider: LlmProvider) => post<{ ok: boolean }>('/llm/active', { provider }),
+  },
+  companion: {
+    inbox: () => get<CompanionInboxItem[]>('/companion/inbox'),
+    fiche: (body: { type: string; ids?: MediaIds }) => post<CompanionFiche>('/companion/fiche', body),
+    match: (body: { title: string; year?: number | null; type: string; ids?: MediaIds }) =>
+      post<CompanionMatch>('/companion/match', body),
+    // Décision sur un item de la boîte de réception : sort l'item de 'pending'.
+    decide: (id: number, action: 'validated' | 'wishlist' | 'ignored') =>
+      post<{ ok: boolean }>(`/companion/inbox/${id}/decide`, { action }),
   }
 }

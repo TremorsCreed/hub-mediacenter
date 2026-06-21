@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Library, History, Film, Radio, Compass, Gamepad2, ChevronLeft, ChevronRight, ShieldCheck, Home, ListVideo } from 'lucide-react'
+import { Library, History, Film, Radio, Compass, Gamepad2, ChevronLeft, ChevronRight, ShieldCheck, Home, ListVideo, Sparkles } from 'lucide-react'
 import { api } from '../api'
 import { useUser, initials } from '../UserContext'
 import { usePersistedState } from '../usePersistedState'
@@ -9,6 +9,7 @@ import RemoteScreen from './RemoteScreen'
 
 export default function Layout() {
   const [modules, setModules] = useState<{ plex: boolean; iptv: boolean; discover: boolean; launchbox: boolean }>({ plex: false, iptv: false, discover: false, launchbox: false })
+  const [inboxCount, setInboxCount] = useState(0)
   const [collapsed, setCollapsed] = useState(false)
   const [dock, setDock] = usePersistedState<Dock>('hub.nowplaying.dock', 'bottom')
   const location = useLocation()
@@ -39,6 +40,25 @@ export default function Layout() {
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [refreshModules])
+
+  // Badge Découvertes : nombre d'items 'pending' dans la boîte de réception.
+  const refreshInbox = useCallback(() => {
+    api.companion.inbox()
+      .then(list => setInboxCount(list.filter(i => i.status === 'pending').length))
+      .catch(() => { /* route absente / hors-ligne : pas de badge */ })
+  }, [])
+  useEffect(() => { refreshInbox() }, [location.pathname, refreshInbox])
+  useEffect(() => {
+    const onChanged = () => refreshInbox()
+    window.addEventListener('hub:inbox-changed', onChanged)
+    window.addEventListener('focus', onChanged)
+    const t = setInterval(refreshInbox, 60000)
+    return () => {
+      window.removeEventListener('hub:inbox-changed', onChanged)
+      window.removeEventListener('focus', onChanged)
+      clearInterval(t)
+    }
+  }, [refreshInbox])
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center py-2.5 text-sm transition-colors ${
@@ -118,6 +138,27 @@ export default function Layout() {
           <NavLink to="/playlists" title={collapsed ? 'Playlists' : undefined} className={linkClass}>
             <ListVideo size={15} strokeWidth={1.8} />
             {!collapsed && 'Playlists'}
+          </NavLink>
+
+          <NavLink to="/discoveries" title={collapsed ? 'Découvertes' : undefined} className={linkClass}>
+            <div className="relative">
+              <Sparkles size={15} strokeWidth={1.8} />
+              {inboxCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full bg-amber-500 text-black text-[9px] font-bold flex items-center justify-center leading-none">
+                  {inboxCount > 99 ? '99+' : inboxCount}
+                </span>
+              )}
+            </div>
+            {!collapsed && (
+              <span className="flex-1 flex items-center justify-between">
+                Découvertes
+                {inboxCount > 0 && (
+                  <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center leading-none">
+                    {inboxCount > 99 ? '99+' : inboxCount}
+                  </span>
+                )}
+              </span>
+            )}
           </NavLink>
 
           <NavLink to="/history" title={collapsed ? 'History' : undefined} className={linkClass}>

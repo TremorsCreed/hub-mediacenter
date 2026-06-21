@@ -1,0 +1,19 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Fond sombre (le launcher applique son propre masque) -->
+    <path android:fillColor="#18181B" android:pathData="M0,0h108v108H0z" />
+
+    <!-- Bulle de partage / fleche -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="5"
+        android:pathData="M30,32 L78,32 A6,6 0 0 1 84,38 L84,62 A6,6 0 0 1 78,68 L46,68 L36,78 L36,68 L30,68 A6,6 0 0 1 24,62 L24,38 A6,6 0 0 1 30,32 Z" />
+
+    <!-- Triangle play au centre de la bulle -->
+    <path android:fillColor="#38BDF8" android:pathData="M48,42 L48,58 L63,50 Z" />
+</vector>

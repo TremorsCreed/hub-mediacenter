@@ -26,7 +26,7 @@ router.get('/:id', async (req, res) => {
 const RegisterSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  platform: z.enum(['android_tv', 'fire_tv', 'shield', 'apple_tv', 'roku', 'kodi', 'other']),
+  platform: z.enum(['android_tv', 'fire_tv', 'shield', 'apple_tv', 'roku', 'kodi', 'companion', 'other']),
   ip: z.string().optional(),
   capabilities: z.array(z.object({
     app: z.string(),

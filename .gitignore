@@ -7,5 +7,8 @@
 agent-android/.gradle/
 agent-android/app/build/
 agent-android/local.properties
+companion-android/.gradle/
+companion-android/app/build/
+companion-android/local.properties
 *.apk
 *.aab

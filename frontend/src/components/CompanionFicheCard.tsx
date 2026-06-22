@@ -218,9 +218,17 @@ export default function CompanionFicheCard({
               <ManualSearch onPick={pickManual} />
             </div>
 
-            {/* Actions : on garde Wishlist + Ignorer même sans fiche (inbox réel uniquement). */}
+            {/* Actions : on garde Rescan + Wishlist + Ignorer même sans fiche (inbox réel uniquement). */}
             {isInbox && (
             <div className="mt-6 pt-4 border-t border-zinc-800 flex items-center gap-2 flex-wrap">
+              <button
+                onClick={rescan}
+                disabled={rescanning || deciding !== null}
+                title="Relancer la résolution du titre avec l'algo courant"
+                className="flex items-center gap-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 px-3 py-1.5 rounded transition-colors"
+              >
+                {rescanning ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Rescanner
+              </button>
               <button
                 onClick={() => decide('wishlist')}
                 disabled={deciding !== null}

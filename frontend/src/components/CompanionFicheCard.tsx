@@ -8,7 +8,7 @@ import { useUser } from '../UserContext'
 import { useModalA11y } from '../useModalA11y'
 import {
   X, Loader2, Play, Star, Film, Tv, CheckCircle2, AlertCircle, Heart, EyeOff,
-  ListVideo, Plus,
+  ListVideo, Plus, HelpCircle, ExternalLink,
 } from 'lucide-react'
 
 // Couleur du badge de confiance.
@@ -106,11 +106,64 @@ export default function CompanionFicheCard({
           </div>
         )}
 
-        {loadingFiche && (
+        {/* Repli : aucun candidat résolu automatiquement. On montre ce qu'on a du
+            partage (vignette / légende / auteur / lien) plutôt qu'un cul-de-sac. */}
+        {candidates.length === 0 && (
+          <div>
+            <div className="flex gap-4">
+              {(item.thumbnail ?? item.thumb)
+                ? <img src={(item.thumbnail ?? item.thumb)!} alt="" className="w-32 h-48 object-cover rounded shrink-0" onError={e => { e.currentTarget.style.display = 'none' }} />
+                : <div className="w-32 h-48 rounded shrink-0 bg-zinc-800 flex items-center justify-center text-zinc-600"><HelpCircle size={28} /></div>}
+              <div className="flex-1 min-w-0">
+                <div className="inline-flex items-center gap-1.5 text-xs text-amber-300 bg-amber-500/10 border border-amber-700/40 rounded px-2 py-1">
+                  <HelpCircle size={13} /> Titre non identifié automatiquement.
+                </div>
+                {(item.title_guess ?? item.resolved_title) && (
+                  <div className="text-sm text-zinc-300 mt-3">Piste : <span className="text-zinc-100">{item.title_guess ?? item.resolved_title}</span></div>
+                )}
+                {(item.author_name ?? item.author) && (
+                  <div className="text-xs text-zinc-400 mt-2">Auteur : <span className="text-zinc-200">{item.author_name ?? item.author}</span></div>
+                )}
+                {item.source_url && (
+                  <a
+                    href={item.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 inline-flex items-center gap-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 text-white rounded px-3 py-1.5 transition-colors"
+                  >
+                    <ExternalLink size={13} /> Voir sur TikTok
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {item.caption && <p className="text-sm text-zinc-300 mt-4 leading-relaxed whitespace-pre-line">{item.caption}</p>}
+
+            {/* Actions : on garde Wishlist + Ignorer même sans fiche. */}
+            <div className="mt-6 pt-4 border-t border-zinc-800 flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => decide('wishlist')}
+                disabled={deciding !== null}
+                className="flex items-center gap-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 px-3 py-1.5 rounded transition-colors"
+              >
+                {deciding === 'wishlist' ? <Loader2 size={13} className="animate-spin" /> : <Heart size={13} />} Wishlist
+              </button>
+              <button
+                onClick={() => decide('ignored')}
+                disabled={deciding !== null}
+                className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-300 disabled:opacity-40 px-3 py-1.5 transition-colors ml-auto"
+              >
+                {deciding === 'ignored' ? <Loader2 size={13} className="animate-spin" /> : <EyeOff size={13} />} Ignorer
+              </button>
+            </div>
+          </div>
+        )}
+
+        {candidates.length > 0 && loadingFiche && (
           <div className="py-16 flex justify-center text-zinc-500"><Loader2 size={20} className="animate-spin" /></div>
         )}
 
-        {!loadingFiche && !fiche && (
+        {candidates.length > 0 && !loadingFiche && !fiche && (
           <div className="py-12 text-center text-sm text-zinc-600">Impossible de charger la fiche.</div>
         )}
 

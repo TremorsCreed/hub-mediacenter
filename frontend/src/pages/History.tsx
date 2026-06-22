@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, HistoryEntry } from '../api'
+import { api, HistoryEntry, Device } from '../api'
 import { useUser, initials } from '../UserContext'
-import { Trash2, X } from 'lucide-react'
+import { usePersistentDevice } from '../usePersistentDevice'
+import Toast from '../components/Toast'
+import { Trash2, X, Play, Loader2 } from 'lucide-react'
 
 const REQUESTER_COLOR: Record<string, string> = {
   zaparoo: 'text-purple-400',
@@ -13,8 +15,27 @@ const REQUESTER_COLOR: Record<string, string> = {
 
 export default function History() {
   const { adminUnlocked, users, currentUser } = useUser()
+  const { deviceId, setDeviceId, reconcile } = usePersistentDevice()
+  const [devices, setDevices] = useState<Device[]>([])
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [filter, setFilter] = useState<string>('all') // pour l'admin : 'all' | userId
+  const [replaying, setReplaying] = useState<number | null>(null)
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const flash = (msg: string, ok: boolean) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3000) }
+
+  useEffect(() => { api.devices.list().then(ds => { setDevices(ds); reconcile(ds) }).catch(() => {}) }, [])
+
+  // Relance une entrée d'historique sur le device cible. On réutilise le
+  // catalog_id mémorisé (clé relançable) ; sans lui, l'entrée n'est pas relançable.
+  const replay = async (h: HistoryEntry) => {
+    if (!h.catalog_id) return
+    if (!deviceId) { flash('Choisis un device', false); return }
+    setReplaying(h.id)
+    try {
+      const r = await api.play({ catalog_id: h.catalog_id, title: h.title, app: h.app, device_id: deviceId, requester: 'manual' })
+      flash(`▶ ${r.title ?? h.title ?? 'Lecture'}`, true)
+    } catch (e: any) { flash(`Échec : ${e.message}`, false) } finally { setReplaying(null) }
+  }
 
   // Un membre ne voit que le sien (le backend filtre via X-User-Id). L'admin filtre via ?user_id.
   const load = useCallback(() => {
@@ -46,6 +67,14 @@ export default function History() {
     <div className="space-y-4 max-w-3xl">
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-2xl font-bold tracking-tight mr-auto">Historique</h1>
+
+        <select
+          className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
+          value={deviceId} onChange={e => setDeviceId(e.target.value)}
+        >
+          <option value="">— device —</option>
+          {devices.map(d => <option key={d.id} value={d.id} disabled={!d.ws_connected}>{d.name} {d.ws_connected ? '' : '(offline)'}</option>)}
+        </select>
 
         {adminUnlocked && (
           <select
@@ -102,6 +131,14 @@ export default function History() {
                 </div>
               </div>
               <button
+                onClick={() => replay(h)}
+                disabled={!h.catalog_id || replaying === h.id}
+                className="tap-target text-zinc-500 hover:text-amber-400 disabled:opacity-30 disabled:hover:text-zinc-500 p-1 shrink-0"
+                title={h.catalog_id ? 'Relancer' : 'Pas assez d\'informations pour relancer cette entrée'}
+              >
+                {replaying === h.id ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} fill="currentColor" />}
+              </button>
+              <button
                 onClick={() => deleteOne(h.id)}
                 className="tap-target reveal text-zinc-600 hover:text-red-400 p-1 shrink-0"
                 title="Supprimer cette entrée"
@@ -116,6 +153,8 @@ export default function History() {
       {currentUser && !adminUnlocked && (
         <p className="text-[11px] text-zinc-600 pt-2">Tu vois uniquement ton propre historique ({currentUser.name}).</p>
       )}
+
+      {toast && <Toast msg={toast.msg} ok={toast.ok} />}
     </div>
   )
 }

@@ -622,6 +622,12 @@ export interface CompanionInboxItem {
   confidence?: CompanionConfidence
   candidates?: CompanionCandidate[]
   created_at?: number
+  // Champs bruts renvoyés par le backend (companion_inbox). Utiles en repli quand
+  // aucun candidat n'a pu être résolu (titre non identifié).
+  thumbnail?: string | null
+  author_name?: string | null
+  source_url?: string | null
+  title_guess?: string | null
 }
 export interface CompanionFiche {
   type: 'movie' | 'series' | string
@@ -640,10 +646,32 @@ export interface CompanionMatchPlatform {
   platform: string
   label?: string
 }
+// Une version IPTV trouvée (par langue), telle que renvoyée par le backend /match.
+export interface CompanionMatchIptv {
+  credentialId: number
+  kind: 'vod' | 'series'
+  streamId: string
+  language: string | null
+  name: string
+}
+// Une dispo streaming (service) renvoyée par le backend /match.
+export interface CompanionMatchStreaming {
+  platform: string
+  title?: string
+  url?: string
+  offerType?: string | null
+  price?: number | null
+  quality?: string | null
+}
 export interface CompanionMatch {
   status: 'in_catalogue' | 'streaming_only' | 'not_found' | string
-  sources?: string[]              // ex. ["Plex", "IPTV"] pour in_catalogue
-  platforms?: CompanionMatchPlatform[]  // ex. Netflix / Disney+ pour streaming_only
+  // Champs réellement renvoyés par le backend companionMatch.
+  plex?: { ratingKey?: string; title?: string; year?: number | null } | null
+  iptv?: CompanionMatchIptv[]
+  streaming?: CompanionMatchStreaming[]
+  notes?: string[]
+  sources?: string[]              // legacy : ex. ["Plex", "IPTV"] pour in_catalogue
+  platforms?: CompanionMatchPlatform[]  // legacy : Netflix / Disney+ pour streaming_only
   // Pour ajout direct à une playlist quand dispo dans le catalogue
   item?: PlaylistItemInput
 }

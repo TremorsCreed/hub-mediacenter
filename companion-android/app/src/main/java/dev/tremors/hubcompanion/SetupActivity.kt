@@ -48,17 +48,17 @@ class SetupActivity : AppCompatActivity() {
         setContentView(scroll)
 
         root.addView(title("HMCompanion"))
-        root.addView(hint("Recoit un partage TikTok et l'envoie au Hub MediaCenter."))
+        root.addView(hint("Recoit un partage TikTok et l'ajoute au Hub. Saisis l'adresse du Hub, la meme que dans ton navigateur (port 3050)."))
 
         root.addView(label("URL DU HUB"))
         etHubUrl = EditText(this).apply {
-            setHint("http://192.168.1.15:8020")
+            setHint("http://192.168.1.15:3050")
             setHintTextColor(Color.parseColor("#666688"))
             setTextColor(Color.WHITE)
             setBackgroundColor(card)
             setPadding(dp(14), dp(14), dp(14), dp(14))
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setText(Prefs.hubUrl(this@SetupActivity) ?: "http://192.168.1.15:8020")
+            setText(Prefs.hubUrl(this@SetupActivity) ?: "http://192.168.1.15:3050")
         }
         root.addView(etHubUrl, lp(topMargin = dp(4)))
 

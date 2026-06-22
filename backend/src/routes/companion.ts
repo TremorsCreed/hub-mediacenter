@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
+import fs from 'fs'
 import { db } from '../db'
 import { isValidAdminToken } from '../auth'
 import { matchCatalogue } from '../companionMatch'
@@ -680,6 +681,15 @@ router.post('/inbox/:id/decide', async (req, res) => {
     args: [d.decision, d.matched_app ?? null, d.matched_ref_id ?? null, d.matched_title ?? null, Date.now(), id],
   })
   res.json({ ok: true, id, status: d.decision })
+})
+
+// ── GET /apk : telecharge l'APK de l'app companion (depuis le volume /apk) ─────
+// Sert au lien de telechargement affiche dans le Hub (modale d'appairage). Public
+// (pas d'admin) pour pouvoir le recuperer depuis le telephone.
+const COMPANION_APK = '/apk/hub-companion-debug.apk'
+router.get('/apk', (_req, res) => {
+  if (!fs.existsSync(COMPANION_APK)) return res.status(404).json({ error: 'apk indisponible' })
+  res.download(COMPANION_APK, 'HMCompanion.apk')
 })
 
 export default router

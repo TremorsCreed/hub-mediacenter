@@ -26,6 +26,16 @@ const DEFAULT_RAILS: { id: RailId; on: boolean }[] = [
 
 const KIND_LABEL: Record<string, string> = { series: 'Série', show: 'Série', playlist: 'Playlist', movie: 'Film', vod: 'Film' }
 
+// Nom lisible d'une plateforme de streaming (pour les toasts « dispo sur … »).
+function platformLabel(p: string): string {
+  const map: Record<string, string> = {
+    netflix: 'Netflix', 'disney+': 'Disney+', disneyplus: 'Disney+',
+    primevideo: 'Prime Video', amazon: 'Prime Video', appletvplus: 'Apple TV+',
+    max: 'Max', 'paramount+': 'Paramount+', youtube: 'YouTube',
+  }
+  return map[p.toLowerCase()] ?? p
+}
+
 // Fusionne les prefs stockées avec la liste par défaut (ids inconnus ignorés, manquants ajoutés).
 function normalizeRails(prefs: DashboardPrefs | null | undefined): { id: RailId; on: boolean }[] {
   const valid = new Set<string>(Object.keys(RAIL_META))
@@ -147,7 +157,22 @@ export default function UserDashboard() {
           flash(`▶ ${pr.title}`, true); return
         }
       }
-      flash(`« ${item.title} » n'est pas dans ta bibliothèque Plex`, false)
+      // Rien dans Plex : on élargit au reste du catalogue (IPTV) puis au streaming.
+      const m = await api.companion.match({ title: item.title, year: item.year ?? undefined, type: wantShow ? 'show' : 'movie' })
+      if (m.status === 'in_catalogue' && (m.iptv?.length ?? 0) > 0) {
+        // L'écran IPTV ne lit pas de recherche depuis l'URL : on ouvre le module et
+        // on indique quoi chercher (pré-remplissage non disponible).
+        navigate('/catalog/iptv')
+        flash(`Dispo en IPTV : ouvre le module pour lancer « ${item.title} »`, true)
+        return
+      }
+      if (m.status === 'streaming_only') {
+        const names = (m.streaming ?? []).map(s => platformLabel(s.platform))
+        const uniq = Array.from(new Set(names))
+        flash(uniq.length ? `Dispo sur ${uniq.join(', ')}` : 'Dispo en streaming uniquement', true)
+        return
+      }
+      flash(`« ${item.title} » introuvable dans ton catalogue`, false)
     } catch (e: any) { flash(`Échec : ${e.message}`, false) } finally { setLaunching(null) }
   }
 

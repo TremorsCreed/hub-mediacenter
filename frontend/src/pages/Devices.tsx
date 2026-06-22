@@ -25,6 +25,11 @@ function PairModal({ onClose }: { onClose: () => void }) {
           <div className="text-[11px] text-zinc-500 mb-1">Ou saisis l'URL manuellement :</div>
           <code className="text-sm text-amber-300 break-all">{url}</code>
         </div>
+        <a href={`${url}/api/companion/apk`} download
+          className="mt-5 inline-flex items-center justify-center gap-2 w-full rounded-lg bg-amber-500 hover:bg-amber-400 text-black text-sm font-semibold py-2 transition-colors">
+          <Smartphone size={15} /> Télécharger l'app (.apk)
+        </a>
+        <p className="text-[11px] text-zinc-500 mt-2">Installe l'APK, ouvre l'app une fois pour la pointer sur ce Hub.</p>
       </div>
     </div>,
     document.body,

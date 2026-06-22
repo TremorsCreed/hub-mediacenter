@@ -1,11 +1,15 @@
-import { api, ScrapedListItem, PlexSection, PlexShowDetail, PlaylistItemInput } from '../api'
+import { api, ScrapedListItem, PlexSection, PlexShowDetail, PlaylistItemInput, IptvSeriesInfo } from '../api'
 
 // Résolution d'un item « titre » (issu d'un import ou d'une édition JSON) vers une
 // source jouable : Plex en priorité, puis IPTV (langue préférée), sinon « manquant ».
 // Factorisé depuis ImportPlaylist pour être réutilisé par l'éditeur JSON.
 
-export type ResolveCache = { shows: Map<string, PlexShowDetail | null> }
-export const makeResolveCache = (): ResolveCache => ({ shows: new Map() })
+type IptvSeriesHit = { info: IptvSeriesInfo; logo?: string }
+export type ResolveCache = {
+  shows: Map<string, PlexShowDetail | null>
+  iptvSeries: Map<string, IptvSeriesHit | null>
+}
+export const makeResolveCache = (): ResolveCache => ({ shows: new Map(), iptvSeries: new Map() })
 
 export const norm = (s?: string | null) =>
   (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
@@ -42,20 +46,44 @@ async function findPlexShow(showTitle: string, year: number | null | undefined, 
   return detail
 }
 
-// Résout un épisode (Trakt) vers l'épisode Plex précis ; sinon « manquant ».
-async function resolveEpisode(item: ScrapedListItem, sections: PlexSection[], cache: ResolveCache): Promise<PlaylistItemInput> {
-  const show = await findPlexShow(item.show_title ?? item.title, item.year, sections, cache)
+// Trouve (et met en cache) la série IPTV correspondant à un titre, infos épisodes incluses.
+async function findIptvSeries(showTitle: string, credId: number, cache: ResolveCache): Promise<IptvSeriesHit | null> {
+  const key = norm(showTitle)
+  if (cache.iptvSeries.has(key)) return cache.iptvSeries.get(key)!
+  let hit: IptvSeriesHit | null = null
+  try {
+    // Pas de filtre langue ici : on veut maximiser les chances de retrouver l'épisode.
+    const r = await api.iptv.streams(credId, { type: 'series', search: showTitle, limit: 8 })
+    const best = r.items.find(s => titleMatches(s.name, showTitle)) ?? r.items[0]
+    if (best) hit = { info: await api.iptv.seriesInfo(credId, best.stream_id), logo: best.logo }
+  } catch { /* IPTV KO, on laisse null */ }
+  cache.iptvSeries.set(key, hit)
+  return hit
+}
+
+// Résout un épisode vers l'épisode Plex précis, sinon vers l'épisode IPTV, sinon « manquant ».
+async function resolveEpisode(item: ScrapedListItem, sections: PlexSection[], credId: number | null, cache: ResolveCache, lang: string): Promise<PlaylistItemInput> {
+  const showTitle = item.show_title ?? item.title
+  // 1) Plex
+  const show = await findPlexShow(showTitle, item.year, sections, cache)
   if (show && item.season != null && item.episode != null) {
     const season = show.seasons.find(s => s.season_number === item.season)
     const ep = season?.episodes.find(e => e.episode_number === item.episode)
     if (ep) return { app: 'plex', ref_id: ep.ratingKey, ref_type: 'episode', title: item.title, year: item.year ?? undefined, thumb: ep.thumb ?? show.info.thumb, status: 'resolved' }
+  }
+  // 2) IPTV (épisode VOD de série) — récupère ce que Plex n'a pas
+  if (credId != null && item.season != null && item.episode != null) {
+    const series = await findIptvSeries(showTitle, credId, cache)
+    const season = series?.info.seasons.find(s => s.season_number === item.season)
+    const ep = season?.episodes.find(e => e.episode_num === item.episode)
+    if (ep) return { app: 'iptv', ref_id: ep.episode_id, ref_type: 'series', title: item.title, year: item.year ?? undefined, thumb: ep.movie_image ?? series?.logo, lang, ext: ep.container_extension, status: 'resolved' }
   }
   return { app: 'unresolved', ref_type: 'episode', title: item.title, year: item.year ?? undefined, status: 'missing' }
 }
 
 // Résout un film/série vers Plex (prioritaire) puis IPTV (langue donnée).
 export async function resolveScrapedItem(item: ScrapedListItem, sections: PlexSection[], credId: number | null, cache: ResolveCache, lang: string): Promise<PlaylistItemInput> {
-  if (item.kind === 'episode') return resolveEpisode(item, sections, cache)
+  if (item.kind === 'episode') return resolveEpisode(item, sections, credId, cache, lang)
   const wantShow = item.type === 'series'
   const secs = sections.filter(s => (wantShow ? s.type === 'show' : s.type === 'movie'))
   for (const sec of secs) {

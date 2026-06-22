@@ -237,7 +237,8 @@ export default function PlaylistDetail() {
   }
 
   const play = async (it: PlaylistItem) => {
-    if (it.app === 'iptv' && it.ref_type === 'series') { navigate('/catalog/iptv'); return }
+    // Série IPTV entière → module ; un épisode IPTV (ext = container_extension) se lit directement.
+    if (it.app === 'iptv' && it.ref_type === 'series' && !it.ext) { navigate('/catalog/iptv'); return }
     if (it.app === 'plex' && it.ref_type === 'show') { navigate('/catalog/plex'); return }
     if (it.app !== 'launchbox' && !deviceId) { flash('Choisis un device', false); return }
     if (!it.ref_id) return

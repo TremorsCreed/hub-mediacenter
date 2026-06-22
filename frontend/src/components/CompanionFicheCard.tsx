@@ -82,6 +82,31 @@ export default function CompanionFicheCard({
     if (!candidate) return
     setShowTrailer(false)
     setFiche(null); setMatch(null)
+    const hasId = !!(candidate.ids && (candidate.ids.imdb || candidate.ids.tmdb || candidate.ids.trakt))
+    // Candidat titre-seul (consensus sans match Trakt) : pas d'id pour charger /fiche.
+    // On cherche le titre sur Trakt pour obtenir de vrais candidats (avec ids) et on
+    // sélectionne le 1er résultat, ce qui relance ce useEffect avec un id chargeable.
+    if (!hasId) {
+      setLoadingFiche(true); setLoadingMatch(false)
+      api.companion.search(candidate.title)
+        .then(list => {
+          if (!list || !list.length) return
+          const same = (a: CompanionCandidate, b: CompanionCandidate) =>
+            a.title === b.title && a.year === b.year &&
+            ((a.ids?.imdb && a.ids?.imdb === b.ids?.imdb) ||
+             (a.ids?.tmdb && a.ids?.tmdb === b.ids?.tmdb) ||
+             (a.ids?.trakt && a.ids?.trakt === b.ids?.trakt))
+          setCandidates(prev => {
+            const merged = [...prev, ...list.filter(r => !prev.some(c => same(c, r)))]
+            const idx = merged.findIndex(c => same(c, list[0]))
+            if (idx >= 0) setCandIdx(idx)
+            return merged
+          })
+        })
+        .catch(() => {})
+        .finally(() => setLoadingFiche(false))
+      return
+    }
     setLoadingFiche(true); setLoadingMatch(true)
     api.companion.fiche({ type: candidate.type, ids: candidate.ids })
       .then(f => {
@@ -253,7 +278,7 @@ export default function CompanionFicheCard({
         )}
 
         {candidates.length > 0 && !loadingFiche && !fiche && (
-          <div className="py-12 text-center text-sm text-zinc-600">Impossible de charger la fiche.</div>
+          <div className="py-12 text-center text-sm text-zinc-600">Aucune fiche pour ce titre. Utilise « Rechercher » ci-dessus pour le retrouver.</div>
         )}
 
         {fiche && (

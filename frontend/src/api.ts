@@ -788,6 +788,8 @@ export const api = {
     update: (id: number, p: { name?: string; description?: string | null; cover?: string | null; is_shared?: boolean }) => put<{ ok: boolean }>(`/playlists/${id}`, p),
     remove: (id: number) => del<{ ok: boolean }>(`/playlists/${id}`),
     addItem: (id: number, item: PlaylistItemInput) => post<{ ok: boolean; id: number }>(`/playlists/${id}/items`, item),
+    // Remplace tous les items de la playlist (édition JSON en masse), dans l'ordre donné.
+    replaceItems: (id: number, items: PlaylistItemInput[]) => put<{ ok: boolean; count: number }>(`/playlists/${id}/items`, { items }),
     updateItem: (id: number, itemId: number, item: PlaylistItemInput) => put<{ ok: boolean }>(`/playlists/${id}/items/${itemId}`, item),
     removeItem: (id: number, itemId: number) => del<{ ok: boolean }>(`/playlists/${id}/items/${itemId}`),
     reorder: (id: number, order: number[]) => put<{ ok: boolean }>(`/playlists/${id}/reorder`, { order }),

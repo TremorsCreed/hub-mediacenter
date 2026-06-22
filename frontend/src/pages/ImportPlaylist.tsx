@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, ScrapedList, ScrapedListItem, ScListResult, PlexSection, PlexShowDetail, PlaylistItemInput } from '../api'
+import { api, ScrapedList, ScrapedListItem, ScListResult } from '../api'
+import { loadResolveContext, makeResolveCache, resolveScrapedItem } from '../lib/resolve'
 import { useUser } from '../UserContext'
 import { ArrowLeft, Download, Loader2, Link2, Heart, Film, Tv, Check, AlertTriangle, Search, ClipboardList } from 'lucide-react'
 
@@ -49,17 +50,6 @@ function parsePastedList(raw: string): ScrapedListItem[] {
     } catch { /* JSON invalide → on retombe en mode texte ligne par ligne */ }
   }
   return text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#')).map(parseTextLine)
-}
-
-// Cache de résolution Plex partagé sur la durée d'un import (évite de re-fetch un show par épisode).
-type ResolveCache = { shows: Map<string, PlexShowDetail | null> }
-
-const norm = (s?: string | null) =>
-  (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
-const titleMatches = (a?: string, b?: string) => {
-  const na = norm(a), nb = norm(b)
-  if (!na || !nb) return false
-  return na === nb || na.includes(nb) || nb.includes(na)
 }
 
 export default function ImportPlaylist() {
@@ -120,63 +110,6 @@ export default function ImportPlaylist() {
     setProvider(p); setResults([]); setScraped(null); setError(null); setUrl(''); setQ(''); setPasteText('')
   }
 
-  // Trouve (et met en cache) le détail d'un show Plex à partir de son titre.
-  const findPlexShow = async (showTitle: string, year: number | null | undefined, sections: PlexSection[], cache: ResolveCache): Promise<PlexShowDetail | null> => {
-    const key = norm(showTitle)
-    if (cache.shows.has(key)) return cache.shows.get(key)!
-    let detail: PlexShowDetail | null = null
-    for (const sec of sections.filter(s => s.type === 'show')) {
-      try {
-        const r = await api.plex.sectionItems(sec.id, { size: 6, search: showTitle })
-        const best =
-          r.items.find(c => titleMatches(c.title, showTitle) && !!year && !!c.year && Math.abs((c.year ?? 0) - year) <= 1) ||
-          r.items.find(c => titleMatches(c.title, showTitle))
-        if (best) { detail = await api.plex.show(best.ratingKey); break }
-      } catch { /* section KO, on continue */ }
-    }
-    cache.shows.set(key, detail)
-    return detail
-  }
-
-  // Résout un épisode Trakt vers l'épisode Plex précis ; sinon « manquant ».
-  const resolveEpisode = async (item: ScrapedListItem, sections: PlexSection[], cache: ResolveCache): Promise<PlaylistItemInput> => {
-    const show = await findPlexShow(item.show_title ?? item.title, item.year, sections, cache)
-    if (show && item.season != null && item.episode != null) {
-      const season = show.seasons.find(s => s.season_number === item.season)
-      const ep = season?.episodes.find(e => e.episode_number === item.episode)
-      if (ep) return { app: 'plex', ref_id: ep.ratingKey, ref_type: 'episode', title: item.title, year: item.year ?? undefined, thumb: ep.thumb ?? show.info.thumb, status: 'resolved' }
-    }
-    return { app: 'unresolved', ref_type: 'episode', title: item.title, year: item.year ?? undefined, status: 'missing' }
-  }
-
-  // Résout un film/série vers Plex (prioritaire) puis IPTV (langue préférée).
-  const resolveItem = async (item: ScrapedListItem, sections: PlexSection[], credId: number | null, cache: ResolveCache): Promise<PlaylistItemInput> => {
-    if (item.kind === 'episode') return resolveEpisode(item, sections, cache)
-    const wantShow = item.type === 'series'
-    const secs = sections.filter(s => (wantShow ? s.type === 'show' : s.type === 'movie'))
-    for (const sec of secs) {
-      for (const q of [item.title, item.original_title].filter(Boolean) as string[]) {
-        try {
-          const r = await api.plex.sectionItems(sec.id, { size: 6, search: q })
-          const cands = r.items
-          const best =
-            cands.find(c => titleMatches(c.title, item.title) && !!item.year && !!c.year && Math.abs((c.year ?? 0) - item.year) <= 1) ||
-            cands.find(c => titleMatches(c.title, q))
-          if (best) return { app: 'plex', ref_id: best.ratingKey, ref_type: best.type, title: best.title, year: best.year ?? item.year ?? undefined, thumb: best.thumb, status: 'resolved' }
-        } catch { /* section search KO, on continue */ }
-      }
-    }
-    if (credId) {
-      const type = wantShow ? 'series' : 'vod'
-      try {
-        const r = await api.iptv.streams(credId, { type, search: item.title, languages: lang ? [lang] : undefined, limit: 8 })
-        const best = r.items.find(s => titleMatches(s.name, item.title)) ?? r.items[0]
-        if (best) return { app: 'iptv', ref_id: best.stream_id, ref_type: type, title: item.title, year: item.year ?? undefined, thumb: best.logo, lang, status: 'resolved' }
-      } catch { /* */ }
-    }
-    return { app: 'unresolved', ref_type: item.type, title: item.title, year: item.year ?? undefined, status: 'missing' }
-  }
-
   const runImport = async () => {
     if (!scraped || importing) return
     setImporting(true)
@@ -190,16 +123,12 @@ export default function ImportPlaylist() {
         source: provider,
         source_url: scraped.source_url,
       })
-      const [sections, creds] = await Promise.all([
-        api.plex.sections().catch(() => [] as PlexSection[]),
-        api.iptv.credentials().catch(() => [] as { id: number; name: string }[]),
-      ])
-      const credId = creds[0]?.id ?? null
-      const cache: ResolveCache = { shows: new Map() }
+      const { sections, credId } = await loadResolveContext()
+      const cache = makeResolveCache()
 
       let matched = 0
       for (let i = 0; i < scraped.items.length; i++) {
-        const resolved = await resolveItem(scraped.items[i], sections, credId, cache)
+        const resolved = await resolveScrapedItem(scraped.items[i], sections, credId, cache, lang)
         if (resolved.status === 'resolved') matched++
         await api.playlists.addItem(created.id, resolved).catch(() => {})
         setProgress({ done: i + 1, total: scraped.items.length, matched })
@@ -263,9 +192,17 @@ export default function ImportPlaylist() {
             placeholder={'Un titre par ligne, ex.\nInception (2010)\nLe Parrain (1972)\nsérie: Breaking Bad (2008)\n\n…ou un JSON :\n[{ "title": "Inception", "year": 2010, "type": "movie" }]'}
             className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm font-mono leading-relaxed focus:outline-none focus:border-amber-500/60 resize-y"
           />
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] text-zinc-600">Format « Titre (Année) ». Préfixe « série: » pour une série. JSON accepté : liste de titres ou d'objets {`{ title, year, type }`}.</p>
-            <button onClick={analysePaste} disabled={!pasteText.trim()} className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 text-sm rounded px-4 py-1.5 hover:border-zinc-500 disabled:opacity-50">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-[11px] text-zinc-600 leading-relaxed">
+              <div><span className="text-zinc-400">Texte</span> : un titre par ligne, format « Titre (Année) ». Préfixe « série: » (ou « tv: ») pour forcer une série.</div>
+              <div className="mt-0.5">
+                <span className="text-zinc-400">JSON</span> : un tableau (ou {`{ "items": [...] }`}). Chaque entrée = une chaîne, ou un objet&nbsp;:
+                {' '}<code className="text-zinc-400">title</code> (requis),
+                {' '}<code className="text-zinc-400">year</code>,
+                {' '}<code className="text-zinc-400">type</code> (<code>movie</code> par défaut, ou <code>series</code>/<code>tv</code>/<code>show</code>) — optionnels.
+              </div>
+            </div>
+            <button onClick={analysePaste} disabled={!pasteText.trim()} className="shrink-0 flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 text-sm rounded px-4 py-1.5 hover:border-zinc-500 disabled:opacity-50">
               <ClipboardList size={14} /> Analyser
             </button>
           </div>

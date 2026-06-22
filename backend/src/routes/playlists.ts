@@ -145,6 +145,36 @@ router.post('/:id/items', async (req, res) => {
   res.json({ ok: true, id: (rows[0] as any).id })
 })
 
+// PUT /:id/items — remplace TOUS les items (édition JSON en masse) : la liste reçue
+// devient la playlist, dans l'ordre donné. Transaction : purge puis ré-insertion.
+const ReplaceSchema = z.object({ items: z.array(ItemSchema) })
+router.put('/:id/items', async (req, res) => {
+  const pl = await loadPlaylist(parseInt(req.params.id, 10))
+  if (!pl) return res.status(404).json({ error: 'introuvable' })
+  if (!await canEdit(req, pl)) return res.status(403).json({ error: 'forbidden' })
+  const parsed = ReplaceSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
+  const now = Date.now()
+  const tx = await db.transaction('write')
+  try {
+    await tx.execute({ sql: 'DELETE FROM playlist_items WHERE playlist_id = ?', args: [pl.id] })
+    for (let i = 0; i < parsed.data.items.length; i++) {
+      const d = parsed.data.items[i]
+      await tx.execute({
+        sql: `INSERT INTO playlist_items (playlist_id, position, app, ref_id, ref_type, title, year, thumb, lang, ext, status, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [pl.id, i, d.app, d.ref_id ?? null, d.ref_type ?? null, d.title ?? null, d.year ?? null, d.thumb ?? null, d.lang ?? null, d.ext ?? null, d.status ?? 'resolved', now],
+      })
+    }
+    await tx.execute({ sql: 'UPDATE playlists SET updated_at = ? WHERE id = ?', args: [now, pl.id] })
+    await tx.commit()
+  } catch (e) {
+    await tx.rollback()
+    throw e
+  }
+  res.json({ ok: true, count: parsed.data.items.length })
+})
+
 // PUT /:id/items/:itemId — ré-lie un item à une autre source/version (résolution manuelle,
 // choix d'une version précise). Ne touche pas à la position.
 const ItemRebindSchema = z.object({

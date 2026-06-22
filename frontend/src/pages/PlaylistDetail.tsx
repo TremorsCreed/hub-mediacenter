@@ -13,9 +13,10 @@ import Toast from '../components/Toast'
 import CurrentButton from '../components/CurrentButton'
 import ResolveItemModal from '../components/ResolveItemModal'
 import EditPlaylistModal from '../components/EditPlaylistModal'
+import PlaylistJsonModal from '../components/PlaylistJsonModal'
 import {
   ArrowLeft, Play, Loader2, Trash2, GripVertical, Film, Tv, Gamepad2, Radio, MonitorPlay,
-  Users, Lock, AlertTriangle, Check, Eye, EyeOff, RotateCcw, Replace, Pencil, Share2, Menu,
+  Users, Lock, AlertTriangle, Check, Eye, EyeOff, RotateCcw, Replace, Pencil, Share2, Menu, Braces,
 } from 'lucide-react'
 
 // Menu d'actions d'une ligne (burger) : ouvert en position fixe pour ne pas être
@@ -157,6 +158,7 @@ export default function PlaylistDetail() {
   const [resolveTarget, setResolveTarget] = useState<PlaylistItem | null>(null)
   const [traktWatched, setTraktWatched] = useState<TraktWatched | null>(null)
   const [editing, setEditing] = useState(false)
+  const [editingJson, setEditingJson] = useState(false)
   const [traktLinked, setTraktLinked] = useState(false)
   const [pushing, setPushing] = useState(false)
 
@@ -365,6 +367,12 @@ export default function PlaylistDetail() {
                 <Pencil size={12} /> Modifier
               </button>
             )}
+            {canEdit && (
+              <button onClick={() => setEditingJson(true)} title="Éditer la liste en JSON (réordonner, ajouter, retirer en masse)"
+                className="flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 transition-colors">
+                <Braces size={12} /> JSON
+              </button>
+            )}
             {canEdit && traktLinked && (
               <button onClick={pushToTrakt} disabled={pushing} title="Créer une liste Trakt à partir de cette playlist"
                 className="flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border border-red-700/60 text-red-300 hover:border-red-500 hover:text-red-200 transition-colors disabled:opacity-50">
@@ -430,6 +438,16 @@ export default function PlaylistDetail() {
           playlist={pl}
           onClose={() => setEditing(false)}
           onDone={() => { load(); flash('Playlist mise à jour', true) }}
+        />
+      )}
+
+      {editingJson && (
+        <PlaylistJsonModal
+          playlistId={plId}
+          items={items}
+          defaultLang={currentUser?.preferred_lang || 'FR'}
+          onClose={() => setEditingJson(false)}
+          onDone={() => { load(); loadProgress(); flash('Playlist mise à jour', true) }}
         />
       )}
 

@@ -948,7 +948,8 @@ export const api = {
     setActive: (provider: LlmProvider) => post<{ ok: boolean }>('/llm/active', { provider }),
   },
   companion: {
-    inbox: () => get<CompanionInboxItem[]>('/companion/inbox'),
+    inbox: (status?: string) =>
+      get<CompanionInboxItem[]>(`/companion/inbox${status ? `?status=${encodeURIComponent(status)}` : ''}`),
     fiche: (body: { type: string; ids?: MediaIds }) => post<CompanionFiche>('/companion/fiche', body),
     match: (body: { title: string; year?: number | null; type: string; ids?: MediaIds }) =>
       post<CompanionMatch>('/companion/match', body),

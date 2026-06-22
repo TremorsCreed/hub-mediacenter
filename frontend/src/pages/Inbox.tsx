@@ -15,23 +15,31 @@ function notifyInboxChanged() {
   try { window.dispatchEvent(new Event('hub:inbox-changed')) } catch { /* ignore */ }
 }
 
+type Tab = 'pending' | 'wishlist'
+
 export default function Inbox() {
+  const [tab, setTab] = useState<Tab>('pending')
   const [items, setItems] = useState<CompanionInboxItem[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState<CompanionInboxItem | null>(null)
 
-  const load = () =>
-    api.companion.inbox()
-      .then(list => setItems(list.filter(i => i.status === 'pending')))
+  const load = (status: Tab) => {
+    setLoading(true)
+    return api.companion.inbox(status)
+      .then(list => setItems(list.filter(i => i.status === status)))
       .catch(() => setItems([]))
       .finally(() => setLoading(false))
+  }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(tab) }, [tab])
 
   const onDecided = (id: number) => {
     setItems(prev => prev.filter(i => i.id !== id))
     setOpen(null)
     notifyInboxChanged()
+    // Une décision peut faire passer l'item d'un onglet à l'autre : on recharge
+    // l'onglet courant pour refléter l'état exact côté backend.
+    load(tab)
   }
 
   return (
@@ -41,6 +49,22 @@ export default function Inbox() {
         Les partages reçus depuis ton téléphone companion. Ouvre une fiche pour valider (ajout playlist), mettre en wishlist ou ignorer.
       </p>
 
+      <div className="flex items-center gap-2">
+        {([['pending', 'À traiter'], ['wishlist', 'Wishlist']] as [Tab, string][]).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => { if (tab !== key) { setOpen(null); setTab(key) } }}
+            className={`text-xs rounded-full px-3 py-1 transition-colors ${
+              tab === key
+                ? 'bg-zinc-100 text-zinc-900 font-medium'
+                : 'bg-zinc-900 text-zinc-400 border border-zinc-800 hover:border-zinc-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {loading && (
         <div className="py-16 flex justify-center text-zinc-500"><Loader2 size={20} className="animate-spin" /></div>
       )}
@@ -48,7 +72,11 @@ export default function Inbox() {
       {!loading && items.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-zinc-600 gap-3 border border-dashed border-zinc-800 rounded-lg">
           <InboxIcon size={28} />
-          <div className="text-sm">Rien à traiter. Partage un film ou une série depuis ton téléphone.</div>
+          <div className="text-sm">
+            {tab === 'pending'
+              ? 'Rien à traiter. Partage un film ou une série depuis ton téléphone.'
+              : 'Ta wishlist est vide.'}
+          </div>
         </div>
       )}
 

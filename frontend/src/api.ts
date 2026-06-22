@@ -952,6 +952,8 @@ export const api = {
     fiche: (body: { type: string; ids?: MediaIds }) => post<CompanionFiche>('/companion/fiche', body),
     match: (body: { title: string; year?: number | null; type: string; ids?: MediaIds }) =>
       post<CompanionMatch>('/companion/match', body),
+    // Recherche manuelle d'un titre (résolution à la main d'un partage non identifié).
+    search: (q: string) => get<CompanionCandidate[]>(`/companion/search?q=${encodeURIComponent(q)}`),
     // Décision sur un item de la boîte de réception : sort l'item de 'pending'.
     decide: (id: number, action: 'validated' | 'wishlist' | 'ignored') =>
       post<{ ok: boolean }>(`/companion/inbox/${id}/decide`, { action }),

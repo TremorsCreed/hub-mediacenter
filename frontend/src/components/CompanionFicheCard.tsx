@@ -8,7 +8,7 @@ import { useUser } from '../UserContext'
 import { useModalA11y } from '../useModalA11y'
 import {
   X, Loader2, Play, Star, Film, Tv, CheckCircle2, AlertCircle, Heart, EyeOff,
-  ListVideo, Plus, HelpCircle, ExternalLink,
+  ListVideo, Plus, HelpCircle, ExternalLink, Search,
 } from 'lucide-react'
 
 // Couleur du badge de confiance.
@@ -37,9 +37,25 @@ export default function CompanionFicheCard({
   onClose: () => void
   onDecided: (action: 'validated' | 'wishlist' | 'ignored') => void
 }) {
-  const candidates = item.candidates ?? []
+  // Candidats en state local : on peut y injecter des résultats de recherche manuelle.
+  const [candidates, setCandidates] = useState<CompanionCandidate[]>(item.candidates ?? [])
   const [candIdx, setCandIdx] = useState(0)
   const candidate: CompanionCandidate | undefined = candidates[candIdx]
+
+  // Ajoute un candidat trouvé manuellement (ou le sélectionne s'il existe déjà) puis le charge.
+  const pickManual = (c: CompanionCandidate) => {
+    setCandidates(prev => {
+      const idx = prev.findIndex(p =>
+        p.type === c.type &&
+        (p.ids?.imdb === c.ids?.imdb || p.ids?.tmdb === c.ids?.tmdb || p.ids?.trakt === c.ids?.trakt) &&
+        p.title === c.title && p.year === c.year,
+      )
+      if (idx >= 0) { setCandIdx(idx); return prev }
+      const next = [...prev, c]
+      setCandIdx(next.length - 1)
+      return next
+    })
+  }
 
   const [fiche, setFiche] = useState<CompanionFiche | null>(null)
   const [loadingFiche, setLoadingFiche] = useState(false)
@@ -48,6 +64,7 @@ export default function CompanionFicheCard({
   const [showTrailer, setShowTrailer] = useState(false)
   const [deciding, setDeciding] = useState<null | 'validated' | 'wishlist' | 'ignored'>(null)
   const [playlistOpen, setPlaylistOpen] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
 
   const modalRef = useModalA11y(true, onClose)
 
@@ -90,11 +107,13 @@ export default function CompanionFicheCard({
       >
         <button onClick={onClose} className="absolute top-3 right-3 text-zinc-500 hover:text-white transition-colors"><X size={18} /></button>
 
-        {/* Sélecteur de candidat (autres pistes) */}
-        {candidates.length > 1 && (
+        {/* Sélecteur de candidat (autres pistes) + recherche manuelle */}
+        {candidates.length > 0 && (
           <div className="flex items-center gap-1.5 mb-3 flex-wrap pr-6">
-            <span className="text-[11px] text-zinc-500 uppercase tracking-wider">Autres pistes :</span>
-            {candidates.map((c, i) => (
+            {candidates.length > 1 && (
+              <span className="text-[11px] text-zinc-500 uppercase tracking-wider">Autres pistes :</span>
+            )}
+            {candidates.length > 1 && candidates.map((c, i) => (
               <button
                 key={i}
                 onClick={() => setCandIdx(i)}
@@ -103,6 +122,19 @@ export default function CompanionFicheCard({
                 {c.title ?? `Piste ${i + 1}`}{c.year ? ` (${c.year})` : ''}
               </button>
             ))}
+            <button
+              onClick={() => setShowSearch(v => !v)}
+              className="text-xs text-zinc-400 hover:text-amber-300 inline-flex items-center gap-1 transition-colors"
+            >
+              <Search size={12} /> Pas le bon ? Rechercher
+            </button>
+          </div>
+        )}
+
+        {/* Champ de recherche manuelle accessible quand il y a déjà des candidats */}
+        {candidates.length > 0 && showSearch && (
+          <div className="mb-4">
+            <ManualSearch onPick={c => { pickManual(c); setShowSearch(false) }} />
           </div>
         )}
 
@@ -138,6 +170,11 @@ export default function CompanionFicheCard({
             </div>
 
             {item.caption && <p className="text-sm text-zinc-300 mt-4 leading-relaxed whitespace-pre-line">{item.caption}</p>}
+
+            {/* Recherche manuelle : l'utilisateur tape le titre vu dans la vidéo. */}
+            <div className="mt-5 pt-4 border-t border-zinc-800">
+              <ManualSearch onPick={pickManual} />
+            </div>
 
             {/* Actions : on garde Wishlist + Ignorer même sans fiche. */}
             <div className="mt-6 pt-4 border-t border-zinc-800 flex items-center gap-2 flex-wrap">
@@ -289,6 +326,64 @@ function AvailabilityBadge({ match }: { match: CompanionMatch }) {
     <span className="inline-flex items-center gap-1.5 text-sm rounded px-3 py-1.5 bg-zinc-700 text-zinc-200 font-medium">
       <AlertCircle size={14} /> Hors catalogue : à mettre en wishlist
     </span>
+  )
+}
+
+// Recherche manuelle d'un titre : résout à la main un partage non identifié.
+// L'utilisateur tape le titre vu dans la vidéo ; cliquer un résultat l'ajoute comme candidat.
+function ManualSearch({ onPick }: { onPick: (c: CompanionCandidate) => void }) {
+  const [q, setQ] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [results, setResults] = useState<CompanionCandidate[] | null>(null)
+
+  const run = async () => {
+    const query = q.trim()
+    if (!query || loading) return
+    setLoading(true)
+    setResults(null)
+    try { setResults(await api.companion.search(query)) }
+    catch { setResults([]) }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-1.5">
+        <input
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') run() }}
+          placeholder="Rechercher un titre manuellement…"
+          className="flex-1 bg-zinc-950 border border-zinc-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500/60"
+        />
+        <button
+          onClick={run}
+          disabled={!q.trim() || loading}
+          className="flex items-center justify-center bg-amber-500 text-black rounded px-3 py-1.5 hover:bg-amber-400 disabled:opacity-50 transition-colors"
+        >
+          {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+        </button>
+      </div>
+
+      {results && results.length > 0 && (
+        <div className="mt-2 space-y-0.5 max-h-56 overflow-y-auto">
+          {results.map((c, i) => (
+            <button
+              key={i}
+              onClick={() => onPick(c)}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-zinc-800 text-left transition-colors"
+            >
+              {c.type === 'series' ? <Tv size={13} className="text-zinc-500 shrink-0" /> : <Film size={13} className="text-zinc-500 shrink-0" />}
+              <span className="flex-1 min-w-0 text-sm truncate">{c.title ?? 'Sans titre'}{c.year ? ` (${c.year})` : ''}</span>
+              <span className="text-[10px] text-zinc-500 uppercase shrink-0">{c.type === 'series' ? 'Série' : 'Film'}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {results && results.length === 0 && !loading && (
+        <div className="mt-2 text-xs text-zinc-600 px-1">Aucun résultat pour cette recherche.</div>
+      )}
+    </div>
   )
 }
 

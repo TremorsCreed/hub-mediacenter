@@ -683,6 +683,19 @@ router.post('/inbox/:id/decide', async (req, res) => {
   res.json({ ok: true, id, status: d.decision })
 })
 
+// ── GET /search?q=... : recherche manuelle de titre (Trakt) ───────────────────
+// Sert a resoudre a la main un partage non identifie automatiquement (l'utilisateur
+// tape le titre qu'il a vu). Renvoie des candidats au meme format que /ingest.
+router.get('/search', async (req, res) => {
+  const q = clean(req.query.q)
+  if (q.length < 2) return res.json([])
+  try {
+    res.json(await searchTraktByTitle(q, 10))
+  } catch (e: any) {
+    res.status(502).json({ error: e?.message ?? 'search_failed' })
+  }
+})
+
 // ── GET /apk : telecharge l'APK de l'app companion (depuis le volume /apk) ─────
 // Sert au lien de telechargement affiche dans le Hub (modale d'appairage). Public
 // (pas d'admin) pour pouvoir le recuperer depuis le telephone.

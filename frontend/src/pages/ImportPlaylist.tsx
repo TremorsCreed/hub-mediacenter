@@ -2,14 +2,54 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ScrapedList, ScrapedListItem, ScListResult, PlexSection, PlexShowDetail, PlaylistItemInput } from '../api'
 import { useUser } from '../UserContext'
-import { ArrowLeft, Download, Loader2, Link2, Heart, Film, Tv, Check, AlertTriangle, Search } from 'lucide-react'
+import { ArrowLeft, Download, Loader2, Link2, Heart, Film, Tv, Check, AlertTriangle, Search, ClipboardList } from 'lucide-react'
 
 const LANGS = ['FR', 'EN', 'DE', 'ES', 'IT', 'MULTI']
-type Provider = 'senscritique' | 'trakt'
+type Provider = 'senscritique' | 'trakt' | 'paste'
 const PROVIDERS: { id: Provider; label: string; placeholder: string; urlPlaceholder: string }[] = [
   { id: 'senscritique', label: 'SensCritique', placeholder: 'Rechercher une liste (ex. chronologie MCU, James Bond…)', urlPlaceholder: 'https://www.senscritique.com/liste/…' },
   { id: 'trakt', label: 'Trakt', placeholder: 'Rechercher une liste (ex. MCU chronological, Alien…)', urlPlaceholder: 'https://trakt.tv/users/<user>/lists/<slug>' },
+  { id: 'paste', label: 'Texte / JSON', placeholder: '', urlPlaceholder: '' },
 ]
+
+// ── Parsing d'une liste collée (texte libre ou JSON) ─────────────────────────
+// Texte : une ligne = un titre, format « Titre (Année) ». Préfixe « série: »/« tv: »
+// pour forcer une série. Lignes vides ou commençant par # ignorées.
+function parseTextLine(line: string, i: number): ScrapedListItem {
+  let s = line.trim()
+  let type: 'movie' | 'series' = 'movie'
+  const pref = s.match(/^(s[ée]rie|tv|show)\s*[:\-]\s*(.+)$/i)
+  if (pref) { type = 'series'; s = pref[2].trim() }
+  let year: number | null = null
+  const ym = s.match(/^(.*?)[\s.\-]*\((\d{4})\)\s*$/)
+  if (ym) { s = ym[1].trim(); year = Number(ym[2]) }
+  return { position: i + 1, title: s, year, type, kind: type === 'series' ? 'show' : 'movie' }
+}
+function parseJsonEntry(e: any, i: number): ScrapedListItem | null {
+  if (typeof e === 'string') return parseTextLine(e, i)
+  if (e && typeof e === 'object') {
+    const title = String(e.title ?? e.name ?? '').trim()
+    if (!title) return null
+    const t = String(e.type ?? e.kind ?? '').toLowerCase()
+    const type: 'movie' | 'series' = (t === 'series' || t === 'serie' || t === 'tv' || t === 'show') ? 'series' : 'movie'
+    const year = Number.isFinite(Number(e.year)) && Number(e.year) > 0 ? Number(e.year) : null
+    return { position: typeof e.position === 'number' ? e.position : i + 1, title, year, type, kind: type === 'series' ? 'show' : 'movie', original_title: e.original_title ?? null }
+  }
+  return null
+}
+function parsePastedList(raw: string): ScrapedListItem[] {
+  const text = raw.trim()
+  if (!text) return []
+  if (text.startsWith('[') || text.startsWith('{')) {
+    try {
+      const json = JSON.parse(text)
+      const arr: any[] = Array.isArray(json) ? json : Array.isArray(json.items) ? json.items : Array.isArray(json.list) ? json.list : []
+      const out = arr.map((e, i) => parseJsonEntry(e, i)).filter(Boolean) as ScrapedListItem[]
+      if (out.length) return out
+    } catch { /* JSON invalide → on retombe en mode texte ligne par ligne */ }
+  }
+  return text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#')).map(parseTextLine)
+}
 
 // Cache de résolution Plex partagé sur la durée d'un import (évite de re-fetch un show par épisode).
 type ResolveCache = { shows: Map<string, PlexShowDetail | null> }
@@ -31,6 +71,7 @@ export default function ImportPlaylist() {
   const [searching, setSearching] = useState(false)
   const [results, setResults] = useState<ScListResult[]>([])
   const [url, setUrl] = useState('')
+  const [pasteText, setPasteText] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [scraped, setScraped] = useState<ScrapedList | null>(null)
@@ -45,7 +86,7 @@ export default function ImportPlaylist() {
     if (!target || loading) return
     setLoading(true); setError(null); setScraped(null)
     try {
-      const r = await api[provider].scrape(target)
+      const r = await api[provider as 'senscritique' | 'trakt'].scrape(target)
       setScraped(r); setName(r.title)
     } catch (e: any) {
       setError(e.message || 'Échec du chargement')
@@ -56,16 +97,27 @@ export default function ImportPlaylist() {
     if (q.trim().length < 2 || searching) return
     setSearching(true); setError(null)
     try {
-      setResults(await api[provider].search(q.trim()))
+      setResults(await api[provider as 'senscritique' | 'trakt'].search(q.trim()))
     } catch (e: any) {
       setError(e.message || 'Recherche indisponible')
     } finally { setSearching(false) }
   }
 
+  // Analyse le texte/JSON collé en une liste locale (sans appel réseau) ; le reste
+  // du flux (résolution Plex/IPTV, création) est identique aux autres fournisseurs.
+  const analysePaste = () => {
+    setError(null)
+    const items = parsePastedList(pasteText)
+    if (!items.length) { setError('Aucun titre détecté. Mets un titre par ligne, ou colle un tableau JSON.'); return }
+    const title = name.trim() || 'Ma liste'
+    setScraped({ title, cover: null, description: null, likes: 0, total: items.length, source_url: '', items })
+    if (!name.trim()) setName(title)
+  }
+
   // Change de fournisseur : on repart d'une page vierge.
   const switchProvider = (p: Provider) => {
     if (p === provider) return
-    setProvider(p); setResults([]); setScraped(null); setError(null); setUrl(''); setQ('')
+    setProvider(p); setResults([]); setScraped(null); setError(null); setUrl(''); setQ(''); setPasteText('')
   }
 
   // Trouve (et met en cache) le détail d'un show Plex à partir de son titre.
@@ -170,7 +222,9 @@ export default function ImportPlaylist() {
         <p className="text-sm text-zinc-500 mt-1">
           {provider === 'trakt'
             ? 'Depuis Trakt (chronologies épisode par épisode, ex. MCU). On résout chaque épisode vers ton Plex.'
-            : 'Depuis SensCritique (ex. une chronologie MCU). On résout chaque titre vers ton Plex et ton IPTV.'}
+            : provider === 'paste'
+              ? 'Colle ta propre liste (texte ou JSON). On résout chaque titre vers ton Plex et ton IPTV.'
+              : 'Depuis SensCritique (ex. une chronologie MCU). On résout chaque titre vers ton Plex et ton IPTV.'}
         </p>
       </div>
 
@@ -187,7 +241,8 @@ export default function ImportPlaylist() {
         ))}
       </div>
 
-      {/* Onglets */}
+      {/* Onglets (recherche/URL pour les fournisseurs en ligne uniquement) */}
+      {provider !== 'paste' && (
       <div className="flex bg-zinc-900 border border-zinc-800 rounded overflow-hidden w-fit">
         <button onClick={() => setMode('search')} className={`flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors ${mode === 'search' ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:text-zinc-200'}`}>
           <Search size={13} /> Rechercher
@@ -196,8 +251,28 @@ export default function ImportPlaylist() {
           <Link2 size={13} /> Coller une URL
         </button>
       </div>
+      )}
 
-      {mode === 'url' ? (
+      {/* Collage texte / JSON */}
+      {provider === 'paste' && !scraped && (
+        <div className="space-y-2">
+          <textarea
+            value={pasteText}
+            onChange={e => setPasteText(e.target.value)}
+            rows={9}
+            placeholder={'Un titre par ligne, ex.\nInception (2010)\nLe Parrain (1972)\nsérie: Breaking Bad (2008)\n\n…ou un JSON :\n[{ "title": "Inception", "year": 2010, "type": "movie" }]'}
+            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm font-mono leading-relaxed focus:outline-none focus:border-amber-500/60 resize-y"
+          />
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-zinc-600">Format « Titre (Année) ». Préfixe « série: » pour une série. JSON accepté : liste de titres ou d'objets {`{ title, year, type }`}.</p>
+            <button onClick={analysePaste} disabled={!pasteText.trim()} className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 text-sm rounded px-4 py-1.5 hover:border-zinc-500 disabled:opacity-50">
+              <ClipboardList size={14} /> Analyser
+            </button>
+          </div>
+        </div>
+      )}
+
+      {provider !== 'paste' && (mode === 'url' ? (
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Link2 size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
@@ -255,7 +330,7 @@ export default function ImportPlaylist() {
             </div>
           )}
         </div>
-      )}
+      ))}
 
       {error && <div className="text-sm text-red-400 bg-red-900/20 border border-red-900/40 rounded p-3">{error}</div>}
 

@@ -191,6 +191,109 @@ router.get('/watched', async (req, res) => {
   }
 })
 
+// ── Publication d'une playlist Hub vers une liste Trakt ──────────────────────
+// Nos items portent des IDs Plex/IPTV, pas Trakt : on re-résout chaque titre vers
+// un ID Trakt via /search (films, séries, épisodes) avant de créer la liste et d'y
+// verser les items en un seul POST batch.
+
+const tnorm = (s?: string | null) =>
+  (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+
+// Cherche le meilleur match Trakt pour un titre (+ année), renvoie ses ids ({trakt,…}).
+async function searchTraktIds(userId: number, kind: 'movie' | 'show', title: string, year?: number | null): Promise<any | null> {
+  const q = encodeURIComponent(title)
+  const yr = year ? `&years=${year}` : ''
+  const r = await traktFetch(userId, `/search/${kind}?query=${q}${yr}&limit=5`)
+  if (!r.ok) return null
+  const arr = (await r.json()) as any[]
+  if (!Array.isArray(arr) || !arr.length) return null
+  // Priorité à un titre normalisé identique, sinon le 1er résultat (déjà trié par score).
+  const exact = arr.find(x => tnorm(x[kind]?.title) === tnorm(title))
+  return (exact ?? arr[0])?.[kind]?.ids ?? null
+}
+
+const PushSchema = z.object({
+  playlist_id: z.number().int().positive(),
+  privacy: z.enum(['private', 'friends', 'public']).optional(),
+})
+router.post('/lists/push', async (req, res) => {
+  const userId = req.query.user_id !== undefined ? parseInt(String(req.query.user_id), 10) : (req as any).userId
+  if (userId == null || !Number.isFinite(userId)) return res.status(400).json({ error: 'user_id_required' })
+  const acc = await getAccountRow(userId)
+  if (!acc) return res.status(400).json({ error: 'no_trakt_account' })
+  const parsed = PushSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'playlist_id requis' })
+
+  const { rows: plRows } = await db.execute({ sql: 'SELECT * FROM playlists WHERE id = ?', args: [parsed.data.playlist_id] })
+  const pl = plRows[0] as any
+  if (!pl) return res.status(404).json({ error: 'playlist_introuvable' })
+  if (pl.owner_user_id !== userId) return res.status(403).json({ error: 'forbidden' })
+  const { rows: items } = await db.execute({ sql: 'SELECT * FROM playlist_items WHERE playlist_id = ? ORDER BY position, id', args: [pl.id] })
+
+  // ── Résolution titre → ID Trakt (séquentiel : on reste sous le rate-limit Trakt) ──
+  const movies: any[] = [], shows: any[] = [], episodes: any[] = []
+  const missing: string[] = []
+  for (const raw of items) {
+    const it = raw as any
+    const title = (it.title as string) || ''
+    if (!title || it.status === 'missing') { if (title) missing.push(title); continue }
+    try {
+      if (it.ref_type === 'episode') {
+        // Titre stocké au format « Show · S01E02 · Titre épisode ».
+        const showTitle = title.split('·')[0].trim()
+        const se = title.match(/s(\d{1,2})e(\d{1,3})/i)
+        const showIds = await searchTraktIds(userId, 'show', showTitle, it.year)
+        if (showIds?.trakt && se) {
+          const er = await traktFetch(userId, `/shows/${showIds.trakt}/seasons/${Number(se[1])}/episodes/${Number(se[2])}`)
+          const ep: any = er.ok ? await er.json() : null
+          if (ep?.ids?.trakt) { episodes.push({ ids: { trakt: ep.ids.trakt } }); continue }
+        }
+        missing.push(title)
+      } else if (it.ref_type === 'series' || it.ref_type === 'show') {
+        const ids = await searchTraktIds(userId, 'show', title, it.year)
+        if (ids?.trakt) shows.push({ ids: { trakt: ids.trakt } }); else missing.push(title)
+      } else {
+        const ids = await searchTraktIds(userId, 'movie', title, it.year)
+        if (ids?.trakt) movies.push({ ids: { trakt: ids.trakt } }); else missing.push(title)
+      }
+    } catch { missing.push(title) }
+  }
+
+  const resolvedCount = movies.length + shows.length + episodes.length
+  if (resolvedCount === 0) return res.status(422).json({ error: 'Aucun titre n\'a pu être résolu sur Trakt.', missing })
+
+  // ── Création de la liste puis ajout des items ──────────────────────────────
+  try {
+    const createRes = await traktFetch(userId, '/users/me/lists', {
+      method: 'POST',
+      body: JSON.stringify({ name: pl.name, description: pl.description ?? undefined, privacy: parsed.data.privacy ?? 'private' }),
+    })
+    if (!createRes.ok) {
+      const txt = await createRes.text().catch(() => '')
+      return res.status(502).json({ error: `Création de la liste Trakt refusée (${createRes.status}).`, detail: txt.slice(0, 200) })
+    }
+    const list: any = await createRes.json()
+    const listSlug = list.ids?.slug
+    const addRes = await traktFetch(userId, `/users/me/lists/${list.ids?.trakt}/items`, {
+      method: 'POST',
+      body: JSON.stringify({ movies, shows, episodes }),
+    })
+    const added: any = addRes.ok ? await addRes.json() : null
+    const url = acc.username && listSlug ? `https://trakt.tv/users/${acc.username}/lists/${listSlug}` : `https://trakt.tv/lists/${list.ids?.trakt}`
+    console.log(`[trakt] liste « ${pl.name} » poussée → profil ${userId} (${resolvedCount} items, ${missing.length} manquants)`)
+    res.json({
+      ok: true,
+      url,
+      list_name: pl.name,
+      resolved: resolvedCount,
+      added: added?.added ?? { movies: movies.length, shows: shows.length, episodes: episodes.length },
+      missing,
+    })
+  } catch (e: any) {
+    res.status(502).json({ error: `Trakt indisponible : ${e.message}` })
+  }
+})
+
 // Délier un compte.
 router.delete('/auth/unlink/:userId', async (req, res) => {
   const userId = parseInt(req.params.userId, 10)

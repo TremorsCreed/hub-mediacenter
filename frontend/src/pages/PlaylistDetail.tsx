@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent,
@@ -12,10 +12,51 @@ import { useWatched } from '../WatchedContext'
 import Toast from '../components/Toast'
 import CurrentButton from '../components/CurrentButton'
 import ResolveItemModal from '../components/ResolveItemModal'
+import EditPlaylistModal from '../components/EditPlaylistModal'
 import {
   ArrowLeft, Play, Loader2, Trash2, GripVertical, Film, Tv, Gamepad2, Radio, MonitorPlay,
-  Users, Lock, AlertTriangle, Check, Eye, EyeOff, RotateCcw, Replace,
+  Users, Lock, AlertTriangle, Check, Eye, EyeOff, RotateCcw, Replace, Pencil, Share2, Menu,
 } from 'lucide-react'
+
+// Menu d'actions d'une ligne (burger) : ouvert en position fixe pour ne pas être
+// rogné par l'overflow-hidden de la tuile (barre de progression). Ferme au clic extérieur.
+function RowMenu({ busy, children }: { busy: boolean; children: (close: () => void) => ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const toggle = () => {
+    if (open) { setOpen(false); return }
+    const r = btnRef.current?.getBoundingClientRect()
+    if (r) setPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
+    setOpen(true)
+  }
+  return (
+    <>
+      <button ref={btnRef} onClick={toggle} title="Options" aria-label="Options"
+        className="shrink-0 text-zinc-500 hover:text-zinc-200 p-1.5 transition-colors">
+        {busy ? <Loader2 size={16} className="animate-spin text-amber-400" /> : <Menu size={16} />}
+      </button>
+      {open && pos && (
+        <>
+          <div className="fixed inset-0 z-[150]" onClick={() => setOpen(false)} />
+          <div className="fixed z-[151] min-w-[190px] bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl py-1 overflow-hidden"
+            style={{ top: pos.top, right: pos.right }}>
+            {children(() => setOpen(false))}
+          </div>
+        </>
+      )}
+    </>
+  )
+}
+
+function MenuItem({ icon: Icon, label, onClick, danger }: { icon: typeof Tv; label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button onClick={onClick}
+      className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors hover:bg-zinc-800 ${danger ? 'text-red-300 hover:text-red-200' : 'text-zinc-200'}`}>
+      <Icon size={15} className="shrink-0" /> {label}
+    </button>
+  )
+}
 
 // Normalisation de titre pour le matching « vu » Trakt (sans accents/ponctuation).
 const tnorm = (s?: string | null) =>
@@ -76,28 +117,25 @@ function SortableRow({ it, index, canEdit, onPlay, onRemove, onToggleSeen, onRes
         </div>
       </div>
 
-      {!missing && (
-        <button onClick={() => onToggleSeen(it)} title={seen ? 'Marquer non vu' : 'Marquer vu'}
-          className={`shrink-0 p-1.5 transition-colors ${seen ? 'text-green-500 hover:text-green-400' : 'text-zinc-600 hover:text-zinc-300'}`}>
-          {seen ? <Eye size={15} /> : <EyeOff size={15} />}
-        </button>
-      )}
-      {!missing && (
-        <button onClick={() => onPlay(it)} disabled={busy} title="Lancer"
-          className="shrink-0 text-zinc-500 hover:text-amber-400 p-1.5 disabled:opacity-50 transition-colors">
-          {busy ? <Loader2 size={15} className="animate-spin text-amber-400" /> : <Play size={15} fill="currentColor" />}
-        </button>
-      )}
-      {canEdit && (
-        <button onClick={() => onResolve(it)} title={missing ? 'Résoudre' : 'Changer la version'}
-          className={`shrink-0 p-1.5 transition-colors ${missing ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-600 hover:text-zinc-300'}`}>
-          <Replace size={15} />
-        </button>
-      )}
-      {canEdit && (
-        <button onClick={() => onRemove(it)} title="Retirer" className="shrink-0 text-zinc-600 hover:text-red-400 p-1.5 transition-colors">
-          <Trash2 size={15} />
-        </button>
+      {(!missing || canEdit) && (
+        <RowMenu busy={busy}>
+          {close => (
+            <>
+              {!missing && (
+                <MenuItem icon={Play} label="Lancer" onClick={() => { close(); onPlay(it) }} />
+              )}
+              {!missing && (
+                <MenuItem icon={seen ? EyeOff : Eye} label={seen ? 'Marquer non vu' : 'Marquer vu'} onClick={() => { close(); onToggleSeen(it) }} />
+              )}
+              {canEdit && (
+                <MenuItem icon={Replace} label={missing ? 'Résoudre' : 'Changer la version'} onClick={() => { close(); onResolve(it) }} />
+              )}
+              {canEdit && (
+                <MenuItem icon={Trash2} label="Retirer" danger onClick={() => { close(); onRemove(it) }} />
+              )}
+            </>
+          )}
+        </RowMenu>
       )}
     </div>
   )
@@ -118,6 +156,9 @@ export default function PlaylistDetail() {
   const [progress, setProgress] = useState<ProgressItem[]>([])
   const [resolveTarget, setResolveTarget] = useState<PlaylistItem | null>(null)
   const [traktWatched, setTraktWatched] = useState<TraktWatched | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [traktLinked, setTraktLinked] = useState(false)
+  const [pushing, setPushing] = useState(false)
 
   const canEdit = !!pl && (adminUnlocked || pl.owner_user_id === currentUser?.id)
 
@@ -137,6 +178,10 @@ export default function PlaylistDetail() {
 
   // « Vu » Trakt : historique de visionnage du profil (alimenté par le scrobbling).
   useEffect(() => { api.trakt.watched().then(setTraktWatched).catch(() => {}) }, [])
+  // Compte Trakt lié au profil actif ? (conditionne le bouton « Pousser vers Trakt »)
+  useEffect(() => {
+    api.trakt.auth.status().then(s => setTraktLinked(s.accounts.some(a => a.user_id === currentUser?.id))).catch(() => {})
+  }, [currentUser?.id])
   const traktSets = useMemo(() => {
     const movies = new Set((traktWatched?.movies ?? []).map(m => tnorm(m.title)))
     const shows = new Map<string, Set<string>>()
@@ -263,6 +308,23 @@ export default function PlaylistDetail() {
     navigate('/playlists')
   }
 
+  // Pousse la playlist vers Trakt : crée une nouvelle liste sur le compte du profil
+  // et y verse les items (résolus par titre côté backend). Ouvre la liste créée.
+  const pushToTrakt = async () => {
+    if (!pl || pushing) return
+    const count = items.filter(it => !isMissing(it)).length
+    if (!confirm(`Créer une liste Trakt « ${pl.name} » et y verser ${count} élément${count > 1 ? 's' : ''} ?\n(une nouvelle liste est créée à chaque envoi)`)) return
+    setPushing(true)
+    try {
+      const r = await api.trakt.pushList(pl.id)
+      const miss = r.missing?.length ? ` · ${r.missing.length} introuvable${r.missing.length > 1 ? 's' : ''}` : ''
+      flash(`Poussé vers Trakt : ${r.resolved} ajouté${r.resolved > 1 ? 's' : ''}${miss}`, true)
+      window.open(r.url, '_blank')
+    } catch (e: any) {
+      flash(`Trakt : ${e.message}`, false)
+    } finally { setPushing(false) }
+  }
+
   if (!pl) return <div className="flex justify-center py-16 text-zinc-600"><Loader2 size={20} className="animate-spin" /></div>
 
   const playableItems = items.filter(it => !isMissing(it))
@@ -298,6 +360,17 @@ export default function PlaylistDetail() {
               className="border border-zinc-700 px-2.5 py-1 hover:border-amber-500/50 text-xs"
               size={13}
             />
+            {canEdit && (
+              <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 transition-colors">
+                <Pencil size={12} /> Modifier
+              </button>
+            )}
+            {canEdit && traktLinked && (
+              <button onClick={pushToTrakt} disabled={pushing} title="Créer une liste Trakt à partir de cette playlist"
+                className="flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border border-red-700/60 text-red-300 hover:border-red-500 hover:text-red-200 transition-colors disabled:opacity-50">
+                {pushing ? <Loader2 size={12} className="animate-spin" /> : <Share2 size={12} />} Pousser vers Trakt
+              </button>
+            )}
             {canEdit && (
               <button onClick={deletePlaylist} className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-red-400 transition-colors px-2.5 py-1">
                 <Trash2 size={12} /> Supprimer
@@ -350,6 +423,14 @@ export default function PlaylistDetail() {
             </div>
           </SortableContext>
         </DndContext>
+      )}
+
+      {editing && pl && (
+        <EditPlaylistModal
+          playlist={pl}
+          onClose={() => setEditing(false)}
+          onDone={() => { load(); flash('Playlist mise à jour', true) }}
+        />
       )}
 
       {resolveTarget && (

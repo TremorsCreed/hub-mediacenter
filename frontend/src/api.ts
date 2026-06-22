@@ -807,6 +807,11 @@ export const api = {
     },
     watched: () => get<TraktWatched>('/trakt/watched'),
     discover: () => get<TraktDiscover>('/trakt/discover'),
+    // Crée une liste Trakt du profil actif et y verse les items de la playlist Hub
+    // (résolution titre→ID Trakt côté backend). Renvoie l'URL + le bilan.
+    pushList: (playlistId: number, opts: { privacy?: 'private' | 'friends' | 'public' } = {}) =>
+      post<{ ok: boolean; url: string; list_name: string; resolved: number; added?: { movies?: number; shows?: number; episodes?: number }; missing: string[] }>(
+        '/trakt/lists/push', { playlist_id: playlistId, ...opts }),
   },
   play: (intent: PlayIntent) => post<{ ok: boolean; title: string; device_id: string; app: string }>('/play', intent),
   // « Continuer la lecture sur… » : enregistre la position, stoppe la source, relance sur la cible.

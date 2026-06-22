@@ -73,6 +73,31 @@ function itemImg(it: PlaylistItem): string {
   return api.iptv.imageUrl(it.thumb)
 }
 
+// Poster de la SÉRIE (pas la vignette de l'épisode) pour l'en-tête de saison.
+// Recherché par titre dans Plex/IPTV, mis en cache (sections/credential mémorisés).
+const seriesPosterCache = new Map<string, string>()
+let _showSections: any[] | null = null
+let _iptvCredId: number | null | undefined = undefined
+async function fetchSeriesPoster(show: string, app: string): Promise<string> {
+  const ns = tnorm(show)
+  if (app === 'plex') {
+    if (!_showSections) _showSections = (await api.plex.sections().catch(() => [])).filter((s: any) => s.type === 'show')
+    for (const sec of _showSections) {
+      const r = await api.plex.sectionItems(sec.id, { size: 4, search: show }).catch(() => ({ items: [] as any[] }))
+      const best = r.items.find((c: any) => { const nc = tnorm(c.title); return nc === ns || nc.includes(ns) || ns.includes(nc) })
+      if (best?.thumb) return api.plex.imageUrl(best.thumb)
+    }
+  } else if (app === 'iptv') {
+    if (_iptvCredId === undefined) { const creds = await api.iptv.credentials().catch(() => []); _iptvCredId = creds[0]?.id ?? null }
+    if (_iptvCredId != null) {
+      const r = await api.iptv.streams(_iptvCredId, { type: 'series', search: show, limit: 4 }).catch(() => ({ items: [] as any[] }))
+      const best = r.items.find((s: any) => tnorm(s.name).includes(ns)) ?? r.items[0]
+      if (best?.logo) return api.iptv.imageUrl(best.logo)
+    }
+  }
+  return ''
+}
+
 // Détecte un item épisode d'après le titre « Show · S01E02 · … » (format généré par
 // l'import/JSON/Trakt). Sert à regrouper les épisodes par série + saison.
 function parseEp(it: PlaylistItem): { show: string; season: number; episode: number } | null {
@@ -231,6 +256,7 @@ export default function PlaylistDetail() {
   const [editing, setEditing] = useState(false)
   const [editingJson, setEditingJson] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [groupPosters, setGroupPosters] = useState<Record<string, string>>({})
   const [traktLinked, setTraktLinked] = useState(false)
   const [pushing, setPushing] = useState(false)
 
@@ -314,6 +340,24 @@ export default function PlaylistDetail() {
     // Un groupe à 1 seul épisode ne mérite pas un repli : on le rétrograde en bloc simple.
     return out.map(b => (b.kind === 'group' && b.items.length === 1 ? { kind: 'single', id: b.items[0].id, item: b.items[0] } as Block : b))
   }, [items])
+
+  // Récupère le poster de chaque série (en-tête de saison), une fois par série, en cache.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      for (const b of blocks) {
+        if (b.kind !== 'group') continue
+        const first = b.items.find(it => it.app === 'plex' || it.app === 'iptv')
+        if (!first) continue
+        const key = `${first.app}:${tnorm(b.show)}`
+        let url = seriesPosterCache.get(key)
+        if (url === undefined) { url = await fetchSeriesPoster(b.show, first.app); seriesPosterCache.set(key, url) }
+        if (cancelled) return
+        if (url) setGroupPosters(p => (p[b.id] === url ? p : { ...p, [b.id]: url as string }))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [blocks])
 
   // Réordonne au niveau bloc : déplacer un groupe replié bouge toute la saison ;
   // l'ordre interne d'une saison suit la playlist (réordonnage fin via l'éditeur JSON).
@@ -559,7 +603,7 @@ export default function PlaylistDetail() {
                     groupId={b.id} show={b.show} season={b.season} count={b.items.length}
                     seenCount={b.items.filter(isSeen).length}
                     missingCount={b.items.filter(isMissing).length}
-                    thumb={itemImg(b.items.find(itemImg) ?? b.items[0])}
+                    thumb={groupPosters[b.id] ?? ''}
                     expanded={expandedGroups.has(b.id)} canEdit={canEdit}
                     onToggle={() => toggleGroup(b.id)}
                     onPlaySeason={() => playSeason(b.items)}

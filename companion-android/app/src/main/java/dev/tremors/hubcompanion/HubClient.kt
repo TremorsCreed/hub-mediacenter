@@ -60,6 +60,8 @@ class HubClient(private val baseUrl: String) {
                             id = o.getInt("id"),
                             name = o.optString("name", "Profil ${o.getInt("id")}"),
                             avatarColor = o.optString("avatar_color", null),
+                            defaultPlaylistId = if (o.isNull("default_playlist_id")) null
+                                else o.optInt("default_playlist_id"),
                         )
                     )
                 }
@@ -178,7 +180,12 @@ class HubClient(private val baseUrl: String) {
     }
 }
 
-data class UserProfile(val id: Int, val name: String, val avatarColor: String?)
+data class UserProfile(
+    val id: Int,
+    val name: String,
+    val avatarColor: String?,
+    val defaultPlaylistId: Int? = null,
+)
 
 data class Playlist(val id: Int, val name: String)
 

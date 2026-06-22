@@ -12,7 +12,7 @@ function safeParse(s: string): unknown { try { return JSON.parse(s) } catch { re
 // N'expose jamais le pin_hash, juste un booléen has_pin.
 router.get('/', async (_req, res) => {
   const { rows } = await db.execute(
-    "SELECT id, name, avatar_color, is_admin, (pin_hash IS NOT NULL) as has_pin, (nfc_token IS NOT NULL) as has_nfc, COALESCE(preferred_lang, 'FR') as preferred_lang, default_device_id, default_player, COALESCE(autoplay_next, 1) as autoplay_next, dashboard_prefs, created_at FROM users ORDER BY is_admin DESC, name"
+    "SELECT id, name, avatar_color, is_admin, (pin_hash IS NOT NULL) as has_pin, (nfc_token IS NOT NULL) as has_nfc, COALESCE(preferred_lang, 'FR') as preferred_lang, default_device_id, default_player, COALESCE(autoplay_next, 1) as autoplay_next, default_playlist_id, dashboard_prefs, created_at FROM users ORDER BY is_admin DESC, name"
   )
   res.json(rows.map((r: any) => ({
     id: r.id,
@@ -24,6 +24,7 @@ router.get('/', async (_req, res) => {
     preferred_lang: r.preferred_lang,
     default_device_id: r.default_device_id ?? null,
     default_player: r.default_player ?? null,
+    default_playlist_id: r.default_playlist_id ?? null,
     autoplay_next: !!r.autoplay_next,
     dashboard_prefs: r.dashboard_prefs ? safeParse(r.dashboard_prefs) : null,
     created_at: r.created_at,
@@ -64,6 +65,7 @@ router.post('/check-pin', async (req, res) => {
 const PrefsSchema = z.object({
   dashboard_prefs: z.any().optional(),
   autoplay_next: z.boolean().optional(),
+  default_playlist_id: z.number().nullable().optional(), // playlist cible par défaut (null = aucune)
 })
 router.put('/:id/prefs', async (req, res) => {
   const id = parseInt(req.params.id, 10)
@@ -82,6 +84,12 @@ router.put('/:id/prefs', async (req, res) => {
     await db.execute({
       sql: 'UPDATE users SET autoplay_next = ? WHERE id = ?',
       args: [parsed.data.autoplay_next ? 1 : 0, id],
+    })
+  }
+  if (parsed.data.default_playlist_id !== undefined) {
+    await db.execute({
+      sql: 'UPDATE users SET default_playlist_id = ? WHERE id = ?',
+      args: [parsed.data.default_playlist_id, id],
     })
   }
   res.json({ ok: true })

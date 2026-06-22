@@ -2,19 +2,32 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, Playlist } from '../api'
 import { useUser } from '../UserContext'
-import { ListVideo, Plus, Users, Lock, X, Loader2, Download } from 'lucide-react'
+import { ListVideo, Plus, Users, Lock, X, Loader2, Download, Star } from 'lucide-react'
 
 export default function Playlists() {
-  const { currentUser } = useUser()
+  const { currentUser, refresh } = useUser()
   const navigate = useNavigate()
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
   const [shared, setShared] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [pinningId, setPinningId] = useState<number | null>(null)
 
   const load = () => api.playlists.list().then(setPlaylists).catch(() => {})
   useEffect(() => { load() }, [])
+
+  // Définir / retirer la playlist par défaut du profil courant. Re-cliquer sur
+  // celle déjà par défaut la retire (default_playlist_id: null).
+  const toggleDefault = async (pl: Playlist) => {
+    if (!currentUser || pinningId != null) return
+    const next = currentUser.default_playlist_id === pl.id ? null : pl.id
+    setPinningId(pl.id)
+    try {
+      await api.users.savePrefs(currentUser.id, { default_playlist_id: next })
+      await refresh()  // resynchronise currentUser → l'UI reflète le nouveau défaut
+    } catch { /* */ } finally { setPinningId(null) }
+  }
 
   const create = async () => {
     if (!name.trim() || saving) return
@@ -51,31 +64,56 @@ export default function Playlists() {
       )}
 
       <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
-        {playlists.map(pl => (
-          <button
+        {playlists.map(pl => {
+          const isDefault = currentUser?.default_playlist_id === pl.id
+          const canPin = !!currentUser && pl.owner_user_id === currentUser.id
+          return (
+          <div
             key={pl.id}
-            onClick={() => navigate(`/playlists/${pl.id}`)}
-            className="group text-left bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden hover:border-amber-500/60 transition-colors"
+            className="group relative bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden hover:border-amber-500/60 transition-colors"
           >
-            <div className="relative aspect-[16/7] bg-zinc-800 flex items-center justify-center overflow-hidden">
-              {pl.cover
-                ? <img src={pl.cover} alt="" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
-                : <ListVideo size={32} className="text-zinc-700" />}
-              <div className="absolute top-2 right-2">
-                {pl.is_shared
-                  ? <span className="flex items-center gap-1 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5 text-[10px] text-cyan-300"><Users size={10} /> Partagée</span>
-                  : <span className="flex items-center gap-1 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5 text-[10px] text-zinc-400"><Lock size={10} /> Perso</span>}
+            <button
+              onClick={() => navigate(`/playlists/${pl.id}`)}
+              className="block w-full text-left"
+            >
+              <div className="relative aspect-[16/7] bg-zinc-800 flex items-center justify-center overflow-hidden">
+                {pl.cover
+                  ? <img src={pl.cover} alt="" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
+                  : <ListVideo size={32} className="text-zinc-700" />}
+                <div className="absolute top-2 right-2">
+                  {pl.is_shared
+                    ? <span className="flex items-center gap-1 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5 text-[10px] text-cyan-300"><Users size={10} /> Partagée</span>
+                    : <span className="flex items-center gap-1 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5 text-[10px] text-zinc-400"><Lock size={10} /> Perso</span>}
+                </div>
               </div>
-            </div>
-            <div className="p-3">
-              <div className="text-sm font-medium truncate">{pl.name}</div>
-              <div className="text-xs text-zinc-500 mt-0.5">
-                {pl.item_count ?? 0} élément{(pl.item_count ?? 0) > 1 ? 's' : ''}
-                {pl.owner_user_id !== currentUser?.id && pl.owner_name ? ` · ${pl.owner_name}` : ''}
+              <div className="p-3">
+                <div className="text-sm font-medium truncate">{pl.name}</div>
+                <div className="text-xs text-zinc-500 mt-0.5">
+                  {pl.item_count ?? 0} élément{(pl.item_count ?? 0) > 1 ? 's' : ''}
+                  {pl.owner_user_id !== currentUser?.id && pl.owner_name ? ` · ${pl.owner_name}` : ''}
+                </div>
               </div>
-            </div>
-          </button>
-        ))}
+            </button>
+            {canPin && (
+              <button
+                onClick={() => toggleDefault(pl)}
+                disabled={pinningId === pl.id}
+                title={isDefault ? 'Retirer la playlist par défaut' : 'Définir par défaut'}
+                className={`absolute top-2 left-2 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] backdrop-blur-sm transition-colors disabled:opacity-50 ${
+                  isDefault
+                    ? 'bg-amber-500/90 text-black'
+                    : 'bg-black/60 text-zinc-300 hover:text-amber-300 opacity-0 group-hover:opacity-100'
+                }`}
+              >
+                {pinningId === pl.id
+                  ? <Loader2 size={11} className="animate-spin" />
+                  : <Star size={11} className={isDefault ? 'fill-current' : ''} />}
+                {isDefault && <span>Par défaut</span>}
+              </button>
+            )}
+          </div>
+          )
+        })}
       </div>
 
       {creating && (

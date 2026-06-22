@@ -524,9 +524,16 @@ function PlaylistPicker({ item, onClose, onAdded }: { item: PlaylistItemInput; o
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
 
+  const defaultId = currentUser?.default_playlist_id ?? null
+
   useEffect(() => {
     api.playlists.list()
-      .then(ls => setPlaylists(ls.filter(p => adminUnlocked || p.owner_user_id === currentUser?.id)))
+      .then(ls => {
+        const visible = ls.filter(p => adminUnlocked || p.owner_user_id === currentUser?.id)
+        // La playlist par défaut du profil passe en tête (ajout en un clic).
+        visible.sort((a, b) => (a.id === defaultId ? -1 : 0) - (b.id === defaultId ? -1 : 0))
+        setPlaylists(visible)
+      })
       .catch(() => setPlaylists([]))
       .finally(() => setLoading(false))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -556,13 +563,19 @@ function PlaylistPicker({ item, onClose, onAdded }: { item: PlaylistItemInput; o
         <div className="py-4 flex justify-center text-zinc-500"><Loader2 size={16} className="animate-spin" /></div>
       ) : (
         <div className="space-y-0.5 max-h-48 overflow-y-auto">
-          {playlists.map(pl => (
+          {playlists.map(pl => {
+            const isDefault = pl.id === defaultId
+            return (
             <button key={pl.id} onClick={() => addTo(pl)} disabled={busyId === pl.id} className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-zinc-800 text-left transition-colors">
-              <ListVideo size={13} className="text-zinc-500 shrink-0" />
+              {isDefault
+                ? <Star size={13} className="text-amber-400 fill-current shrink-0" />
+                : <ListVideo size={13} className="text-zinc-500 shrink-0" />}
               <span className="flex-1 min-w-0 text-sm truncate">{pl.name}</span>
+              {isDefault && busyId !== pl.id && <span className="text-[10px] text-amber-400/80 shrink-0">Par défaut</span>}
               {busyId === pl.id && <Loader2 size={13} className="animate-spin text-amber-400" />}
             </button>
-          ))}
+            )
+          })}
           {playlists.length === 0 && <div className="text-xs text-zinc-600 px-2 py-1.5">Aucune playlist modifiable.</div>}
         </div>
       )}

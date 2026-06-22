@@ -41,6 +41,7 @@ export interface User {
   default_device_id: string | null  // device présélectionné à l'activation du profil
   default_player: string | null     // lecteur IPTV du profil (prime sur celui du device)
   autoplay_next: boolean             // autoplay de l'épisode suivant des séries
+  default_playlist_id: number | null // playlist par défaut du profil (présélection à l'ajout)
   dashboard_prefs: DashboardPrefs | null  // perso du dashboard (rangées activées + ordre)
   created_at: number
 }
@@ -755,7 +756,7 @@ export const api = {
     update: (id: number, u: { name?: string; avatar_color?: string; is_admin?: boolean; pin?: string; nfc_token?: string | null; preferred_lang?: string; default_device_id?: string | null; default_player?: string | null; autoplay_next?: boolean }) => put<{ ok: boolean }>(`/users/${id}`, u),
     remove: (id: number) => del<{ ok: boolean }>(`/users/${id}`),
     // Réglages perso (self-service) : layout dashboard + autoplay, du profil courant.
-    savePrefs: (id: number, prefs: { dashboard_prefs?: DashboardPrefs; autoplay_next?: boolean }) =>
+    savePrefs: (id: number, prefs: { dashboard_prefs?: DashboardPrefs; autoplay_next?: boolean; default_playlist_id?: number | null }) =>
       put<{ ok: boolean }>(`/users/${id}/prefs`, prefs),
     verifyPin: (pin: string) => post<{ ok: boolean; token: string; admin: { id: number; name: string } }>('/users/verify-pin', { pin }),
     // Vérifie le PIN sans obtenir de droits admin (déverrouillage parental)

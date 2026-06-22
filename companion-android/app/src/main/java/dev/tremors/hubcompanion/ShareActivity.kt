@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
@@ -26,11 +28,26 @@ class ShareActivity : AppCompatActivity() {
     private val bg = Color.parseColor("#0d0d14")
     private val card = Color.parseColor("#1e1e30")
     private val accent = Color.parseColor("#38BDF8")
+    private val cardSelected = Color.parseColor("#1f3a4d")
 
     private lateinit var root: LinearLayout
     private var lastResult: IngestResult? = null
     private var sharedUrl: String? = null
     private var sharedText: String? = null
+
+    // Candidat retenu pour l'ajout en playlist (#2). 0 = meilleur match par defaut.
+    private var selectedCandidateIndex = 0
+    private var titleView: TextView? = null
+
+    // Sequence de messages cosmetiques pendant l'appel /ingest (#1).
+    private val loadingHandler = Handler(Looper.getMainLooper())
+    private var loadingRunnable: Runnable? = null
+    private val loadingSteps = listOf(
+        "Resolution du lien ...",
+        "Lecture des commentaires et des reponses ...",
+        "Recherche du titre (consensus + Trakt) ...",
+        "Presque fini ...",
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,6 +80,11 @@ class ShareActivity : AppCompatActivity() {
         ingest()
     }
 
+    override fun onDestroy() {
+        stopLoadingSteps()
+        super.onDestroy()
+    }
+
     private fun ingest() {
         val url = Prefs.hubUrl(this)
         val userId = Prefs.userId(this)
@@ -74,6 +96,7 @@ class ShareActivity : AppCompatActivity() {
             val client = HubClient(url)
             val r = client.ingest(userId, sharedUrl, sharedText)
             runOnUiThread {
+                stopLoadingSteps()
                 when (r) {
                     is HubClient.Resp.Err -> {
                         // On a quand meme tente : message clair, pas de crash.
@@ -82,6 +105,7 @@ class ShareActivity : AppCompatActivity() {
                     }
                     is HubClient.Resp.Ok -> {
                         lastResult = r.value
+                        selectedCandidateIndex = 0
                         renderResult(r.value)
                         toast("Ajoute a traiter")
                     }
@@ -96,6 +120,29 @@ class ShareActivity : AppCompatActivity() {
         root.removeAllViews()
         root.addView(title("Envoi au Hub ..."))
         root.addView(ProgressBar(this), lp(topMargin = dp(24)))
+
+        // Etape cosmetique qui defile : un seul appel /ingest bloquant cote reseau,
+        // mais on reflete ce que le Hub fait pour patienter (~1,5 s par message).
+        val stepView = body(loadingSteps.first())
+        root.addView(stepView, lp(topMargin = dp(16)))
+        startLoadingSteps(stepView)
+    }
+
+    private fun startLoadingSteps(stepView: TextView) {
+        stopLoadingSteps()
+        var index = 0
+        loadingRunnable = object : Runnable {
+            override fun run() {
+                index = (index + 1) % loadingSteps.size
+                stepView.text = loadingSteps[index]
+                loadingHandler.postDelayed(this, 1500)
+            }
+        }.also { loadingHandler.postDelayed(it, 1500) }
+    }
+
+    private fun stopLoadingSteps() {
+        loadingRunnable?.let { loadingHandler.removeCallbacks(it) }
+        loadingRunnable = null
     }
 
     private fun renderNotConfigured() {
@@ -132,7 +179,8 @@ class ShareActivity : AppCompatActivity() {
             else -> Color.parseColor("#ef4444")
         }
 
-        root.addView(title(res.resolvedTitle ?: "Titre non resolu"))
+        titleView = title(res.resolvedTitle ?: "Titre non resolu")
+        root.addView(titleView)
 
         root.addView(TextView(this).apply {
             text = confLabel
@@ -157,33 +205,94 @@ class ShareActivity : AppCompatActivity() {
             loadThumb(res.thumbnail, img)
         }
 
-        // Candidats.
-        if (res.candidates.isNotEmpty()) {
+        // Candidats : chaque ligne est cliquable, le candidat retenu est surligne (#2).
+        val shown = res.candidates.take(6)
+        if (shown.isNotEmpty()) {
+            if (selectedCandidateIndex !in shown.indices) selectedCandidateIndex = 0
             root.addView(label("CANDIDATS").apply { setPadding(0, dp(20), 0, dp(6)) })
-            res.candidates.take(6).forEach { c ->
+            val rows = ArrayList<TextView>(shown.size)
+            shown.forEachIndexed { i, c ->
                 val yearTxt = c.year?.let { " ($it)" } ?: ""
                 val typeTxt = if (c.type == "show") "serie" else "film"
-                root.addView(TextView(this).apply {
+                val row = TextView(this).apply {
                     text = "• ${c.title}$yearTxt · $typeTxt"
                     setTextColor(Color.parseColor("#dddddd"))
-                    setBackgroundColor(card)
                     setPadding(dp(12), dp(10), dp(12), dp(10))
-                }, lp(topMargin = dp(6)))
+                    isClickable = true
+                    setOnClickListener {
+                        if (selectedCandidateIndex != i) {
+                            selectedCandidateIndex = i
+                            rows.forEachIndexed { j, v -> paintCandidate(v, j == i) }
+                            // Reflete le candidat retenu dans le titre principal.
+                            titleView?.text = c.title
+                        }
+                    }
+                }
+                paintCandidate(row, i == selectedCandidateIndex)
+                rows.add(row)
+                root.addView(row, lp(topMargin = dp(6)))
             }
         } else {
             root.addView(body("Aucun candidat automatique. Le partage est dans la boite a traiter du Hub."))
         }
 
-        // Actions.
-        root.addView(primaryButton("Ajouter a une playlist").apply {
-            setOnClickListener { onAddToPlaylist(res) }
-        }, lp(topMargin = dp(20)))
+        // Actions. Le bloc d'ajout playlist est isole dans son conteneur : on
+        // l'affiche d'abord en mode simple, puis on le complete avec le bouton
+        // « playlist par defaut » une fois le profil resolu (#3).
+        val addBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(addBlock, lp(topMargin = dp(20)))
+        renderAddButtons(addBlock, res, defaultPlaylist = null)
+        resolveDefaultPlaylist(addBlock, res)
 
         root.addView(secondaryButton("Ouvrir dans le Hub").apply {
             setOnClickListener { onOpenHub() }
         }, lp(topMargin = dp(10)))
 
         root.addView(closeButton(), lp(topMargin = dp(10)))
+    }
+
+    // Remplit le bloc d'ajout. Avec un defaut : un tap direct + acces au picker.
+    // Sans defaut : le seul bouton « Ajouter a une playlist » (comportement actuel).
+    private fun renderAddButtons(block: LinearLayout, res: IngestResult, defaultPlaylist: Playlist?) {
+        block.removeAllViews()
+        if (defaultPlaylist != null) {
+            block.addView(primaryButton("Ajouter a ${defaultPlaylist.name}").apply {
+                setOnClickListener { addItem(res, defaultPlaylist) }
+            })
+            block.addView(secondaryButton("Ajouter a une autre playlist").apply {
+                setOnClickListener { onAddToPlaylist(res) }
+            }, lp(topMargin = dp(10)))
+        } else {
+            block.addView(primaryButton("Ajouter a une playlist").apply {
+                setOnClickListener { onAddToPlaylist(res) }
+            })
+        }
+    }
+
+    // Cherche le default_playlist_id du profil courant puis la playlist associee.
+    // En cas d'absence ou d'echec reseau, on garde le bloc simple deja affiche.
+    private fun resolveDefaultPlaylist(block: LinearLayout, res: IngestResult) {
+        val url = Prefs.hubUrl(this) ?: return
+        val userId = Prefs.userId(this) ?: return
+        thread {
+            val client = HubClient(url)
+            val usersResp = client.users()
+            val defaultId = (usersResp as? HubClient.Resp.Ok)?.value
+                ?.firstOrNull { it.id == userId }?.defaultPlaylistId
+            if (defaultId == null) return@thread
+            val plResp = client.playlists(userId)
+            val playlist = (plResp as? HubClient.Resp.Ok)?.value
+                ?.firstOrNull { it.id == defaultId }
+            if (playlist != null) {
+                runOnUiThread { renderAddButtons(block, res, playlist) }
+            }
+        }
+    }
+
+    // Fond accent clair pour le candidat retenu, fond carte sinon (#2).
+    private fun paintCandidate(view: TextView, selected: Boolean) {
+        view.setBackgroundColor(if (selected) cardSelected else card)
+        view.setTextColor(if (selected) Color.WHITE else Color.parseColor("#dddddd"))
     }
 
     private fun loadThumb(url: String, into: ImageView) {
@@ -227,12 +336,12 @@ class ShareActivity : AppCompatActivity() {
     private fun addItem(res: IngestResult, playlist: Playlist) {
         val url = Prefs.hubUrl(this) ?: return
         val userId = Prefs.userId(this) ?: return
-        // On utilise le meilleur candidat s'il existe, sinon le titre resolu brut.
-        val top = res.candidates.firstOrNull()
-        val title = top?.title ?: res.resolvedTitle
-        val year = top?.year
-        val refType = top?.let { if (it.type == "show") "show" else "movie" }
-        val refId = top?.imdb ?: top?.tmdb?.toString() ?: top?.trakt?.toString()
+        // On utilise le candidat SELECTIONNE s'il existe, sinon le titre resolu brut.
+        val chosen = res.candidates.getOrNull(selectedCandidateIndex)
+        val title = chosen?.title ?: res.resolvedTitle
+        val year = chosen?.year
+        val refType = chosen?.let { if (it.type == "show") "show" else "movie" }
+        val refId = chosen?.imdb ?: chosen?.tmdb?.toString() ?: chosen?.trakt?.toString()
 
         toast("Ajout en cours ...")
         thread {

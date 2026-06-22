@@ -269,6 +269,8 @@ export async function initDb() {
   // et lecteur IPTV (prime sur le réglage du device s'il est défini)
   try { await db.execute("ALTER TABLE users ADD COLUMN default_device_id TEXT") } catch {}
   try { await db.execute("ALTER TABLE users ADD COLUMN default_player TEXT") } catch {}
+  // Playlist cible par défaut du profil (présélectionnée à l'ajout depuis le companion / la fiche)
+  try { await db.execute("ALTER TABLE users ADD COLUMN default_playlist_id INTEGER") } catch {}
   // Autoplay de l'épisode suivant des séries (compte à rebours en fin d'épisode), par profil
   try { await db.execute("ALTER TABLE users ADD COLUMN autoplay_next INTEGER NOT NULL DEFAULT 1") } catch {}
   // Personnalisation du dashboard d'accueil (rangées activées + ordre), JSON, par profil

@@ -34,6 +34,26 @@ export default function Inbox() {
 
   useEffect(() => { load(tab) }, [tab])
 
+  // Rafraîchissement dynamique : un partage reçu depuis le téléphone doit apparaître
+  // sans refresh manuel. Reload SILENCIEUX (sans spinner, pas de flicker) au focus de
+  // la fenêtre, sur l'évènement de changement, et par polling régulier (12 s).
+  useEffect(() => {
+    const reload = () => {
+      api.companion.inbox(tab)
+        .then(list => setItems(list.filter(i => i.status === tab)))
+        .catch(() => { /* on garde la liste courante en cas d'échec réseau */ })
+    }
+    const onFocus = () => reload()
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('hub:inbox-changed', reload)
+    const id = setInterval(reload, 12000)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('hub:inbox-changed', reload)
+      clearInterval(id)
+    }
+  }, [tab])
+
   const onDecided = (id: number) => {
     setItems(prev => prev.filter(i => i.id !== id))
     setOpen(null)

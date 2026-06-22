@@ -17,6 +17,7 @@ import PlaylistJsonModal from '../components/PlaylistJsonModal'
 import {
   ArrowLeft, Play, Loader2, Trash2, GripVertical, Film, Tv, Gamepad2, Radio, MonitorPlay,
   Users, Lock, AlertTriangle, Check, Eye, EyeOff, RotateCcw, Replace, Pencil, Share2, Menu, Braces,
+  ChevronRight, ChevronDown,
 } from 'lucide-react'
 
 // Menu d'actions d'une ligne (burger) : ouvert en position fixe pour ne pas être
@@ -72,31 +73,40 @@ function itemImg(it: PlaylistItem): string {
   return api.iptv.imageUrl(it.thumb)
 }
 
-function SortableRow({ it, index, canEdit, onPlay, onRemove, onToggleSeen, onResolve, busy, seen, progressPct }: {
-  it: PlaylistItem; index: number; canEdit: boolean
-  onPlay: (it: PlaylistItem) => void; onRemove: (it: PlaylistItem) => void; onToggleSeen: (it: PlaylistItem) => void
-  onResolve: (it: PlaylistItem) => void; busy: boolean; seen: boolean; progressPct: number | null
+// Détecte un item épisode d'après le titre « Show · S01E02 · … » (format généré par
+// l'import/JSON/Trakt). Sert à regrouper les épisodes par série + saison.
+function parseEp(it: PlaylistItem): { show: string; season: number; episode: number } | null {
+  const m = (it.title ?? '').match(/^(.+?)\s*·\s*S(\d{1,2})E(\d{1,3})\b/i)
+  if (!m) return null
+  return { show: m[1].trim(), season: Number(m[2]), episode: Number(m[3]) }
+}
+
+type RowActions = {
+  canEdit: boolean
+  onPlay: (it: PlaylistItem) => void; onRemove: (it: PlaylistItem) => void
+  onToggleSeen: (it: PlaylistItem) => void; onResolve: (it: PlaylistItem) => void
+  busy: boolean; seen: boolean; progressPct: number | null
+}
+
+// Contenu visuel d'une ligne (n° + visuel + titre + menu burger), partagé entre une
+// ligne déplaçable (SortableRow) et une ligne d'épisode dans un groupe (EpisodeRow).
+function RowBody({ it, label, indent, listeners, handle, canEdit, onPlay, onRemove, onToggleSeen, onResolve, busy, seen, progressPct }: RowActions & {
+  it: PlaylistItem; label: ReactNode; indent?: boolean; listeners?: any; handle?: ReactNode
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: it.id })
-  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
   const Icon = APP_ICON[it.app] ?? Tv
   const missing = it.status === 'missing' || it.app === 'unresolved'
-
   return (
-    <div ref={setNodeRef} style={style} {...attributes}
-      className={`relative overflow-hidden flex items-center gap-3 bg-zinc-900 border rounded-lg pr-2 ${isDragging ? 'border-amber-500/60 shadow-lg' : 'border-zinc-800'} ${seen && !isDragging ? 'opacity-60' : ''}`}>
-      {/* Avancée de lecture : remplissage vert en fond, largeur = % du média */}
+    <>
       {progressPct != null && (
         <div className="absolute inset-y-0 left-0 bg-green-500/20 pointer-events-none" style={{ width: `${progressPct}%`, zIndex: -1 }} />
       )}
-      {/* Zone draggable (appui long ~1s) : poignée + n° + visuel + titre */}
       <div
-        {...(canEdit ? listeners : {})}
-        className={`flex items-center gap-3 flex-1 min-w-0 py-2 pl-2 select-none ${canEdit ? 'cursor-grab touch-none active:cursor-grabbing' : ''}`}
+        {...(listeners ?? {})}
+        className={`flex items-center gap-3 flex-1 min-w-0 py-2 ${indent ? 'pl-1' : 'pl-2'} select-none ${listeners ? 'cursor-grab touch-none active:cursor-grabbing' : ''}`}
       >
-        {canEdit && <GripVertical size={16} className="text-zinc-600 shrink-0" />}
-        <span className="text-xs text-zinc-500 w-5 text-right shrink-0">{index + 1}</span>
-        <div className="relative w-10 h-14 rounded bg-zinc-800 overflow-hidden shrink-0 flex items-center justify-center">
+        {handle}
+        <span className="text-xs text-zinc-500 w-7 text-right shrink-0">{label}</span>
+        <div className={`relative ${indent ? 'w-9 h-12' : 'w-10 h-14'} rounded bg-zinc-800 overflow-hidden shrink-0 flex items-center justify-center`}>
           {itemImg(it)
             ? <img src={itemImg(it)} alt="" loading="lazy" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
             : <Icon size={16} className="text-zinc-600" />}
@@ -122,22 +132,83 @@ function SortableRow({ it, index, canEdit, onPlay, onRemove, onToggleSeen, onRes
         <RowMenu busy={busy}>
           {close => (
             <>
-              {!missing && (
-                <MenuItem icon={Play} label="Lancer" onClick={() => { close(); onPlay(it) }} />
-              )}
-              {!missing && (
-                <MenuItem icon={seen ? EyeOff : Eye} label={seen ? 'Marquer non vu' : 'Marquer vu'} onClick={() => { close(); onToggleSeen(it) }} />
-              )}
-              {canEdit && (
-                <MenuItem icon={Replace} label={missing ? 'Résoudre' : 'Changer la version'} onClick={() => { close(); onResolve(it) }} />
-              )}
-              {canEdit && (
-                <MenuItem icon={Trash2} label="Retirer" danger onClick={() => { close(); onRemove(it) }} />
-              )}
+              {!missing && <MenuItem icon={Play} label="Lancer" onClick={() => { close(); onPlay(it) }} />}
+              {!missing && <MenuItem icon={seen ? EyeOff : Eye} label={seen ? 'Marquer non vu' : 'Marquer vu'} onClick={() => { close(); onToggleSeen(it) }} />}
+              {canEdit && <MenuItem icon={Replace} label={missing ? 'Résoudre' : 'Changer la version'} onClick={() => { close(); onResolve(it) }} />}
+              {canEdit && <MenuItem icon={Trash2} label="Retirer" danger onClick={() => { close(); onRemove(it) }} />}
             </>
           )}
         </RowMenu>
       )}
+    </>
+  )
+}
+
+// Ligne déplaçable (film, série entière, ou en-tête de bloc simple).
+function SortableRow({ it, label, ...actions }: RowActions & { it: PlaylistItem; label: ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: it.id })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}
+      className={`relative overflow-hidden flex items-center gap-3 bg-zinc-900 border rounded-lg pr-2 ${isDragging ? 'border-amber-500/60 shadow-lg' : 'border-zinc-800'} ${actions.seen && !isDragging ? 'opacity-60' : ''}`}>
+      <RowBody it={it} label={label}
+        listeners={actions.canEdit ? listeners : undefined}
+        handle={actions.canEdit ? <GripVertical size={16} className="text-zinc-600 shrink-0" /> : undefined}
+        {...actions} />
+    </div>
+  )
+}
+
+// Ligne d'épisode imbriquée dans un groupe de saison (non déplaçable individuellement).
+function EpisodeRow({ it, label, ...actions }: RowActions & { it: PlaylistItem; label: ReactNode }) {
+  return (
+    <div className={`relative overflow-hidden flex items-center gap-3 bg-zinc-900/60 border border-zinc-800/70 rounded-lg pr-2 ${actions.seen ? 'opacity-60' : ''}`}>
+      <RowBody it={it} label={label} indent {...actions} />
+    </div>
+  )
+}
+
+// En-tête repliable d'un groupe de saison (déplaçable en bloc).
+function GroupHeader({ groupId, show, season, count, seenCount, missingCount, thumb, expanded, canEdit, onToggle, onPlaySeason, onMarkSeason, onRemoveSeason }: {
+  groupId: string; show: string; season: number; count: number; seenCount: number; missingCount: number
+  thumb: string; expanded: boolean; canEdit: boolean
+  onToggle: () => void; onPlaySeason: () => void; onMarkSeason: (seen: boolean) => void; onRemoveSeason: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: groupId })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}
+      className={`relative flex items-center gap-2 bg-zinc-900 border rounded-lg pr-2 ${isDragging ? 'border-amber-500/60 shadow-lg' : 'border-zinc-800'}`}>
+      {canEdit && (
+        <div {...listeners} className="pl-2 py-3 cursor-grab touch-none active:cursor-grabbing">
+          <GripVertical size={16} className="text-zinc-600 shrink-0" />
+        </div>
+      )}
+      <button onClick={onToggle} className={`flex items-center gap-2.5 flex-1 min-w-0 py-2 text-left ${canEdit ? '' : 'pl-2'}`}>
+        {expanded ? <ChevronDown size={16} className="text-zinc-400 shrink-0" /> : <ChevronRight size={16} className="text-zinc-400 shrink-0" />}
+        <div className="relative w-9 h-12 rounded bg-zinc-800 overflow-hidden shrink-0 flex items-center justify-center">
+          {thumb ? <img src={thumb} alt="" loading="lazy" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} /> : <Tv size={15} className="text-zinc-600" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium truncate">{show} <span className="text-zinc-500 font-normal">— Saison {season}</span></div>
+          <div className="text-xs text-zinc-500 flex items-center gap-1.5">
+            {count} épisode{count > 1 ? 's' : ''} · {seenCount}/{count} vu{seenCount > 1 ? 's' : ''}
+            {missingCount > 0 && <span className="flex items-center gap-1 text-amber-400"><AlertTriangle size={10} /> {missingCount} manquant{missingCount > 1 ? 's' : ''}</span>}
+          </div>
+        </div>
+      </button>
+      <button onClick={onPlaySeason} title="Lancer la saison" className="shrink-0 text-zinc-500 hover:text-amber-400 p-1.5 transition-colors">
+        <Play size={15} fill="currentColor" />
+      </button>
+      <RowMenu busy={false}>
+        {close => (
+          <>
+            <MenuItem icon={Eye} label="Marquer la saison vue" onClick={() => { close(); onMarkSeason(true) }} />
+            <MenuItem icon={EyeOff} label="Marquer la saison non vue" onClick={() => { close(); onMarkSeason(false) }} />
+            {canEdit && <MenuItem icon={Trash2} label="Retirer la saison" danger onClick={() => { close(); onRemoveSeason() }} />}
+          </>
+        )}
+      </RowMenu>
     </div>
   )
 }
@@ -159,6 +230,7 @@ export default function PlaylistDetail() {
   const [traktWatched, setTraktWatched] = useState<TraktWatched | null>(null)
   const [editing, setEditing] = useState(false)
   const [editingJson, setEditingJson] = useState(false)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [traktLinked, setTraktLinked] = useState(false)
   const [pushing, setPushing] = useState(false)
 
@@ -221,19 +293,70 @@ export default function PlaylistDetail() {
 
   const flash = (msg: string, ok: boolean) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3000) }
 
+  // Regroupe les épisodes consécutifs d'une même série + saison sous un bloc repliable.
+  // Les autres items (films, séries entières, épisodes isolés) restent des blocs simples.
+  type Block =
+    | { kind: 'single'; id: number; item: PlaylistItem }
+    | { kind: 'group'; id: string; show: string; season: number; items: PlaylistItem[] }
+  const blocks = useMemo<Block[]>(() => {
+    const out: Block[] = []
+    for (const it of items) {
+      const ep = parseEp(it)
+      if (ep) {
+        const gid = `grp:${tnorm(ep.show)}:${ep.season}`
+        const last = out[out.length - 1]
+        if (last && last.kind === 'group' && last.id === gid) last.items.push(it)
+        else out.push({ kind: 'group', id: gid, show: ep.show, season: ep.season, items: [it] })
+      } else {
+        out.push({ kind: 'single', id: it.id, item: it })
+      }
+    }
+    // Un groupe à 1 seul épisode ne mérite pas un repli : on le rétrograde en bloc simple.
+    return out.map(b => (b.kind === 'group' && b.items.length === 1 ? { kind: 'single', id: b.items[0].id, item: b.items[0] } as Block : b))
+  }, [items])
+
+  // Réordonne au niveau bloc : déplacer un groupe replié bouge toute la saison ;
+  // l'ordre interne d'une saison suit la playlist (réordonnage fin via l'éditeur JSON).
   const onDragEnd = async (e: DragEndEvent) => {
     const { active, over } = e
     if (!over || active.id === over.id) return
-    const oldIndex = items.findIndex(i => i.id === active.id)
-    const newIndex = items.findIndex(i => i.id === over.id)
-    const reordered = arrayMove(items, oldIndex, newIndex)
-    setItems(reordered) // optimiste
-    await api.playlists.reorder(plId, reordered.map(i => i.id)).catch(load)
+    const oldIndex = blocks.findIndex(b => String(b.id) === String(active.id))
+    const newIndex = blocks.findIndex(b => String(b.id) === String(over.id))
+    if (oldIndex < 0 || newIndex < 0) return
+    const reordered = arrayMove(blocks, oldIndex, newIndex)
+    const byId = new Map(items.map(i => [i.id, i]))
+    const flatIds = reordered.flatMap(b => (b.kind === 'single' ? [b.item.id] : b.items.map(i => i.id)))
+    setItems(flatIds.map(id => byId.get(id)!)) // optimiste
+    await api.playlists.reorder(plId, flatIds).catch(load)
   }
 
   const removeItem = async (it: PlaylistItem) => {
     setItems(prev => prev.filter(i => i.id !== it.id))
     await api.playlists.removeItem(plId, it.id).catch(load)
+  }
+
+  const toggleGroup = (gid: string) => setExpandedGroups(prev => {
+    const next = new Set(prev)
+    next.has(gid) ? next.delete(gid) : next.add(gid)
+    return next
+  })
+
+  // Lance une saison : reprend à l'item entamé, sinon au 1er non-vu, sinon au début.
+  const playSeason = (groupItems: PlaylistItem[]) => {
+    const playable = groupItems.filter(it => !isMissing(it))
+    if (!playable.length) { flash('Aucun épisode jouable', false); return }
+    play(playable.find(it => progressFor(it)) ?? playable.find(it => !isSeen(it)) ?? playable[0])
+  }
+
+  const markSeason = (groupItems: PlaylistItem[], seen: boolean) => {
+    groupItems.filter(it => !isMissing(it)).forEach(it => { if (isSeen(it) !== seen) onToggleSeen(it) })
+  }
+
+  const removeSeason = async (groupItems: PlaylistItem[]) => {
+    if (!confirm(`Retirer les ${groupItems.length} épisodes de cette saison ?`)) return
+    const ids = new Set(groupItems.map(i => i.id))
+    setItems(prev => prev.filter(i => !ids.has(i.id)))
+    await Promise.all(groupItems.map(g => api.playlists.removeItem(plId, g.id))).catch(load)
   }
 
   const play = async (it: PlaylistItem) => {
@@ -395,7 +518,7 @@ export default function PlaylistDetail() {
           <option value="">— device —</option>
           {devices.map(d => <option key={d.id} value={d.id} disabled={!d.ws_connected}>{d.name} {d.ws_connected ? '' : '(offline)'}</option>)}
         </select>
-        {canEdit && <span className="text-[11px] text-zinc-600">Appui long (~1s) sur une ligne pour la déplacer.</span>}
+        {canEdit && <span className="text-[11px] text-zinc-600">Appui long (~1s) pour déplacer une ligne ou une saison entière. Clique une saison pour la déplier.</span>}
       </div>
 
       {/* Reprendre la playlist : item entamé en priorité, sinon 1er non-vu */}
@@ -424,10 +547,35 @@ export default function PlaylistDetail() {
         </div>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext items={blocks.map(b => b.id)} strategy={verticalListSortingStrategy}>
             <div className="space-y-1.5">
-              {items.map((it, idx) => (
-                <SortableRow key={it.id} it={it} index={idx} canEdit={canEdit} onPlay={play} onRemove={removeItem} onToggleSeen={onToggleSeen} onResolve={setResolveTarget} busy={busy === it.id} seen={isSeen(it)} progressPct={progressFor(it)?.percent ?? null} />
+              {blocks.map(b => b.kind === 'single' ? (
+                <SortableRow key={b.id} it={b.item} label={items.indexOf(b.item) + 1} canEdit={canEdit}
+                  onPlay={play} onRemove={removeItem} onToggleSeen={onToggleSeen} onResolve={setResolveTarget}
+                  busy={busy === b.item.id} seen={isSeen(b.item)} progressPct={progressFor(b.item)?.percent ?? null} />
+              ) : (
+                <div key={b.id} className="space-y-1.5">
+                  <GroupHeader
+                    groupId={b.id} show={b.show} season={b.season} count={b.items.length}
+                    seenCount={b.items.filter(isSeen).length}
+                    missingCount={b.items.filter(isMissing).length}
+                    thumb={itemImg(b.items.find(itemImg) ?? b.items[0])}
+                    expanded={expandedGroups.has(b.id)} canEdit={canEdit}
+                    onToggle={() => toggleGroup(b.id)}
+                    onPlaySeason={() => playSeason(b.items)}
+                    onMarkSeason={s => markSeason(b.items, s)}
+                    onRemoveSeason={() => removeSeason(b.items)}
+                  />
+                  {expandedGroups.has(b.id) && (
+                    <div className="space-y-1.5 ml-3 pl-3 border-l border-zinc-800">
+                      {b.items.map(it => (
+                        <EpisodeRow key={it.id} it={it} label={`E${parseEp(it)?.episode ?? ''}`} canEdit={canEdit}
+                          onPlay={play} onRemove={removeItem} onToggleSeen={onToggleSeen} onResolve={setResolveTarget}
+                          busy={busy === it.id} seen={isSeen(it)} progressPct={progressFor(it)?.percent ?? null} />
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </SortableContext>

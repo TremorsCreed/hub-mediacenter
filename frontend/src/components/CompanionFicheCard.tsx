@@ -87,8 +87,10 @@ export default function CompanionFicheCard({
     // On cherche le titre sur Trakt pour obtenir de vrais candidats (avec ids) et on
     // sélectionne le 1er résultat, ce qui relance ce useEffect avec un id chargeable.
     if (!hasId) {
+      const q = candidate.title
+      if (!q) { setLoadingMatch(false); return }
       setLoadingFiche(true); setLoadingMatch(false)
-      api.companion.search(candidate.title)
+      api.companion.search(q)
         .then(list => {
           if (!list || !list.length) return
           const same = (a: CompanionCandidate, b: CompanionCandidate) =>

@@ -595,9 +595,13 @@ function strictTraktMatch(title: string, candidates: MatchCandidate[]): MatchCan
 }
 
 // Match Trakt STRICT en tenant compte de l'annee (pour desambiguiser un titre caption
-// « Titre (Annee) »). On exige la quasi-egalite du titre ; si une annee est fournie, on
-// privilegie le candidat dont l'annee est compatible (egale a +/-1 an, pour absorber les
-// ecarts entre annonce et sortie effective). Sans annee, retombe sur strictTraktMatch.
+// « Titre (Annee) »). On exige la quasi-egalite du titre. Quand une annee est fournie, le
+// match n'est valide QUE si l'annee du candidat Trakt est compatible (|ecart| <= 1 an,
+// pour absorber le drift annonce/sortie). Si aucun candidat meme-titre n'est dans cette
+// tolerance, on renvoie null : PAS de fallback title-only sur une autre annee (sinon on
+// attacherait les ids d'un homonyme : « Hope » 2026 ne doit pas devenir « Hope » 2013).
+// Sans annee fournie, on accepte le 1er match de titre.
+const CAPTION_YEAR_TOLERANCE = 1
 function strictTraktMatchWithYear(title: string, year: number | null, candidates: MatchCandidate[]): MatchCandidate | null {
   const a = normForCompare(title)
   if (!a) return null
@@ -607,10 +611,8 @@ function strictTraktMatchWithYear(title: string, year: number | null, candidates
   })
   if (!titleMatches.length) return null
   if (year == null) return titleMatches[0]
-  const yearOk = titleMatches.find((c) => c.year != null && Math.abs(c.year - year) <= 1)
-  // Annee fournie mais aucun candidat compatible : on garde un match titre seul (mieux
-  // que rien ; l'annee servira surtout a departager quand plusieurs titres coincident).
-  return yearOk ?? titleMatches[0]
+  // Annee fournie : exige une annee Trakt compatible, sinon AUCUN match (null).
+  return titleMatches.find((c) => c.year != null && Math.abs(c.year - year) <= CAPTION_YEAR_TOLERANCE) ?? null
 }
 
 // Calcule le score de confiance global de la résolution.
@@ -863,24 +865,33 @@ async function resolveShare(url: string): Promise<ResolveResult> {
     junk: false,
     source: 'caption',
   }))
-  // Le titre caption qui PRIME : un « Titre (Annee) » qui matche strictement Trakt.
-  const captionStrong = captionVerified.find((v) => v.cand.via === 'paren' && !!v.match) ?? null
+  // Titre caption AUTORITAIRE : un « Titre (Annee) » explicite (via 'paren'), ecrit par
+  // l'auteur. Il PRIME sur le consensus commentaires, qu'il soit verifie Trakt ou non
+  // (cf. cas Hope : « Hope (2026) » dans la caption bat « burro » des commentaires).
+  const captionAuthoritative = captionVerified.find((v) => v.cand.via === 'paren') ?? null
+
+  // Construit le candidat de tete pour un titre caption autoritaire : le match Trakt si
+  // l'annee est compatible (avec ids), sinon titre-seul AVEC l'annee de la caption (jamais
+  // l'annee d'un homonyme Trakt). high si match Trakt, medium sinon.
+  const captionLeadCandidate = (v: { cand: CaptionTitle; match: MatchCandidate | null }): MatchCandidate =>
+    v.match ?? { type: 'movie', title: v.cand.title, year: v.cand.year, ids: {} }
 
   if (platform === 'tiktok') {
     const cons = await resolveByConsensus(resolvedUrl, videoId ? String(videoId) : null)
     consensusOut = [...captionRows, ...cons.groups]
 
-    if (captionStrong && captionStrong.match) {
-      // (1) « Titre (Annee) » verifie Trakt : prime sur les commentaires.
-      resolvedTitle = captionStrong.match.title
-      // Le candidat caption en tete, puis les pistes commentaires en complement.
-      candidates = [captionStrong.match, ...cons.candidates.filter(
-        (c) => normForCompare(c.title) !== normForCompare(captionStrong.match!.title),
+    if (captionAuthoritative) {
+      // (1) « Titre (Annee) » explicite : prime sur les commentaires (verifie Trakt ou non).
+      const lead = captionLeadCandidate(captionAuthoritative)
+      // Le candidat caption en tete, puis les pistes commentaires (« burro »...) en complement.
+      candidates = [lead, ...cons.candidates.filter(
+        (c) => normForCompare(c.title) !== normForCompare(lead.title),
       )]
-      confidence = 'high'
+      resolvedTitle = lead.title
+      confidence = captionAuthoritative.match ? 'high' : 'medium'
       resolutionSource = 'caption'
     } else if (cons.resolvedTitle && cons.confidence) {
-      // (2) Consensus commentaires (inchange).
+      // (2) Pas de « Titre (Annee) » caption : consensus commentaires (inchange).
       resolvedTitle = cons.resolvedTitle
       candidates = cons.candidates
       confidence = cons.confidence
@@ -889,16 +900,19 @@ async function resolveShare(url: string): Promise<ResolveResult> {
   } else {
     // Plateforme non TikTok (pas de commentaires) : seul le titre caption joue.
     consensusOut = captionRows
-    if (captionStrong && captionStrong.match) {
-      resolvedTitle = captionStrong.match.title
-      candidates = [captionStrong.match]
-      confidence = 'high'
+    if (captionAuthoritative) {
+      const lead = captionLeadCandidate(captionAuthoritative)
+      resolvedTitle = lead.title
+      candidates = [lead]
+      confidence = captionAuthoritative.match ? 'high' : 'medium'
       resolutionSource = 'caption'
     }
   }
 
-  // (3) Aucun gagnant fort : un titre caption (paren/release) sans match Trakt strict
-  // devient candidat (titre seul), classe avant la prose. Le 1er sert de resolved_title.
+  // (3) Aucun gagnant : un titre caption FAIBLE (via 'release', sans parentheses) sert
+  // uniquement s'il n'y a PAS de consensus commentaires. Titre-seul, avec l'annee caption
+  // si presente (jamais l'annee d'un homonyme Trakt). Confiance medium si match Trakt,
+  // sinon low. Ce variant n'ECRASE jamais les commentaires (gere en (2) ci-dessus).
   if (!resolvedTitle && captionVerified.length) {
     const best = captionVerified[0]
     const cand: MatchCandidate = best.match

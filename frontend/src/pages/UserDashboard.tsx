@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, Device, Favorite, ProgressItem, PlexOnDeckItem, DashboardPrefs, TraktDiscover, TraktDiscoverItem, PlexSection } from '../api'
+import { api, Device, Favorite, ProgressItem, PlexOnDeckItem, DashboardPrefs, TraktDiscover, TraktDiscoverItem, CompanionInboxItem } from '../api'
+import CompanionFicheCard from '../components/CompanionFicheCard'
 import { usePersistentDevice } from '../usePersistentDevice'
 import { useUser, initials } from '../UserContext'
 import { useFavorites } from '../FavoritesContext'
@@ -25,16 +26,6 @@ const DEFAULT_RAILS: { id: RailId; on: boolean }[] = [
 ]
 
 const KIND_LABEL: Record<string, string> = { series: 'Série', show: 'Série', playlist: 'Playlist', movie: 'Film', vod: 'Film' }
-
-// Nom lisible d'une plateforme de streaming (pour les toasts « dispo sur … »).
-function platformLabel(p: string): string {
-  const map: Record<string, string> = {
-    netflix: 'Netflix', 'disney+': 'Disney+', disneyplus: 'Disney+',
-    primevideo: 'Prime Video', amazon: 'Prime Video', appletvplus: 'Apple TV+',
-    max: 'Max', 'paramount+': 'Paramount+', youtube: 'YouTube',
-  }
-  return map[p.toLowerCase()] ?? p
-}
 
 // Fusionne les prefs stockées avec la liste par défaut (ids inconnus ignorés, manquants ajoutés).
 function normalizeRails(prefs: DashboardPrefs | null | undefined): { id: RailId; on: boolean }[] {
@@ -110,7 +101,7 @@ export default function UserDashboard() {
   const [launching, setLaunching] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [discover, setDiscover] = useState<TraktDiscover | null>(null)
-  const [plexSections, setPlexSections] = useState<PlexSection[]>([])
+  const [ficheItem, setFicheItem] = useState<CompanionInboxItem | null>(null)
   const [editing, setEditing] = useState(false)
   const [rails, setRails] = useState(() => normalizeRails(currentUser?.dashboard_prefs))
   const [autoplay, setAutoplay] = useState(currentUser?.autoplay_next ?? true)
@@ -132,73 +123,24 @@ export default function UserDashboard() {
 
   const flash = (msg: string, ok: boolean) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3000) }
 
-  // Découverte Trakt (tendances) + sections Plex pour résoudre au clic.
+  // Découverte Trakt (tendances).
   useEffect(() => {
     api.trakt.discover().then(setDiscover).catch(() => {})
-    api.plex.sections().then(setPlexSections).catch(() => {})
   }, [])
-  const dnorm = (s?: string | null) => (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
 
-  // Clic sur une tendance : on cherche dans ta biblio Plex. Film trouvé → lecture ;
-  // série → ouverture du module Plex ; rien → toast.
-  const discoverPlay = async (item: TraktDiscoverItem) => {
-    const wantShow = item.type === 'show'
-    const secs = plexSections.filter(s => (wantShow ? s.type === 'show' : s.type === 'movie'))
-    setLaunching(`disc:${item.type}:${item.title}`)
-    try {
-      for (const sec of secs) {
-        const r = await api.plex.sectionItems(sec.id, { size: 6, search: item.title }).catch(() => ({ items: [] as any[] } as any))
-        const best = r.items.find((c: any) => dnorm(c.title) === dnorm(item.title) && (!item.year || !c.year || Math.abs((c.year ?? 0) - item.year) <= 1))
-          || r.items.find((c: any) => dnorm(c.title) === dnorm(item.title))
-        if (best) {
-          if (wantShow) { navigate('/catalog/plex'); return }
-          if (!deviceId) { flash('Choisis un device', false); return }
-          const pr = await api.play({ plex_id: best.ratingKey, title: best.title, thumb: best.thumb, app: 'plex', device_id: deviceId, requester: 'manual' })
-          flash(`▶ ${pr.title}`, true); return
-        }
-      }
-      // Rien dans Plex : on élargit au reste du catalogue (IPTV) puis au streaming.
-      const m = await api.companion.match({ title: item.title, year: item.year ?? undefined, type: wantShow ? 'show' : 'movie' })
-      if (m.status === 'in_catalogue' && (m.iptv?.length ?? 0) > 0) {
-        const all = m.iptv ?? []
-        // Un flux « vod » se lance directement (streamId = stream_id du film). Un flux
-        // « series » a besoin d'un épisode précis (le streamId est le series_id) : on
-        // ne peut pas le lancer sans passer par le choix saison/épisode → repli module.
-        const vods = all.filter(h => h.kind === 'vod')
-        if (vods.length > 0) {
-          if (!deviceId) { flash('Choisis un device', false); return }
-          // Meilleure langue : celle du profil si elle matche, sinon la première.
-          const pref = (currentUser?.preferred_lang ?? '').toLowerCase()
-          const hit = vods.find(h => (h.language ?? '').toLowerCase() === pref) ?? vods[0]
-          const langTxt = hit.language ? ` (${hit.language})` : ''
-          try {
-            const pr = await api.play({
-              iptv_stream_id: hit.streamId, iptv_type: hit.kind,
-              title: item.title, thumb: item.poster ?? undefined,
-              app: 'iptv', device_id: deviceId, requester: 'manual',
-            })
-            flash(`▶ ${pr.title}${langTxt}`, true); return
-          } catch (e: any) {
-            // Échec de lecture IPTV : on ne bloque pas, on ouvre le module en repli.
-            navigate('/catalog/iptv')
-            flash(`Dispo en IPTV : ouvre le module pour lancer « ${item.title} »`, false)
-            return
-          }
-        }
-        // Seulement des séries IPTV : l'écran IPTV ne lit pas de recherche depuis l'URL,
-        // on ouvre le module et on indique quoi chercher (choix de l'épisode requis).
-        navigate('/catalog/iptv')
-        flash(`Dispo en IPTV : ouvre le module pour lancer « ${item.title} »`, true)
-        return
-      }
-      if (m.status === 'streaming_only') {
-        const names = (m.streaming ?? []).map(s => platformLabel(s.platform))
-        const uniq = Array.from(new Set(names))
-        flash(uniq.length ? `Dispo sur ${uniq.join(', ')}` : 'Dispo en streaming uniquement', true)
-        return
-      }
-      flash(`« ${item.title} » introuvable dans ton catalogue`, false)
-    } catch (e: any) { flash(`Échec : ${e.message}`, false) } finally { setLaunching(null) }
+  // Clic sur une tendance : on n'auto-lance plus rien. On ouvre la fiche (détail +
+  // disponibilité) avec un candidat synthétique dérivé de la tendance Trakt ;
+  // l'utilisateur décide ensuite (lecture / playlist) depuis la fiche.
+  const discoverPlay = (item: TraktDiscoverItem) => {
+    const candType: 'movie' | 'series' = item.type === 'show' ? 'series' : 'movie'
+    const synthetic: CompanionInboxItem = {
+      id: -1, // pas d'item d'inbox réel : la fiche est en contexte 'detail'.
+      status: 'detail',
+      thumb: item.poster ?? null,
+      resolved_title: item.title,
+      candidates: [{ type: candType, title: item.title, year: item.year, ids: item.ids }],
+    }
+    setFicheItem(synthetic)
   }
 
   const removeProgress = async (mediaKey: string) => {
@@ -573,6 +515,17 @@ export default function UserDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Fiche d'une tendance Trakt (contexte 'detail' : lecture + playlist, pas de décision inbox). */}
+      {ficheItem && (
+        <CompanionFicheCard
+          item={ficheItem}
+          context="detail"
+          deviceId={deviceId}
+          onClose={() => setFicheItem(null)}
+          onDecided={() => setFicheItem(null)}
+        />
       )}
 
       {toast && <Toast msg={toast.msg} ok={toast.ok} />}

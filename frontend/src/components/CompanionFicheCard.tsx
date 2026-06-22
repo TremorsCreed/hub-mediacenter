@@ -8,7 +8,7 @@ import { useUser } from '../UserContext'
 import { useModalA11y } from '../useModalA11y'
 import {
   X, Loader2, Play, Star, Film, Tv, CheckCircle2, AlertCircle, Heart, EyeOff,
-  ListVideo, Plus, HelpCircle, ExternalLink, Search,
+  ListVideo, Plus, HelpCircle, ExternalLink, Search, RefreshCw,
 } from 'lucide-react'
 
 // Couleur du badge de confiance.
@@ -31,12 +31,18 @@ function platformLabel(p: string) {
 // Fiche média réutilisable, affichée en modale depuis Découvertes.
 // `item` porte les candidats ; après une action finale, on remonte la décision.
 export default function CompanionFicheCard({
-  item, onClose, onDecided,
+  item, onClose, onDecided, context = 'inbox', deviceId,
 }: {
   item: CompanionInboxItem
   onClose: () => void
   onDecided: (action: 'validated' | 'wishlist' | 'ignored') => void
+  // 'inbox' = item réel (Wishlist/Ignorer/Rescan) ; 'detail' = item synthétique (lecture seule).
+  context?: 'inbox' | 'detail'
+  // Device cible pour les boutons de lecture (Plex / IPTV). Sans device : lecture désactivée.
+  deviceId?: string | null
 }) {
+  const isInbox = context === 'inbox'
+  const { currentUser } = useUser()
   // Candidats en state local : on peut y injecter des résultats de recherche manuelle.
   const [candidates, setCandidates] = useState<CompanionCandidate[]>(item.candidates ?? [])
   const [candIdx, setCandIdx] = useState(0)
@@ -65,6 +71,9 @@ export default function CompanionFicheCard({
   const [deciding, setDeciding] = useState<null | 'validated' | 'wishlist' | 'ignored'>(null)
   const [playlistOpen, setPlaylistOpen] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
+  const [rescanning, setRescanning] = useState(false)
+  const [playing, setPlaying] = useState(false)
+  const [playMsg, setPlayMsg] = useState<string | null>(null)
 
   const modalRef = useModalA11y(true, onClose)
 
@@ -90,6 +99,39 @@ export default function CompanionFicheCard({
     setDeciding(action)
     try { await api.companion.decide(item.id, action); onDecided(action) }
     catch { setDeciding(null) }
+  }
+
+  // Rescan (inbox réel) : re-tente la résolution, réinjecte les candidats, resélectionne le 1er.
+  const rescan = async () => {
+    if (rescanning) return
+    setRescanning(true)
+    try {
+      const r = await api.companion.rescan(item.id)
+      const next = r.candidates ?? []
+      if (next.length > 0) { setCandidates(next); setCandIdx(0) }
+    } catch { /* on garde l'état courant en cas d'échec */ }
+    finally { setRescanning(false) }
+  }
+
+  // Lecture depuis la fiche : nécessite un device cible.
+  const flashPlay = (msg: string) => { setPlayMsg(msg); setTimeout(() => setPlayMsg(null), 3000) }
+  const playPlex = async (ratingKey: string) => {
+    if (!deviceId) { flashPlay('Choisis un device') ; return }
+    setPlaying(true)
+    try {
+      const pr = await api.play({ plex_id: ratingKey, title: fiche?.title, thumb: fiche?.poster ?? undefined, app: 'plex', device_id: deviceId, requester: 'manual' })
+      flashPlay(`▶ ${pr.title}`)
+    } catch (e: any) { flashPlay(`Échec : ${e.message}`) }
+    finally { setPlaying(false) }
+  }
+  const playIptv = async (hit: { streamId: string; kind: 'vod' | 'series'; language: string | null }) => {
+    if (!deviceId) { flashPlay('Choisis un device') ; return }
+    setPlaying(true)
+    try {
+      const pr = await api.play({ iptv_stream_id: hit.streamId, iptv_type: hit.kind, title: fiche?.title, thumb: fiche?.poster ?? undefined, app: 'iptv', device_id: deviceId, requester: 'manual' })
+      flashPlay(`▶ ${pr.title}${hit.language ? ` (${hit.language})` : ''}`)
+    } catch (e: any) { flashPlay(`Échec : ${e.message}`) }
+    finally { setPlaying(false) }
   }
 
   const isSeries = (candidate?.type ?? '') === 'series'
@@ -176,7 +218,8 @@ export default function CompanionFicheCard({
               <ManualSearch onPick={pickManual} />
             </div>
 
-            {/* Actions : on garde Wishlist + Ignorer même sans fiche. */}
+            {/* Actions : on garde Wishlist + Ignorer même sans fiche (inbox réel uniquement). */}
+            {isInbox && (
             <div className="mt-6 pt-4 border-t border-zinc-800 flex items-center gap-2 flex-wrap">
               <button
                 onClick={() => decide('wishlist')}
@@ -193,6 +236,7 @@ export default function CompanionFicheCard({
                 {deciding === 'ignored' ? <Loader2 size={13} className="animate-spin" /> : <EyeOff size={13} />} Ignorer
               </button>
             </div>
+            )}
           </div>
         )}
 
@@ -261,6 +305,41 @@ export default function CompanionFicheCard({
               {loadingMatch && <div className="flex items-center gap-2 text-sm text-zinc-500"><Loader2 size={14} className="animate-spin" /> Recherche…</div>}
               {!loadingMatch && match && <AvailabilityBadge match={match} />}
               {!loadingMatch && !match && <div className="text-sm text-zinc-600">Disponibilité inconnue.</div>}
+
+              {/* Boutons de lecture selon le match (Plex / IPTV VOD). Le streaming reste informatif. */}
+              {!loadingMatch && match && (() => {
+                // Meilleur flux IPTV VOD : préf langue du profil sinon le 1er. Pas les séries (épisode requis).
+                const vods = (match.iptv ?? []).filter(h => h.kind === 'vod')
+                const pref = (currentUser?.preferred_lang ?? '').toLowerCase()
+                const iptvHit = vods.length ? (vods.find(h => (h.language ?? '').toLowerCase() === pref) ?? vods[0]) : null
+                const hasPlay = !!match.plex?.ratingKey || !!iptvHit
+                if (!hasPlay) return null
+                return (
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    {match.plex?.ratingKey && (
+                      <button
+                        onClick={() => playPlex(match.plex!.ratingKey!)}
+                        disabled={playing || !deviceId}
+                        title={deviceId ? undefined : 'Choisis un device'}
+                        className="flex items-center gap-1.5 text-sm bg-amber-500 hover:bg-amber-400 text-black disabled:opacity-40 px-3 py-1.5 rounded transition-colors"
+                      >
+                        {playing ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} fill="currentColor" />} Lire sur Plex
+                      </button>
+                    )}
+                    {iptvHit && (
+                      <button
+                        onClick={() => playIptv(iptvHit)}
+                        disabled={playing || !deviceId}
+                        title={deviceId ? undefined : 'Choisis un device'}
+                        className="flex items-center gap-1.5 text-sm bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40 px-3 py-1.5 rounded transition-colors"
+                      >
+                        {playing ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} fill="currentColor" />} Lire (IPTV){iptvHit.language ? ` ${iptvHit.language}` : ''}
+                      </button>
+                    )}
+                  </div>
+                )
+              })()}
+              {playMsg && <div className="mt-2 text-xs text-zinc-300">{playMsg}</div>}
             </div>
 
             {/* Actions finales */}
@@ -277,24 +356,38 @@ export default function CompanionFicheCard({
                   <PlaylistPicker
                     item={playlistItem}
                     onClose={() => setPlaylistOpen(false)}
-                    onAdded={() => { setPlaylistOpen(false); decide('validated') }}
+                    onAdded={() => { setPlaylistOpen(false); if (isInbox) decide('validated') }}
                   />
                 )}
               </div>
-              <button
-                onClick={() => decide('wishlist')}
-                disabled={deciding !== null}
-                className="flex items-center gap-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 px-3 py-1.5 rounded transition-colors"
-              >
-                {deciding === 'wishlist' ? <Loader2 size={13} className="animate-spin" /> : <Heart size={13} />} Wishlist
-              </button>
-              <button
-                onClick={() => decide('ignored')}
-                disabled={deciding !== null}
-                className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-300 disabled:opacity-40 px-3 py-1.5 transition-colors ml-auto"
-              >
-                {deciding === 'ignored' ? <Loader2 size={13} className="animate-spin" /> : <EyeOff size={13} />} Ignorer
-              </button>
+              {/* Rescan : item d'inbox réel uniquement (re-tente la résolution). */}
+              {isInbox && (
+                <button
+                  onClick={rescan}
+                  disabled={rescanning || deciding !== null}
+                  className="flex items-center gap-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 px-3 py-1.5 rounded transition-colors"
+                >
+                  {rescanning ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Rescanner
+                </button>
+              )}
+              {isInbox && (
+                <button
+                  onClick={() => decide('wishlist')}
+                  disabled={deciding !== null}
+                  className="flex items-center gap-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 px-3 py-1.5 rounded transition-colors"
+                >
+                  {deciding === 'wishlist' ? <Loader2 size={13} className="animate-spin" /> : <Heart size={13} />} Wishlist
+                </button>
+              )}
+              {isInbox && (
+                <button
+                  onClick={() => decide('ignored')}
+                  disabled={deciding !== null}
+                  className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-300 disabled:opacity-40 px-3 py-1.5 transition-colors ml-auto"
+                >
+                  {deciding === 'ignored' ? <Loader2 size={13} className="animate-spin" /> : <EyeOff size={13} />} Ignorer
+                </button>
+              )}
             </div>
           </>
         )}

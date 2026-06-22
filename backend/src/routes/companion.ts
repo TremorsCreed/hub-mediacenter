@@ -350,6 +350,7 @@ function extractOccurrences(pool: TikComment[]): TitleOccurrence[] {
 type ConsensusGroup = {
   title: string        // forme d'affichage (occurrence la plus likee du groupe)
   proposers: number    // nombre d'occurrences distinctes proposant ce titre
+  likes: number        // somme des likes plafonnes (min(likes, plafond)) du groupe
   score: number        // proposers * POIDS + somme(min(likes, plafond))
   strongest: 'pattern' | 'quoted' | 'bare'
 }
@@ -377,7 +378,7 @@ function consensusGroups(occurrences: TitleOccurrence[]): ConsensusGroup[] {
     // Forme d'affichage : l'occurrence la mieux classee (motif fort, puis plus likee).
     const display = [...occ].sort((a, b) => viaRank(a.via) - viaRank(b.via) || b.likes - a.likes)[0]
     const strongest = occ.reduce<'pattern' | 'quoted' | 'bare'>((best, o) => viaRank(o.via) < viaRank(best) ? o.via : best, 'bare')
-    out.push({ title: display.title, proposers, score, strongest })
+    out.push({ title: display.title, proposers, likes: likeBonus, score, strongest })
   }
   out.sort((a, b) => b.score - a.score)
   return out
@@ -454,6 +455,54 @@ function hasCloseMatch(extracted: string, candidates: MatchCandidate[]): boolean
   return top === a || top.includes(a) || a.includes(top)
 }
 
+// ── Filtre des faux candidats (junk) et match Trakt STRICT ────────────────────
+
+// Mots de politesse / requete / plateformes qui, SEULS, ne sont jamais un titre.
+// « merci », « svp », « netflix », « la suite », « le titre »... On rejette aussi
+// les fragments interrogatifs (« sur quel site... », « on peut le regarder... »).
+const JUNK_STOPWORDS = new Set([
+  'merci', 'mercii', 'svp', 'stp', 'please', 'pls', 'thanks', 'thx',
+  'suite', 'la suite', 'streaming', 'stream', 'netflix', 'prime', 'disney',
+  'le film', 'film', 'le titre', 'titre', 'title', 'name', 'nom',
+  'lien', 'link', 'wsh', 'wlh', 'frr', 'frere', 'bro',
+])
+
+// Mots qui, presents dans un candidat court, trahissent une QUESTION ou une demande
+// (« sur quel site », « on peut le regarder ou », « c'est quoi »...) plutot qu'un titre.
+const JUNK_QUESTION_WORDS = /\b(quel|quelle|quoi|ou|comment|site|plateforme|regarder|trouver|voir|peut|peux|dispo|disponible|c['’ ]?est)\b/i
+
+// Vrai si un candidat est du junk (a exclure AVANT toute selection / verification).
+function isJunkCandidate(title: string): boolean {
+  const n = normForCompare(title)
+  if (!n) return true
+  if (n.length < 2) return true
+  // Mot / locution de politesse ou de plateforme, pris isolement.
+  if (JUNK_STOPWORDS.has(n)) return true
+  const words = n.split(/\s+/)
+  // Mono-mot tres commun (deja couvert par les stopwords, mais on garde le filet).
+  if (words.length === 1 && JUNK_STOPWORDS.has(words[0])) return true
+  // Fragment interrogatif / demande (souvent capture par le bare-title sans « ? »).
+  if (JUNK_QUESTION_WORDS.test(n)) return true
+  return false
+}
+
+// Match Trakt STRICT : on n'accepte qu'une quasi-egalite apres normalisation. Le but
+// est d'ENRICHIR un titre (attacher les ids pour la fiche), jamais de promouvoir un
+// faux titre : « Merci » → « Mercy » ne doit PAS compter. On tolere juste la difference
+// d'un eventuel article / annee en fin, mais pas une orthographe differente.
+function strictTraktMatch(title: string, candidates: MatchCandidate[]): MatchCandidate | null {
+  const a = normForCompare(title)
+  if (!a) return null
+  for (const c of candidates) {
+    const b = normForCompare(c.title)
+    if (!b) continue
+    if (b === a) return c
+    // Tolerance « article en tete » : « the X » vs « X » (et inverse).
+    if (b === `the ${a}` || a === `the ${b}`) return c
+  }
+  return null
+}
+
 // Calcule le score de confiance global de la résolution.
 //   high   : titre via motif explicite ou hashtag exact, ET match TMDb proche
 //   medium : titre depuis commentaire sans motif, ou match TMDb seulement fuzzy
@@ -473,22 +522,49 @@ function scoreConfidence(
 
 // ── Resolution par consensus : commentaires + reponses → titre verifie Trakt ──
 
+// Une ligne de la moulinette d'inspection : un groupe consensus candidat, avec
+// le detail de son score et le fait qu'il ait ete confirme (ou non) par Trakt.
+type ConsensusDebugRow = {
+  title: string
+  proposers: number
+  likes: number
+  score: number
+  trakt_matched: boolean
+  junk: boolean
+}
+
 // Resultat de la resolution par les commentaires (forme alignee sur /ingest).
 type ConsensusResult = {
   resolvedTitle: string | null
+  // Plusieurs propositions classees par score de consensus decroissant : la 1ere est
+  // la plus probable, les suivantes alimentent le choix manuel (« Autres pistes »).
   candidates: MatchCandidate[]
   confidence: 'high' | 'medium' | 'low' | null
-  // Pour la trace / le debug front : les meilleurs groupes consensus avec leur score.
-  groups: { title: string; proposers: number; score: number }[]
+  // Pour la trace / le debug front : tous les groupes consensus candidats avec leur
+  // score et leur statut de verification Trakt, tries par score.
+  groups: ConsensusDebugRow[]
 }
 
 // Petit delai entre appels tikwm pour respecter le rate limit (environ 1 req/s).
 function delay(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)) }
 
-// Resout le titre par CONSENSUS : un titre propose par PLUSIEURS personnes (en cumulant
-// des likes plafonnes) bat un commentaire viral unique. Construit un pool commentaires +
-// reponses (limite aux ~8 commentaires les plus repondus pour le rate limit), score, puis
-// ne garde QUE les meilleurs candidats ayant une vraie correspondance Trakt.
+// Resout le titre par CONSENSUS. Principe : le NOMBRE de proposeurs arbitre la confiance ;
+// Trakt ne sert qu'a ENRICHIR (attacher les ids pour la fiche) et a departager quand le
+// consensus est faible (1 seul proposeur). Il ne FILTRE jamais le titre retenu : un film
+// trop recent absent de Trakt (« Seven Snipers », 4 proposeurs) doit gagner malgre tout.
+//
+// Algorithme :
+//   1) groupes de consensus, score = proposers*100 + somme(min(likes, 50)).
+//   2) on retire les faux candidats (junk : politesse, plateformes, questions) AVANT tout.
+//   3) match Trakt STRICT par groupe (quasi-egalite ; « Merci »→« Mercy » ne compte pas).
+//   4) resolved_title :
+//        maxProposers >= 2  → le groupe non-junk le mieux score (Trakt optionnel).
+//        maxProposers == 1  → le mieux score AVEC match Trakt strict ; sinon le mieux
+//                             score non-junk (confiance basse). Departage aux likes.
+//   5) candidates = top groupes non-junk par score, avec ids Trakt si match strict,
+//      sinon titre-seul (l'UI fera recherche manuelle / wishlist).
+//   6) confiance : high si #1 >= 3 proposeurs OU (>= 2 ET Trakt) ; medium si 2 prop.,
+//      ou 1 prop. + Trakt strict ; low sinon.
 async function resolveByConsensus(videoUrl: string, fallbackVideoId: string | null): Promise<ConsensusResult> {
   const empty: ConsensusResult = { resolvedTitle: null, candidates: [], confidence: null, groups: [] }
   const raw = await fetchTikTokCommentsRaw(videoUrl)
@@ -512,51 +588,128 @@ async function resolveByConsensus(videoUrl: string, fallbackVideoId: string | nu
 
   // Occurrences → groupes consensus tries par score.
   const occurrences = extractOccurrences(pool)
-  const groups = consensusGroups(occurrences)
-  if (!groups.length) return empty
+  const allGroups = consensusGroups(occurrences)
+  if (!allGroups.length) return empty
 
-  // Verification Trakt sur les meilleurs candidats : on ne garde que ceux qui ont une
-  // vraie correspondance. Le titre retenu = le mieux score ET verifie.
+  // (2) Retire les faux candidats AVANT toute selection ou verification.
+  const groups = allGroups.filter((g) => !isJunkCandidate(g.title))
+
+  // (3) Match Trakt STRICT sur les TOP groupes non-junk (cap a TOP_TO_VERIFY appels).
   const TOP_TO_VERIFY = 5
-  for (const g of groups.slice(0, TOP_TO_VERIFY)) {
-    const cands = await searchTraktByTitle(g.title)
-    if (cands.length && hasCloseMatch(g.title, cands)) {
-      // Confiance : plusieurs proposeurs distincts + match → high ; 1 seul + match → medium.
-      const confidence: 'high' | 'medium' = g.proposers >= 2 ? 'high' : 'medium'
-      return {
-        resolvedTitle: g.title,
-        candidates: cands,
-        confidence,
-        groups: groups.slice(0, TOP_TO_VERIFY).map((x) => ({ title: x.title, proposers: x.proposers, score: x.score })),
-      }
-    }
+  const top = groups.slice(0, TOP_TO_VERIFY)
+  const verified = await Promise.all(
+    top.map(async (g) => {
+      const cands = await searchTraktByTitle(g.title)
+      const match = strictTraktMatch(g.title, cands)
+      return { group: g, match }
+    }),
+  )
+
+  // Moulinette d'inspection : TOUS les groupes (junk inclus), avec statut Trakt strict.
+  // Pour les groupes non verifies (hors top), trakt_matched reste false (non teste).
+  const matchByTitle = new Map(verified.map((v) => [normForCompare(v.group.title), !!v.match]))
+  const debugRows: ConsensusDebugRow[] = allGroups.map((g) => ({
+    title: g.title,
+    proposers: g.proposers,
+    likes: g.likes,
+    score: g.score,
+    trakt_matched: matchByTitle.get(normForCompare(g.title)) ?? false,
+    junk: isJunkCandidate(g.title),
+  }))
+
+  if (!verified.length) {
+    // Tous les groupes etaient du junk : la recherche manuelle prendra le relais.
+    return { ...empty, groups: debugRows }
   }
-  // Rien de verifie : la recherche manuelle prendra le relais.
-  return { ...empty, groups: groups.slice(0, TOP_TO_VERIFY).map((x) => ({ title: x.title, proposers: x.proposers, score: x.score })) }
+
+  // (5) candidates = top groupes non-junk par score, enrichis des ids si match strict,
+  // sinon en titre-seul. Dedoublonne par ids (imdb/tmdb/trakt) ou titre+annee normalises.
+  const candidates: MatchCandidate[] = []
+  const seen = new Set<string>()
+  for (const v of verified) {
+    // Type / annee : repris du match strict si on en a un ; sinon inconnu (titre-seul).
+    const c: MatchCandidate = v.match
+      ? v.match
+      : { type: 'movie', title: v.group.title, year: null, ids: {} }
+    const key = c.ids.imdb
+      ? `imdb:${c.ids.imdb}`
+      : c.ids.tmdb != null
+        ? `tmdb:${c.ids.tmdb}`
+        : c.ids.trakt != null
+          ? `trakt:${c.ids.trakt}`
+          : `t:${normForCompare(c.title)}:${c.year ?? ''}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    candidates.push(c)
+  }
+
+  // (4) Choix du resolved_title.
+  const maxProposers = Math.max(...verified.map((v) => v.group.proposers))
+  let winner: typeof verified[number]
+  if (maxProposers >= 2) {
+    // Consensus solide : le mieux score non-junk gagne, match Trakt ou non.
+    winner = verified[0]
+  } else {
+    // Consensus faible (1 proposeur partout) : on departage par le match Trakt strict.
+    winner = verified.find((v) => !!v.match) ?? verified[0]
+  }
+
+  // (6) Confiance.
+  const p = winner.group.proposers
+  const hasTrakt = !!winner.match
+  let confidence: 'high' | 'medium' | 'low'
+  if (p >= 3 || (p >= 2 && hasTrakt)) confidence = 'high'
+  else if (p >= 2 || (p === 1 && hasTrakt)) confidence = 'medium'
+  else confidence = 'low'
+
+  // resolved_title = le titre du gagnant (regle 4) ; on remet ce candidat en tete de la
+  // liste pour que candidates[0] corresponde toujours a resolved_title.
+  const winnerKey = normForCompare(winner.group.title)
+  candidates.sort((a, b) => {
+    const aw = normForCompare(a.title) === winnerKey ? 0 : 1
+    const bw = normForCompare(b.title) === winnerKey ? 0 : 1
+    return aw - bw
+  })
+
+  return { resolvedTitle: winner.group.title, candidates, confidence, groups: debugRows }
 }
 
-// ── POST /ingest : reçoit un partage, résout, extrait, stocke en boîte de réception ──
-const IngestSchema = z.object({
-  url: z.string().optional(),
-  sharedText: z.string().optional(),
-})
-router.post('/ingest', async (req, res) => {
-  const { userId } = ctx(req)
-  const parsed = IngestSchema.safeParse(req.body)
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
+// ── Resolution complete d'un partage (factorisee : utilisee par /ingest ET /rescan) ──
 
-  // L'URL peut arriver seule, ou noyée dans le texte de partage Android.
-  const raw = clean(parsed.data.url || '')
-  const url = raw && /^https?:\/\//i.test(raw) ? raw : firstUrl(clean(parsed.data.sharedText || raw))
-  if (!url) return res.status(400).json({ error: 'no_url', detail: 'Aucune URL trouvée dans le partage.' })
+// Tout le resultat de la cascade de resolution pour une URL donnee : oembed,
+// heuristique, et la sortie consensus (titre resolu + candidats classes + moulinette).
+type ResolveResult = {
+  url: string
+  platform: string
+  resolvedUrl: string
+  oembed: any
+  caption: string
+  authorName: string | null
+  authorUnique: string | null
+  thumb: string | null
+  videoId: any
+  heuristic: ReturnType<typeof extractHeuristic>
+  resolutionSource: 'comment' | 'caption' | 'none'
+  resolvedTitle: string | null
+  candidates: MatchCandidate[]
+  confidence: 'high' | 'medium' | 'low'
+  consensus: ConsensusDebugRow[]
+  tmdbSearchRan: boolean
+  typeGuess: string | null
+  yearGuess: number | null
+}
 
+// Resout un partage de bout en bout : oembed → heuristique → consensus commentaires
+// (verifie Trakt) → fallback caption. C'est la MEME logique pour l'ingestion initiale
+// et le rescan, pour qu'un re-scan beneficie automatiquement des ameliorations d'algo.
+async function resolveShare(url: string): Promise<ResolveResult> {
   const platform = detectPlatform(url)
   const resolvedUrl = platform === 'tiktok' ? await resolveShortUrl(url) : url
 
   let oembed: any = null
   if (platform === 'tiktok') oembed = await fetchTikTokOembed(resolvedUrl)
 
-  const caption = clean(oembed?.title || parsed.data.sharedText || '')
+  const caption = clean(oembed?.title || '')
   const authorName = oembed?.author_name ?? null
   const authorUnique = oembed?.author_unique_id ?? null
   const thumb = oembed?.thumbnail_url ?? null
@@ -571,11 +724,11 @@ router.post('/ingest', async (req, res) => {
   let resolvedTitle: string | null = null
   let candidates: MatchCandidate[] = []
   let confidence: 'high' | 'medium' | 'low' = 'low'
-  let consensusGroupsOut: { title: string; proposers: number; score: number }[] = []
+  let consensusOut: ConsensusDebugRow[] = []
 
   if (platform === 'tiktok') {
     const cons = await resolveByConsensus(resolvedUrl, videoId ? String(videoId) : null)
-    consensusGroupsOut = cons.groups
+    consensusOut = cons.groups
     if (cons.resolvedTitle && cons.confidence) {
       resolvedTitle = cons.resolvedTitle
       candidates = cons.candidates
@@ -600,6 +753,33 @@ router.post('/ingest', async (req, res) => {
   const typeGuess = topMatch ? (topMatch.type === 'show' ? 'series' : 'movie') : null
   const yearGuess = topMatch?.year ?? h.yearGuess ?? null
 
+  return {
+    url, platform, resolvedUrl, oembed, caption,
+    authorName, authorUnique, thumb, videoId,
+    heuristic: h, resolutionSource, resolvedTitle, candidates, confidence,
+    consensus: consensusOut, tmdbSearchRan, typeGuess, yearGuess,
+  }
+}
+
+// ── POST /ingest : reçoit un partage, résout, extrait, stocke en boîte de réception ──
+const IngestSchema = z.object({
+  url: z.string().optional(),
+  sharedText: z.string().optional(),
+})
+router.post('/ingest', async (req, res) => {
+  const { userId } = ctx(req)
+  const parsed = IngestSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
+
+  // L'URL peut arriver seule, ou noyée dans le texte de partage Android.
+  const raw = clean(parsed.data.url || '')
+  const url = raw && /^https?:\/\//i.test(raw) ? raw : firstUrl(clean(parsed.data.sharedText || raw))
+  if (!url) return res.status(400).json({ error: 'no_url', detail: 'Aucune URL trouvée dans le partage.' })
+
+  const r = await resolveShare(url)
+  // Caption d'affichage : si oembed indisponible, on retombe sur le texte de partage.
+  const caption = r.caption || clean(parsed.data.sharedText || '')
+
   const now = Date.now()
   const { rows } = await db.execute({
     sql: `INSERT INTO companion_inbox
@@ -610,10 +790,10 @@ router.post('/ingest', async (req, res) => {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
           RETURNING id`,
     args: [
-      userId, platform, url, resolvedUrl, videoId,
-      caption || null, authorName, authorUnique, thumb,
-      JSON.stringify(h.hashtags), resolvedTitle ?? h.titleGuess, yearGuess, typeGuess,
-      oembed ? JSON.stringify(oembed) : null, now, now,
+      userId, r.platform, url, r.resolvedUrl, r.videoId,
+      caption || null, r.authorName, r.authorUnique, r.thumb,
+      JSON.stringify(r.heuristic.hashtags), r.resolvedTitle ?? r.heuristic.titleGuess, r.yearGuess, r.typeGuess,
+      r.oembed ? JSON.stringify(r.oembed) : null, now, now,
     ],
   })
 
@@ -621,20 +801,99 @@ router.post('/ingest', async (req, res) => {
   res.json({
     id,
     status: 'pending',
-    platform,
-    resolved_url: resolvedUrl,
+    platform: r.platform,
+    resolved_url: r.resolvedUrl,
     caption,
-    author: authorName,
-    thumbnail: thumb,
+    author: r.authorName,
+    thumbnail: r.thumb,
     // Fiche candidate : résultat de la cascade.
-    resolved_title: resolvedTitle,
-    resolution_source: resolutionSource,
-    confidence,
-    candidates,
-    tmdb_search_ran: tmdbSearchRan,
-    consensus: consensusGroupsOut,
-    extraction: h,
-    note: oembed ? 'oembed_ok' : 'oembed_indisponible',
+    resolved_title: r.resolvedTitle,
+    resolution_source: r.resolutionSource,
+    confidence: r.confidence,
+    candidates: r.candidates,
+    tmdb_search_ran: r.tmdbSearchRan,
+    consensus: r.consensus,
+    extraction: r.heuristic,
+    note: r.oembed ? 'oembed_ok' : 'oembed_indisponible',
+  })
+})
+
+// ── POST /inbox/:id/rescan : re-resout un item existant avec l'algo courant ────
+// But : re-scanner un partage deja recu (apres amelioration de l'algo) sans le re-partager.
+// Reprend source_url (ou resolved_url), relance la MEME resolution que /ingest, met a jour
+// la ligne companion_inbox, et renvoie le resultat au meme format que /ingest. Meme
+// controle de propriete que /inbox/:id/decide.
+router.post('/inbox/:id/rescan', async (req, res) => {
+  const { userId, isAdmin } = ctx(req)
+  const id = parseInt(req.params.id, 10)
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'id invalide' })
+
+  const { rows } = await db.execute({
+    sql: 'SELECT user_id, source_url, resolved_url FROM companion_inbox WHERE id = ?',
+    args: [id],
+  })
+  if (!rows.length) return res.status(404).json({ error: 'item introuvable' })
+  const row = rows[0] as any
+  const owner = row.user_id as number | null
+  if (!isAdmin && owner != null && owner !== userId) return res.status(403).json({ error: 'forbidden' })
+
+  const url = clean(row.source_url || row.resolved_url || '')
+  if (!url) return res.status(400).json({ error: 'no_url', detail: "Aucune URL stockee pour cet item." })
+
+  const r = await resolveShare(url)
+
+  // Met a jour la ligne avec ce qui a ete re-resolu. On ne touche caption / thumbnail
+  // que si l'oembed a repondu (sinon on garde l'existant), pour ne pas ecraser une
+  // valeur correcte par un null d'un oembed momentanement indisponible.
+  const now = Date.now()
+  await db.execute({
+    sql: `UPDATE companion_inbox
+          SET resolved_url = ?,
+              video_id = COALESCE(?, video_id),
+              caption = COALESCE(?, caption),
+              author_name = COALESCE(?, author_name),
+              author_unique_id = COALESCE(?, author_unique_id),
+              thumbnail = COALESCE(?, thumbnail),
+              hashtags = ?,
+              title_guess = ?,
+              year_guess = ?,
+              type_guess = ?,
+              raw = COALESCE(?, raw),
+              updated_at = ?
+          WHERE id = ?`,
+    args: [
+      r.resolvedUrl,
+      r.videoId,
+      r.oembed ? (r.caption || null) : null,
+      r.authorName,
+      r.authorUnique,
+      r.thumb,
+      JSON.stringify(r.heuristic.hashtags),
+      r.resolvedTitle ?? r.heuristic.titleGuess,
+      r.yearGuess,
+      r.typeGuess,
+      r.oembed ? JSON.stringify(r.oembed) : null,
+      now,
+      id,
+    ],
+  })
+
+  res.json({
+    id,
+    status: 'pending',
+    platform: r.platform,
+    resolved_url: r.resolvedUrl,
+    caption: r.caption,
+    author: r.authorName,
+    thumbnail: r.thumb,
+    resolved_title: r.resolvedTitle,
+    resolution_source: r.resolutionSource,
+    confidence: r.confidence,
+    candidates: r.candidates,
+    tmdb_search_ran: r.tmdbSearchRan,
+    consensus: r.consensus,
+    extraction: r.heuristic,
+    note: r.oembed ? 'oembed_ok' : 'oembed_indisponible',
   })
 })
 

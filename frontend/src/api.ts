@@ -663,6 +663,13 @@ export interface CompanionMatchStreaming {
   price?: number | null
   quality?: string | null
 }
+// Résultat d'un rescan d'inbox : même forme que la réponse /ingest.
+export interface CompanionRescanResult {
+  resolved_title?: string | null
+  confidence?: CompanionConfidence
+  candidates?: CompanionCandidate[]
+  consensus?: boolean
+}
 export interface CompanionMatch {
   status: 'in_catalogue' | 'streaming_only' | 'not_found' | string
   // Champs réellement renvoyés par le backend companionMatch.
@@ -941,7 +948,12 @@ export const api = {
     imageUrl: (path?: string) => path ? `${BASE}/plex/image?path=${encodeURIComponent(path)}` : '',
   },
   llm: {
-    list: () => get<LlmConfig[]>('/llm'),
+    // Le backend renvoie { active_provider, providers: [...] } (un objet) : on le
+    // transforme en LlmConfig[] avec le drapeau `active` calculé, sinon configs.find
+    // plante au render (ecran noir).
+    list: () =>
+      get<{ active_provider: string | null; providers: Array<Omit<LlmConfig, 'active'>> }>('/llm')
+        .then(r => (r.providers ?? []).map(p => ({ ...p, active: p.provider === r.active_provider }))),
     save: (provider: LlmProvider, input: LlmUpdateInput) => put<{ ok: boolean }>(`/llm/${provider}`, input),
     test: (provider: LlmProvider) => post<LlmTestResult>(`/llm/${provider}/test`, {}),
     remove: (provider: LlmProvider) => del<{ ok: boolean }>(`/llm/${provider}`),
@@ -955,6 +967,8 @@ export const api = {
       post<CompanionMatch>('/companion/match', body),
     // Recherche manuelle d'un titre (résolution à la main d'un partage non identifié).
     search: (q: string) => get<CompanionCandidate[]>(`/companion/search?q=${encodeURIComponent(q)}`),
+    // Re-tente la résolution d'un item d'inbox (même format que /ingest).
+    rescan: (id: number) => post<CompanionRescanResult>(`/companion/inbox/${id}/rescan`, {}),
     // Décision sur un item de la boîte de réception : sort l'item de 'pending'.
     decide: (id: number, action: 'validated' | 'wishlist' | 'ignored') =>
       post<{ ok: boolean }>(`/companion/inbox/${id}/decide`, { action }),

@@ -164,12 +164,22 @@ const TITLE_PATTERNS: RegExp[] = [
   new RegExp(`(?:le\\s+)?film\\s+(?:c${APOS}est|s${APOS}appelle)\\s*(.+)`, 'i'),
   new RegExp(`(?:ca|ça)\\s+s${APOS}appelle\\s*(.+)`, 'i'),
   new RegExp(`(?:le\\s+film|le\\s+titre)\\s*:\\s*(.+)`, 'i'),
+  // FR series (une serie, pas seulement un film)
+  new RegExp(`(?:le\\s+)?nom\\s+de\\s+la\\s+s[ée]rie\\s*(?:c${APOS}est|:|,)\\s*(.+)`, 'i'),
+  new RegExp(`(?:la\\s+)?s[ée]rie\\s+(?:c${APOS}est|s${APOS}appelle)\\s*(.+)`, 'i'),
   // EN
   /(?:the\s+)?title\s+is\s*:?\s*(.+)/i,
   /it['’]?s\s+called\s*:?\s*(.+)/i,
-  /(?:the\s+)?(?:movie|film)\s+is\s*:?\s*(.+)/i,
-  /name\s+of\s+the\s+(?:movie|film)\s+is\s*:?\s*(.+)/i,
+  /(?:the\s+)?(?:movie|film|series|show)\s+is\s*:?\s*(.+)/i,
+  /name\s+of\s+the\s+(?:movie|film|series|show)\s+is\s*:?\s*(.+)/i,
 ]
+
+// Indique si le pool évoque une SÉRIE (et pas un film) : cues série/saison/épisode.
+// Sert à typer correctement un candidat titre-seul (sans match Trakt pour trancher).
+function poolLooksLikeSeries(texts: string[]): boolean {
+  const re = /\b(s[ée]rie|saison|[ée]pisode|series|seasons?|episodes?|\bshow\b)\b/i
+  return texts.some((t) => re.test(t))
+}
 
 // Titre cité entre guillemets : « X », “ X ”, " X ". Renvoie le 1er groupe non vide.
 const QUOTED_PATTERNS: RegExp[] = [
@@ -587,6 +597,9 @@ async function resolveByConsensus(videoUrl: string, fallbackVideoId: string | nu
   }
 
   // Occurrences → groupes consensus tries par score.
+  // Type par défaut des candidats titre-seul (sans match Trakt) : série si le pool
+  // évoque une série/saison/épisode, sinon film.
+  const seriesHint = poolLooksLikeSeries(pool.map((c) => c.text))
   const occurrences = extractOccurrences(pool)
   const allGroups = consensusGroups(occurrences)
   if (!allGroups.length) return empty
@@ -630,7 +643,7 @@ async function resolveByConsensus(videoUrl: string, fallbackVideoId: string | nu
     // Type / annee : repris du match strict si on en a un ; sinon inconnu (titre-seul).
     const c: MatchCandidate = v.match
       ? v.match
-      : { type: 'movie', title: v.group.title, year: null, ids: {} }
+      : { type: seriesHint ? 'show' : 'movie', title: v.group.title, year: null, ids: {} }
     const key = c.ids.imdb
       ? `imdb:${c.ids.imdb}`
       : c.ids.tmdb != null

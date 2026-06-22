@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, ScrapedList, ScrapedListItem, ScListResult } from '../api'
+import { api, ScrapedList, ScListResult } from '../api'
 import { loadResolveContext, makeResolveCache, resolveScrapedItem } from '../lib/resolve'
+import { parsePastedList } from '../lib/parseList'
 import { useUser } from '../UserContext'
 import { ArrowLeft, Download, Loader2, Link2, Heart, Film, Tv, Check, AlertTriangle, Search, ClipboardList } from 'lucide-react'
 
@@ -12,45 +13,6 @@ const PROVIDERS: { id: Provider; label: string; placeholder: string; urlPlacehol
   { id: 'trakt', label: 'Trakt', placeholder: 'Rechercher une liste (ex. MCU chronological, Alien…)', urlPlaceholder: 'https://trakt.tv/users/<user>/lists/<slug>' },
   { id: 'paste', label: 'Texte / JSON', placeholder: '', urlPlaceholder: '' },
 ]
-
-// ── Parsing d'une liste collée (texte libre ou JSON) ─────────────────────────
-// Texte : une ligne = un titre, format « Titre (Année) ». Préfixe « série: »/« tv: »
-// pour forcer une série. Lignes vides ou commençant par # ignorées.
-function parseTextLine(line: string, i: number): ScrapedListItem {
-  let s = line.trim()
-  let type: 'movie' | 'series' = 'movie'
-  const pref = s.match(/^(s[ée]rie|tv|show)\s*[:\-]\s*(.+)$/i)
-  if (pref) { type = 'series'; s = pref[2].trim() }
-  let year: number | null = null
-  const ym = s.match(/^(.*?)[\s.\-]*\((\d{4})\)\s*$/)
-  if (ym) { s = ym[1].trim(); year = Number(ym[2]) }
-  return { position: i + 1, title: s, year, type, kind: type === 'series' ? 'show' : 'movie' }
-}
-function parseJsonEntry(e: any, i: number): ScrapedListItem | null {
-  if (typeof e === 'string') return parseTextLine(e, i)
-  if (e && typeof e === 'object') {
-    const title = String(e.title ?? e.name ?? '').trim()
-    if (!title) return null
-    const t = String(e.type ?? e.kind ?? '').toLowerCase()
-    const type: 'movie' | 'series' = (t === 'series' || t === 'serie' || t === 'tv' || t === 'show') ? 'series' : 'movie'
-    const year = Number.isFinite(Number(e.year)) && Number(e.year) > 0 ? Number(e.year) : null
-    return { position: typeof e.position === 'number' ? e.position : i + 1, title, year, type, kind: type === 'series' ? 'show' : 'movie', original_title: e.original_title ?? null }
-  }
-  return null
-}
-function parsePastedList(raw: string): ScrapedListItem[] {
-  const text = raw.trim()
-  if (!text) return []
-  if (text.startsWith('[') || text.startsWith('{')) {
-    try {
-      const json = JSON.parse(text)
-      const arr: any[] = Array.isArray(json) ? json : Array.isArray(json.items) ? json.items : Array.isArray(json.list) ? json.list : []
-      const out = arr.map((e, i) => parseJsonEntry(e, i)).filter(Boolean) as ScrapedListItem[]
-      if (out.length) return out
-    } catch { /* JSON invalide → on retombe en mode texte ligne par ligne */ }
-  }
-  return text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#')).map(parseTextLine)
-}
 
 export default function ImportPlaylist() {
   const navigate = useNavigate()
@@ -201,6 +163,7 @@ export default function ImportPlaylist() {
                 {' '}<code className="text-zinc-400">year</code>,
                 {' '}<code className="text-zinc-400">type</code> (<code>movie</code> par défaut, ou <code>series</code>/<code>tv</code>/<code>show</code>) — optionnels.
               </div>
+              <div className="mt-0.5">Une série peut porter <code className="text-zinc-400">seasons</code>: [{`{ season, episodes: [{ ep, title }] }`}] → un item par épisode.</div>
             </div>
             <button onClick={analysePaste} disabled={!pasteText.trim()} className="shrink-0 flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 text-sm rounded px-4 py-1.5 hover:border-zinc-500 disabled:opacity-50">
               <ClipboardList size={14} /> Analyser

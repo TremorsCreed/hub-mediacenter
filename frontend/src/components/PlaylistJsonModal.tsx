@@ -1,35 +1,15 @@
 import { useMemo, useState } from 'react'
-import { api, PlaylistItem, PlaylistItemInput, ScrapedListItem } from '../api'
+import { api, PlaylistItem, PlaylistItemInput } from '../api'
 import { loadResolveContext, makeResolveCache, resolveScrapedItem } from '../lib/resolve'
+import { jsonEntryToScraped } from '../lib/parseList'
 import { X, Loader2, Braces, RotateCcw, AlertTriangle } from 'lucide-react'
 
 const LANGS = ['FR', 'EN', 'DE', 'ES', 'IT', 'MULTI']
 
-// Entrée JSON normalisée (le champ id sert à préserver un item déjà résolu).
-type Entry = { id?: number; title: string; year: number | null; type: 'movie' | 'series' }
-
-function toEntry(e: any): Entry | null {
-  if (typeof e === 'string') {
-    let s = e.trim(); if (!s) return null
-    let type: 'movie' | 'series' = 'movie'
-    const pref = s.match(/^(s[ée]rie|tv|show)\s*[:\-]\s*(.+)$/i)
-    if (pref) { type = 'series'; s = pref[2].trim() }
-    let year: number | null = null
-    const ym = s.match(/^(.*?)[\s.\-]*\((\d{4})\)\s*$/)
-    if (ym) { s = ym[1].trim(); year = Number(ym[2]) }
-    return { title: s, year, type }
-  }
-  if (e && typeof e === 'object') {
-    const title = String(e.title ?? e.name ?? '').trim()
-    if (!title) return null
-    const t = String(e.type ?? e.kind ?? '').toLowerCase()
-    const type: 'movie' | 'series' = (t === 'series' || t === 'serie' || t === 'tv' || t === 'show') ? 'series' : 'movie'
-    const year = Number.isFinite(Number(e.year)) && Number(e.year) > 0 ? Number(e.year) : null
-    const id = Number.isFinite(Number(e.id)) ? Number(e.id) : undefined
-    return { id, title, year, type }
-  }
-  return null
-}
+// Étape de plan : soit on préserve un item existant (par id), soit on résout un item.
+type PlanStep =
+  | { keep: number; title?: string; year?: number }
+  | { resolve: import('../api').ScrapedListItem }
 
 // Sérialise les items actuels en JSON lisible (id conservé pour la préservation).
 function itemsToJson(items: PlaylistItem[]): string {
@@ -61,13 +41,32 @@ export default function PlaylistJsonModal({ playlistId, items, defaultLang, onCl
     let parsed: any
     try { parsed = JSON.parse(text) } catch { setError('JSON invalide — vérifie les virgules et les guillemets.'); return }
     const arr: any[] = Array.isArray(parsed) ? parsed : Array.isArray(parsed.items) ? parsed.items : Array.isArray(parsed.list) ? parsed.list : []
-    const entries = arr.map(toEntry).filter(Boolean) as Entry[]
-    if (!entries.length) { setError('Aucune entrée exploitable (au moins un title est requis).'); return }
+    if (!arr.length) { setError('Aucune entrée exploitable (au moins un title est requis).'); return }
 
     const existingById = new Map(items.map(it => [it.id, it]))
-    const needResolve = (en: Entry) => reResolveAll || en.id == null || !existingById.has(en.id)
-    const total = entries.filter(needResolve).length
+    // Construit le plan : une entrée avec un tableau `seasons` est décomposée en épisodes
+    // (toujours à résoudre) ; une entrée simple avec id connu est préservée (sauf re-résoudre tout).
+    const plan: PlanStep[] = []
+    for (const e of arr) {
+      const obj = e && typeof e === 'object'
+      const hasSeasons = obj && Array.isArray(e.seasons) && e.seasons.length > 0
+      if (hasSeasons) {
+        for (const sc of jsonEntryToScraped(e)) plan.push({ resolve: sc })
+        continue
+      }
+      const id = obj && Number.isFinite(Number(e.id)) ? Number(e.id) : undefined
+      if (!reResolveAll && id != null && existingById.has(id)) {
+        const title = obj ? String(e.title ?? e.name ?? '').trim() : ''
+        const year = obj && Number.isFinite(Number(e.year)) && Number(e.year) > 0 ? Number(e.year) : undefined
+        plan.push({ keep: id, title: title || undefined, year })
+      } else {
+        const sc = jsonEntryToScraped(e)[0]
+        if (sc) plan.push({ resolve: sc })
+      }
+    }
+    if (!plan.length) { setError('Aucune entrée exploitable (au moins un title est requis).'); return }
 
+    const total = plan.filter(p => 'resolve' in p).length
     setSaving(true)
     setProgress(total > 0 ? { done: 0, total, matched: 0 } : null)
     try {
@@ -75,23 +74,22 @@ export default function PlaylistJsonModal({ playlistId, items, defaultLang, onCl
       const cache = makeResolveCache()
       const final: PlaylistItemInput[] = []
       let done = 0, matched = 0
-      for (const en of entries) {
-        if (!needResolve(en) && en.id != null) {
-          const it = existingById.get(en.id)!
+      for (const p of plan) {
+        if ('keep' in p) {
+          const it = existingById.get(p.keep)!
           final.push({
             app: it.app,
             ref_id: it.ref_id ?? undefined,
             ref_type: it.ref_type ?? undefined,
-            title: en.title || it.title || undefined,
-            year: en.year ?? it.year ?? undefined,
+            title: p.title || it.title || undefined,
+            year: p.year ?? it.year ?? undefined,
             thumb: it.thumb ?? undefined,
             lang: it.lang ?? undefined,
             ext: it.ext ?? undefined,
             status: it.status === 'missing' ? 'missing' : 'resolved',
           })
         } else {
-          const scraped: ScrapedListItem = { position: final.length + 1, title: en.title, year: en.year, type: en.type, kind: en.type === 'series' ? 'show' : 'movie' }
-          const r = await resolveScrapedItem(scraped, ctx.sections, ctx.credId, cache, lang)
+          const r = await resolveScrapedItem(p.resolve, ctx.sections, ctx.credId, cache, lang)
           if (r.status === 'resolved') matched++
           final.push(r)
           done++; setProgress({ done, total, matched })
@@ -117,6 +115,7 @@ export default function PlaylistJsonModal({ playlistId, items, defaultLang, onCl
           <p className="text-xs text-zinc-500 leading-relaxed">
             Réordonne, ajoute ou retire des lignes. Une ligne avec <code className="text-zinc-300">id</code> garde sa version actuelle (Plex/IPTV).
             Une ligne <span className="text-zinc-300">sans id</span> est un nouveau titre qui sera résolu. Les lignes retirées sont supprimées.
+            Une série avec un tableau <code className="text-zinc-300">seasons[].episodes[]</code> est éclatée en un item par épisode.
           </p>
 
           <textarea

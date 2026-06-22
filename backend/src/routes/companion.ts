@@ -107,6 +107,87 @@ function extractHeuristic(caption: string, authorName: string | null) {
   return { hashtags, mentions, yearGuess, titleGuess, prose, authorName: authorName ? clean(authorName) : null }
 }
 
+// ── Extraction de titre depuis la CAPTION (posts d'annonce / bande-annonce) ───
+
+// Un titre candidat extrait de la caption, avec son annee si trouvee, ordonne par
+// force du signal. 'paren' = motif « Titre (Annee) » (le plus fort) ; 'release' =
+// titre avant une formule de sortie (« X is releasing this fall »).
+type CaptionTitle = { title: string; year: number | null; via: 'paren' | 'release' }
+
+// Nettoie un fragment de titre issu de la caption : retire emojis, hashtags, URLs,
+// guillemets, ponctuation de fin, et coupe a une longueur raisonnable.
+function cleanCaptionFragment(s: string): string {
+  return clean(s)
+    .replace(/https?:\/\/[^\s]+/gi, ' ')
+    .replace(/#[\p{L}\p{N}_]+/gu, ' ')
+    .replace(/[\p{Extended_Pictographic}‍️]/gu, ' ')
+    .replace(/[«»“”"]/g, ' ')
+    .replace(/^[\s:,.\-]+/, '')
+    .replace(/[\s:,.\-]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60)
+}
+
+// Formules de sortie : ce qui suit annonce une sortie, donc ce qui PRECEDE est le titre.
+// FR + EN. On capture la portion avant la formule comme titre candidat.
+const RELEASE_PHRASES = [
+  'is releasing', 'is coming', 'out now', 'coming soon', 'this fall', 'this spring',
+  'this summer', 'this winter', 'in theaters', 'in theatres', 'streaming now',
+  'now streaming', 'hits theaters', 'arrives',
+  'sortie', 'disponible', 'en salle', 'en salles', 'bientot', 'bientôt',
+]
+
+// Extrait 0..n titres candidats de la CAPTION, ordonnes par force decroissante.
+//   1) Motif « Titre (Annee) » : le plus fort (post d'annonce). Plusieurs occurrences
+//      possibles ; on les garde toutes dans l'ordre d'apparition.
+//   2) Titre avant une formule de sortie (« X is releasing this fall » -> « X »).
+// Les candidats junk (hashtag generique seul, fragment vide) sont ecartes en aval
+// par isJunkCandidate au moment de la selection.
+function extractCaptionTitles(caption: string): CaptionTitle[] {
+  const cap = clean(caption)
+  if (!cap) return []
+  const out: CaptionTitle[] = []
+  const seen = new Set<string>()
+
+  const push = (rawTitle: string, year: number | null, via: CaptionTitle['via']) => {
+    const title = cleanCaptionFragment(rawTitle)
+    if (title.length < 2) return
+    const k = `${title.toLowerCase()}|${year ?? ''}`
+    if (seen.has(k)) return
+    seen.add(k)
+    out.push({ title, year, via })
+  }
+
+  // (1) « Titre (Annee) » : un libelle court suivi d'une annee entre parentheses.
+  // Le titre est non-greedy et borne en longueur pour ne pas avaler une phrase entiere.
+  const parenRe = /([\p{L}][\p{L}\p{N} :'!?&.-]{0,48}?)\s*\((19|20)\d{2}\)/gu
+  for (const m of cap.matchAll(parenRe)) {
+    const yearStr = cap.slice(m.index! + m[0].length - 5, m.index! + m[0].length - 1)
+    const year = Number(yearStr)
+    push(m[1], Number.isFinite(year) ? year : null, 'paren')
+  }
+
+  // (2) Titre avant une formule de sortie. On cherche la 1ere formule et on prend ce
+  // qui la precede sur la meme « phrase » (depuis le debut ou apres un separateur fort).
+  const lower = cap.toLowerCase()
+  for (const phrase of RELEASE_PHRASES) {
+    const idx = lower.indexOf(phrase)
+    if (idx <= 0) continue
+    let before = cap.slice(0, idx)
+    // On se limite au dernier segment de phrase (apres . ! ? ou retour ligne) pour ne
+    // pas embarquer le texte d'avant. Retire aussi une annee parenthesee residuelle.
+    const seg = before.split(/[.!?\n]/).pop() ?? before
+    const candidate = seg.replace(/\((19|20)\d{2}\)/g, ' ')
+    const ym = seg.match(/\((19|20)(\d{2})\)/)
+    const year = ym ? Number(`${ym[1]}${ym[2]}`) : null
+    push(candidate, year, 'release')
+    break
+  }
+
+  return out
+}
+
 // ── Cascade 1 : commentaires TikTok via tikwm ────────────────────────────────
 
 // Un commentaire normalisé (sous-ensemble de ce que tikwm renvoie).
@@ -513,6 +594,25 @@ function strictTraktMatch(title: string, candidates: MatchCandidate[]): MatchCan
   return null
 }
 
+// Match Trakt STRICT en tenant compte de l'annee (pour desambiguiser un titre caption
+// « Titre (Annee) »). On exige la quasi-egalite du titre ; si une annee est fournie, on
+// privilegie le candidat dont l'annee est compatible (egale a +/-1 an, pour absorber les
+// ecarts entre annonce et sortie effective). Sans annee, retombe sur strictTraktMatch.
+function strictTraktMatchWithYear(title: string, year: number | null, candidates: MatchCandidate[]): MatchCandidate | null {
+  const a = normForCompare(title)
+  if (!a) return null
+  const titleMatches = candidates.filter((c) => {
+    const b = normForCompare(c.title)
+    return !!b && (b === a || b === `the ${a}` || a === `the ${b}`)
+  })
+  if (!titleMatches.length) return null
+  if (year == null) return titleMatches[0]
+  const yearOk = titleMatches.find((c) => c.year != null && Math.abs(c.year - year) <= 1)
+  // Annee fournie mais aucun candidat compatible : on garde un match titre seul (mieux
+  // que rien ; l'annee servira surtout a departager quand plusieurs titres coincident).
+  return yearOk ?? titleMatches[0]
+}
+
 // Calcule le score de confiance global de la résolution.
 //   high   : titre via motif explicite ou hashtag exact, ET match TMDb proche
 //   medium : titre depuis commentaire sans motif, ou match TMDb seulement fuzzy
@@ -541,6 +641,8 @@ type ConsensusDebugRow = {
   score: number
   trakt_matched: boolean
   junk: boolean
+  // 'comment' (consensus commentaires/reponses) ou 'caption' (extrait de la legende).
+  source: 'comment' | 'caption'
 }
 
 // Resultat de la resolution par les commentaires (forme alignee sur /ingest).
@@ -628,6 +730,7 @@ async function resolveByConsensus(videoUrl: string, fallbackVideoId: string | nu
     score: g.score,
     trakt_matched: matchByTitle.get(normForCompare(g.title)) ?? false,
     junk: isJunkCandidate(g.title),
+    source: 'comment',
   }))
 
   if (!verified.length) {
@@ -731,26 +834,83 @@ async function resolveShare(url: string): Promise<ResolveResult> {
   const h = extractHeuristic(caption, authorName)
 
   // ── Cascade de résolution du titre ──────────────────────────────────────────
-  // 1) commentaires + reponses par CONSENSUS (signal le plus fort, verifie Trakt),
-  // 2) caption + hashtags (existant, fallback non verifie).
+  // 1) titre CAPTION « Titre (Annee) » verifie Trakt (post d'annonce) : candidat FORT,
+  //    prime sur les commentaires UNIQUEMENT s'il matche strictement Trakt.
+  // 2) commentaires + reponses par CONSENSUS (verifie Trakt),
+  // 3) titre CAPTION non verifie (paren/release) en candidat,
+  // 4) caption + hashtags (prose existante, fallback non verifie).
   let resolutionSource: 'comment' | 'caption' | 'none' = 'none'
   let resolvedTitle: string | null = null
   let candidates: MatchCandidate[] = []
   let confidence: 'high' | 'medium' | 'low' = 'low'
   let consensusOut: ConsensusDebugRow[] = []
 
+  // (a) Extraction caption : titres candidats (non junk), verifies Trakt avec annee.
+  const captionTitles = extractCaptionTitles(caption).filter((c) => !isJunkCandidate(c.title))
+  const captionVerified: Array<{ cand: CaptionTitle; match: MatchCandidate | null }> = []
+  for (const c of captionTitles.slice(0, 3)) {
+    const cands = await searchTraktByTitle(c.title)
+    const match = strictTraktMatchWithYear(c.title, c.year, cands)
+    captionVerified.push({ cand: c, match })
+  }
+  // Lignes debug caption (source 'caption'), inserees en tete de la moulinette.
+  const captionRows: ConsensusDebugRow[] = captionVerified.map((v) => ({
+    title: v.cand.year != null ? `${v.cand.title} (${v.cand.year})` : v.cand.title,
+    proposers: 0,
+    likes: 0,
+    score: 0,
+    trakt_matched: !!v.match,
+    junk: false,
+    source: 'caption',
+  }))
+  // Le titre caption qui PRIME : un « Titre (Annee) » qui matche strictement Trakt.
+  const captionStrong = captionVerified.find((v) => v.cand.via === 'paren' && !!v.match) ?? null
+
   if (platform === 'tiktok') {
     const cons = await resolveByConsensus(resolvedUrl, videoId ? String(videoId) : null)
-    consensusOut = cons.groups
-    if (cons.resolvedTitle && cons.confidence) {
+    consensusOut = [...captionRows, ...cons.groups]
+
+    if (captionStrong && captionStrong.match) {
+      // (1) « Titre (Annee) » verifie Trakt : prime sur les commentaires.
+      resolvedTitle = captionStrong.match.title
+      // Le candidat caption en tete, puis les pistes commentaires en complement.
+      candidates = [captionStrong.match, ...cons.candidates.filter(
+        (c) => normForCompare(c.title) !== normForCompare(captionStrong.match!.title),
+      )]
+      confidence = 'high'
+      resolutionSource = 'caption'
+    } else if (cons.resolvedTitle && cons.confidence) {
+      // (2) Consensus commentaires (inchange).
       resolvedTitle = cons.resolvedTitle
       candidates = cons.candidates
       confidence = cons.confidence
       resolutionSource = 'comment'
     }
+  } else {
+    // Plateforme non TikTok (pas de commentaires) : seul le titre caption joue.
+    consensusOut = captionRows
+    if (captionStrong && captionStrong.match) {
+      resolvedTitle = captionStrong.match.title
+      candidates = [captionStrong.match]
+      confidence = 'high'
+      resolutionSource = 'caption'
+    }
   }
 
-  // 2) Fallback caption : on prend la prose nettoyée (ou un hashtag) comme titre.
+  // (3) Aucun gagnant fort : un titre caption (paren/release) sans match Trakt strict
+  // devient candidat (titre seul), classe avant la prose. Le 1er sert de resolved_title.
+  if (!resolvedTitle && captionVerified.length) {
+    const best = captionVerified[0]
+    const cand: MatchCandidate = best.match
+      ? best.match
+      : { type: 'movie', title: best.cand.title, year: best.cand.year, ids: {} }
+    resolvedTitle = cand.title
+    candidates = [cand]
+    confidence = best.match ? 'medium' : 'low'
+    resolutionSource = 'caption'
+  }
+
+  // 4) Fallback caption : on prend la prose nettoyée (ou un hashtag) comme titre.
   // Non verifie Trakt → confiance basse ; la validation manuelle prend le relais.
   if (!resolvedTitle && h.titleGuess) {
     resolvedTitle = h.titleGuess

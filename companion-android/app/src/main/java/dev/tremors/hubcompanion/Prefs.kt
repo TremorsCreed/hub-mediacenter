@@ -25,6 +25,39 @@ object Prefs {
         prefs(ctx).edit().putString(KEY_HUB_URL, normalizeUrl(url)).apply()
     }
 
+    // URL de l'UI du Hub (frontend), derivee de hubUrl.
+    // hubUrl sert aux appels API : marche sur :8020 (backend direct) comme sur
+    // :3050 (proxy nginx). Mais l'UI n'est servie que par :3050. On ne touche
+    // donc qu'au port, en gardant schema + hote :
+    //  - port :8020 -> remplace par :3050 (cas du backend direct).
+    //  - autre port explicite (dont :3050) -> conserve tel quel.
+    //  - pas de port -> force :3050 sur l'hote.
+    fun uiUrl(ctx: Context): String? {
+        val raw = hubUrl(ctx) ?: return null
+        return toUiUrl(raw)
+    }
+
+    fun toUiUrl(raw: String): String {
+        val u = normalizeUrl(raw)
+        val scheme = if (u.startsWith("https://")) "https://" else "http://"
+        // Reste de l'URL apres le schema : hote[:port][/chemin...].
+        val rest = u.substring(scheme.length)
+        val slash = rest.indexOf('/')
+        val authority = if (slash >= 0) rest.substring(0, slash) else rest
+        val path = if (slash >= 0) rest.substring(slash) else ""
+
+        val colon = authority.indexOf(':')
+        val host = if (colon >= 0) authority.substring(0, colon) else authority
+        val port = if (colon >= 0) authority.substring(colon + 1) else null
+
+        val uiPort = when (port) {
+            null -> "3050"   // pas de port explicite : on force l'UI.
+            "8020" -> "3050" // backend direct : on bascule vers l'UI.
+            else -> port     // :3050 ou autre : on garde.
+        }
+        return "$scheme$host:$uiPort$path"
+    }
+
     // Id stable de l'appareil : genere une fois puis conserve. Sert d'identifiant
     // unique cote Hub (POST /api/devices/register).
     fun deviceId(ctx: Context): String {

@@ -958,5 +958,7 @@ export const api = {
     // Décision sur un item de la boîte de réception : sort l'item de 'pending'.
     decide: (id: number, action: 'validated' | 'wishlist' | 'ignored') =>
       post<{ ok: boolean }>(`/companion/inbox/${id}/decide`, { action }),
+    // Suppression définitive d'un item de la boîte de réception.
+    delete: (id: number) => del<{ ok: boolean }>(`/companion/inbox/${id}`),
   }
 }

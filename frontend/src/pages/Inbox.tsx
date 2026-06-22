@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, CompanionInboxItem } from '../api'
 import CompanionFicheCard from '../components/CompanionFicheCard'
-import { Loader2, Inbox as InboxIcon, Film, Tv, User, ChevronRight } from 'lucide-react'
+import { Loader2, Inbox as InboxIcon, Film, Tv, User, ChevronRight, Trash2 } from 'lucide-react'
 
 // Badge de niveau de confiance (couleur claire, lisible sans la couleur seule).
 const CONF: Record<string, { label: string; cls: string }> = {
@@ -22,6 +22,7 @@ export default function Inbox() {
   const [items, setItems] = useState<CompanionInboxItem[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState<CompanionInboxItem | null>(null)
+  const [deleting, setDeleting] = useState<number | null>(null)
 
   const load = (status: Tab) => {
     setLoading(true)
@@ -40,6 +41,23 @@ export default function Inbox() {
     // Une décision peut faire passer l'item d'un onglet à l'autre : on recharge
     // l'onglet courant pour refléter l'état exact côté backend.
     load(tab)
+  }
+
+  // Suppression d'un item (icône poubelle) : retire de la liste et notifie le badge.
+  const onDelete = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation()
+    if (deleting != null) return
+    setDeleting(id)
+    try {
+      await api.companion.delete(id)
+      setItems(prev => prev.filter(i => i.id !== id))
+      if (open?.id === id) setOpen(null)
+      notifyInboxChanged()
+    } catch {
+      /* on laisse l'item en place si la suppression échoue */
+    } finally {
+      setDeleting(null)
+    }
   }
 
   return (
@@ -110,6 +128,17 @@ export default function Inbox() {
                   <div className="text-[11px] text-zinc-600 flex items-center gap-1 mt-0.5"><User size={10} /> {item.author}</div>
                 )}
               </div>
+              <span
+                role="button"
+                tabIndex={0}
+                title="Supprimer"
+                aria-label="Supprimer"
+                onClick={e => onDelete(e, item.id)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onDelete(e as any, item.id) }}
+                className="shrink-0 w-9 h-9 flex items-center justify-center rounded text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors"
+              >
+                {deleting === item.id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+              </span>
               <ChevronRight size={16} className="text-zinc-600 shrink-0" />
             </button>
           )

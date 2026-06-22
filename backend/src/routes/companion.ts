@@ -243,6 +243,146 @@ function extractTitlesFromComments(comments: TikComment[]): TitleCandidate[] {
   return deduped
 }
 
+// ── Consensus : pool commentaires + reponses, scoring par nombre de proposeurs ──
+
+// Une occurrence d'un titre candidat dans le pool (un commentaire OU une reponse).
+// likes = digg_count du commentaire/reponse qui propose ce titre.
+type TitleOccurrence = { title: string; via: 'pattern' | 'quoted' | 'bare'; likes: number }
+
+// Recupere les reponses d'un commentaire via tikwm. Renvoie [] en cas d'echec (jamais
+// d'erreur lancee). videoId = aweme id ; commentId = id du commentaire parent.
+async function fetchTikTokReplies(videoId: string, commentId: string, count = 30): Promise<TikComment[]> {
+  try {
+    const u = `https://www.tikwm.com/api/comment/reply?video_id=${encodeURIComponent(videoId)}&comment_id=${encodeURIComponent(commentId)}&count=${count}&cursor=0`
+    const r = await fetch(u, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000) as any })
+    if (!r.ok) return []
+    const j: any = await r.json()
+    if (!j || j.code !== 0 || !j.data?.comments) return []
+    return (j.data.comments as any[]).map((c) => ({
+      text: clean(c?.text),
+      diggCount: Number(c?.digg_count ?? 0),
+      replyTotal: Number(c?.reply_total ?? 0),
+      nickname: c?.user?.nickname ? clean(c.user.nickname) : null,
+    }))
+  } catch {
+    return []
+  }
+}
+
+// Recupere la liste brute des commentaires (avec leur id et video_id) pour pouvoir
+// ensuite aller chercher les reponses. tikwm renvoie cid (id du commentaire) et
+// video_id (aweme id) sur chaque entree.
+type RawComment = TikComment & { cid: string | null; videoId: string | null }
+async function fetchTikTokCommentsRaw(videoUrl: string, count = 30): Promise<RawComment[] | null> {
+  try {
+    const u = `https://www.tikwm.com/api/comment/list?url=${encodeURIComponent(videoUrl)}&count=${count}&cursor=0`
+    const r = await fetch(u, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000) as any })
+    if (!r.ok) return null
+    const j: any = await r.json()
+    if (!j || j.code !== 0 || !j.data?.comments) return null
+    return (j.data.comments as any[]).map((c) => ({
+      text: clean(c?.text),
+      diggCount: Number(c?.digg_count ?? 0),
+      replyTotal: Number(c?.reply_total ?? 0),
+      nickname: c?.user?.nickname ? clean(c.user.nickname) : null,
+      cid: c?.cid != null ? String(c.cid) : (c?.id != null ? String(c.id) : null),
+      videoId: c?.video_id != null ? String(c.video_id) : (c?.aweme_id != null ? String(c.aweme_id) : null),
+    }))
+  } catch {
+    return null
+  }
+}
+
+// Un commentaire court qui ressemble a un titre (peu de mots, pas une phrase / question).
+// Sert a capter les reponses du type « We Bury the Dead » donnees sans motif explicite.
+function looksLikeBareTitle(text: string): string | null {
+  const t = clean(text)
+  if (!t) return null
+  // Ecarte les questions et les demandes (« titre ? », « c'est quoi », etc.).
+  if (/[?]/.test(t)) return null
+  if (/\b(titre|title|svp|please|quoi|name|nom)\b/i.test(t)) return null
+  const cleaned = cleanCandidateTitle(t)
+  if (cleaned.length < 2 || cleaned.length > 60) return null
+  const words = cleaned.split(/\s+/)
+  // Un titre fait en general 1 a 7 mots ; au-dela c'est une phrase / une blague.
+  if (words.length < 1 || words.length > 7) return null
+  return cleaned
+}
+
+// Extrait toutes les occurrences de titres candidats d'un pool (commentaires + reponses).
+// Chaque commentaire peut produire AU PLUS une occurrence (la plus forte : pattern >
+// quoted > bare), pour ne pas qu'un meme commentaire compte plusieurs fois.
+function extractOccurrences(pool: TikComment[]): TitleOccurrence[] {
+  const out: TitleOccurrence[] = []
+  for (const c of pool) {
+    const text = c.text
+    if (!text) continue
+
+    let matched = false
+    // 1) Motif explicite.
+    for (const re of TITLE_PATTERNS) {
+      const m = text.match(re)
+      if (m && m[1]) {
+        const title = cleanCandidateTitle(m[1])
+        if (title.length >= 2) { out.push({ title, via: 'pattern', likes: c.diggCount }); matched = true; break }
+      }
+    }
+    if (matched) continue
+
+    // 2) Titre entre guillemets.
+    for (const re of QUOTED_PATTERNS) {
+      const m = text.match(re)
+      if (m && m[1]) {
+        const title = cleanCandidateTitle(m[1])
+        if (title.length >= 2) { out.push({ title, via: 'quoted', likes: c.diggCount }); matched = true; break }
+      }
+    }
+    if (matched) continue
+
+    // 3) Commentaire court ressemblant a un titre (signal faible mais cumulable).
+    const bare = looksLikeBareTitle(text)
+    if (bare) out.push({ title: bare, via: 'bare', likes: c.diggCount })
+  }
+  return out
+}
+
+// Un titre distinct apres regroupement des occurrences equivalentes.
+type ConsensusGroup = {
+  title: string        // forme d'affichage (occurrence la plus likee du groupe)
+  proposers: number    // nombre d'occurrences distinctes proposant ce titre
+  score: number        // proposers * POIDS + somme(min(likes, plafond))
+  strongest: 'pattern' | 'quoted' | 'bare'
+}
+
+// Le NOMBRE de personnes qui proposent un titre prime ; les likes ne sont qu'un bonus
+// plafonne (anti viral unique : 50 likes sur une blague ne battent pas 3 personnes).
+const CONSENSUS_PROPOSER_WEIGHT = 100
+const CONSENSUS_LIKES_CAP = 50
+
+// Regroupe les occurrences par titre normalise et calcule le score consensus.
+function consensusGroups(occurrences: TitleOccurrence[]): ConsensusGroup[] {
+  const viaRank = (v: TitleOccurrence['via']) => (v === 'pattern' ? 0 : v === 'quoted' ? 1 : 2)
+  const groups = new Map<string, { occ: TitleOccurrence[]; }>()
+  for (const o of occurrences) {
+    const k = normForCompare(o.title)
+    if (!k) continue
+    if (!groups.has(k)) groups.set(k, { occ: [] })
+    groups.get(k)!.occ.push(o)
+  }
+  const out: ConsensusGroup[] = []
+  for (const { occ } of groups.values()) {
+    const proposers = occ.length
+    const likeBonus = occ.reduce((s, o) => s + Math.min(o.likes, CONSENSUS_LIKES_CAP), 0)
+    const score = proposers * CONSENSUS_PROPOSER_WEIGHT + likeBonus
+    // Forme d'affichage : l'occurrence la mieux classee (motif fort, puis plus likee).
+    const display = [...occ].sort((a, b) => viaRank(a.via) - viaRank(b.via) || b.likes - a.likes)[0]
+    const strongest = occ.reduce<'pattern' | 'quoted' | 'bare'>((best, o) => viaRank(o.via) < viaRank(best) ? o.via : best, 'bare')
+    out.push({ title: display.title, proposers, score, strongest })
+  }
+  out.sort((a, b) => b.score - a.score)
+  return out
+}
+
 // ── Cascade : recherche TMDb / Trakt ─────────────────────────────────────────
 
 type MatchCandidate = {
@@ -331,6 +471,70 @@ function scoreConfidence(
   return 'low'
 }
 
+// ── Resolution par consensus : commentaires + reponses → titre verifie Trakt ──
+
+// Resultat de la resolution par les commentaires (forme alignee sur /ingest).
+type ConsensusResult = {
+  resolvedTitle: string | null
+  candidates: MatchCandidate[]
+  confidence: 'high' | 'medium' | 'low' | null
+  // Pour la trace / le debug front : les meilleurs groupes consensus avec leur score.
+  groups: { title: string; proposers: number; score: number }[]
+}
+
+// Petit delai entre appels tikwm pour respecter le rate limit (environ 1 req/s).
+function delay(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)) }
+
+// Resout le titre par CONSENSUS : un titre propose par PLUSIEURS personnes (en cumulant
+// des likes plafonnes) bat un commentaire viral unique. Construit un pool commentaires +
+// reponses (limite aux ~8 commentaires les plus repondus pour le rate limit), score, puis
+// ne garde QUE les meilleurs candidats ayant une vraie correspondance Trakt.
+async function resolveByConsensus(videoUrl: string, fallbackVideoId: string | null): Promise<ConsensusResult> {
+  const empty: ConsensusResult = { resolvedTitle: null, candidates: [], confidence: null, groups: [] }
+  const raw = await fetchTikTokCommentsRaw(videoUrl)
+  if (!raw || !raw.length) return empty
+
+  // Pool = tous les commentaires (+ reponses des plus repondus).
+  const pool: TikComment[] = raw.map((c) => ({ text: c.text, diggCount: c.diggCount, replyTotal: c.replyTotal, nickname: c.nickname }))
+
+  // On va chercher les reponses des ~8 commentaires les plus repondus (rate limit).
+  const withReplies = raw
+    .filter((c) => c.replyTotal > 0 && c.cid)
+    .sort((a, b) => b.replyTotal - a.replyTotal)
+    .slice(0, 8)
+  for (const c of withReplies) {
+    const vid = c.videoId || fallbackVideoId
+    if (!vid || !c.cid) continue
+    const replies = await fetchTikTokReplies(vid, c.cid)
+    for (const r of replies) pool.push(r)
+    await delay(1100)
+  }
+
+  // Occurrences → groupes consensus tries par score.
+  const occurrences = extractOccurrences(pool)
+  const groups = consensusGroups(occurrences)
+  if (!groups.length) return empty
+
+  // Verification Trakt sur les meilleurs candidats : on ne garde que ceux qui ont une
+  // vraie correspondance. Le titre retenu = le mieux score ET verifie.
+  const TOP_TO_VERIFY = 5
+  for (const g of groups.slice(0, TOP_TO_VERIFY)) {
+    const cands = await searchTraktByTitle(g.title)
+    if (cands.length && hasCloseMatch(g.title, cands)) {
+      // Confiance : plusieurs proposeurs distincts + match → high ; 1 seul + match → medium.
+      const confidence: 'high' | 'medium' = g.proposers >= 2 ? 'high' : 'medium'
+      return {
+        resolvedTitle: g.title,
+        candidates: cands,
+        confidence,
+        groups: groups.slice(0, TOP_TO_VERIFY).map((x) => ({ title: x.title, proposers: x.proposers, score: x.score })),
+      }
+    }
+  }
+  // Rien de verifie : la recherche manuelle prendra le relais.
+  return { ...empty, groups: groups.slice(0, TOP_TO_VERIFY).map((x) => ({ title: x.title, proposers: x.proposers, score: x.score })) }
+}
+
 // ── POST /ingest : reçoit un partage, résout, extrait, stocke en boîte de réception ──
 const IngestSchema = z.object({
   url: z.string().optional(),
@@ -361,34 +565,35 @@ router.post('/ingest', async (req, res) => {
   const h = extractHeuristic(caption, authorName)
 
   // ── Cascade de résolution du titre ──────────────────────────────────────────
-  // 1) commentaires (signal le plus fort), 2) caption + hashtags (existant).
+  // 1) commentaires + reponses par CONSENSUS (signal le plus fort, verifie Trakt),
+  // 2) caption + hashtags (existant, fallback non verifie).
   let resolutionSource: 'comment' | 'caption' | 'none' = 'none'
-  let chosen: TitleCandidate | null = null
-  let commentCandidates: TitleCandidate[] = []
+  let resolvedTitle: string | null = null
+  let candidates: MatchCandidate[] = []
+  let confidence: 'high' | 'medium' | 'low' = 'low'
+  let consensusGroupsOut: { title: string; proposers: number; score: number }[] = []
 
   if (platform === 'tiktok') {
-    const comments = await fetchTikTokComments(resolvedUrl)
-    if (comments && comments.length) {
-      commentCandidates = extractTitlesFromComments(comments)
-      if (commentCandidates.length) {
-        chosen = commentCandidates[0]
-        resolutionSource = 'comment'
-      }
+    const cons = await resolveByConsensus(resolvedUrl, videoId ? String(videoId) : null)
+    consensusGroupsOut = cons.groups
+    if (cons.resolvedTitle && cons.confidence) {
+      resolvedTitle = cons.resolvedTitle
+      candidates = cons.candidates
+      confidence = cons.confidence
+      resolutionSource = 'comment'
     }
   }
 
   // 2) Fallback caption : on prend la prose nettoyée (ou un hashtag) comme titre.
-  if (!chosen && h.titleGuess) {
-    chosen = { title: h.titleGuess, source: 'caption', via: 'bare', diggCount: 0 }
+  // Non verifie Trakt → confiance basse ; la validation manuelle prend le relais.
+  if (!resolvedTitle && h.titleGuess) {
+    resolvedTitle = h.titleGuess
+    candidates = await searchTraktByTitle(h.titleGuess)
+    confidence = candidates.length && hasCloseMatch(h.titleGuess, candidates) ? 'medium' : 'low'
     resolutionSource = 'caption'
   }
 
-  // ── Recherche TMDb / Trakt sur le meilleur titre (vide sans TRAKT_CLIENT_ID) ──
-  const candidates = chosen ? await searchTraktByTitle(chosen.title) : []
   const tmdbSearchRan = !!TRAKT_CLIENT_ID
-
-  const confidence = scoreConfidence(chosen, candidates)
-  const resolvedTitle = chosen ? chosen.title : null
 
   // type_guess / year_guess depuis le meilleur match si dispo, sinon l'heuristique.
   const topMatch = candidates[0] ?? null
@@ -427,7 +632,7 @@ router.post('/ingest', async (req, res) => {
     confidence,
     candidates,
     tmdb_search_ran: tmdbSearchRan,
-    comment_candidates: commentCandidates,
+    consensus: consensusGroupsOut,
     extraction: h,
     note: oembed ? 'oembed_ok' : 'oembed_indisponible',
   })
@@ -681,6 +886,23 @@ router.post('/inbox/:id/decide', async (req, res) => {
     args: [d.decision, d.matched_app ?? null, d.matched_ref_id ?? null, d.matched_title ?? null, Date.now(), id],
   })
   res.json({ ok: true, id, status: d.decision })
+})
+
+// ── DELETE /inbox/:id : retire un item de la boite de reception (Decouvertes) ──
+// Meme controle de propriete que /inbox/:id/decide : admin, proprietaire, ou item
+// sans profil (user_id null).
+router.delete('/inbox/:id', async (req, res) => {
+  const { userId, isAdmin } = ctx(req)
+  const id = parseInt(req.params.id, 10)
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'id invalide' })
+
+  const { rows } = await db.execute({ sql: 'SELECT user_id FROM companion_inbox WHERE id = ?', args: [id] })
+  if (!rows.length) return res.status(404).json({ error: 'item introuvable' })
+  const owner = (rows[0] as any).user_id as number | null
+  if (!isAdmin && owner != null && owner !== userId) return res.status(403).json({ error: 'forbidden' })
+
+  await db.execute({ sql: 'DELETE FROM companion_inbox WHERE id = ?', args: [id] })
+  res.json({ ok: true })
 })
 
 // ── GET /search?q=... : recherche manuelle de titre (Trakt) ───────────────────

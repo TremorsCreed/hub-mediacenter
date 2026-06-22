@@ -255,7 +255,9 @@ class ShareActivity : AppCompatActivity() {
     }
 
     private fun onOpenHub() {
-        val url = Prefs.hubUrl(this) ?: return
+        // UI du Hub (frontend, :3050), derivee de hubUrl : meme si l'URL stockee
+        // pointe sur le backend (:8020), uiUrl la ramene vers l'UI.
+        val url = Prefs.uiUrl(this) ?: return
         // Section Decouvertes du Hub (frontend). On ouvre le navigateur sur la racine
         // avec l'ancre #decouvertes ; le routeur du Hub gere l'ancre ou ignore.
         val target = "$url/#decouvertes"

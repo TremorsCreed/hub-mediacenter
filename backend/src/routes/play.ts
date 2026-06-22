@@ -297,7 +297,10 @@ type PlayResult = { status: number; body: any }
 // POST /play/transfer (« continuer sur… »). Retourne { status, body } au lieu d'écrire
 // la réponse, pour que les deux routes décident du code HTTP.
 async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, req: any): Promise<PlayResult> {
-  const { query, catalog_id, ean, plex_id, iptv_stream_id, iptv_type, iptv_ext, external_url, external_platform, spotify_uri, spotify_device_id, title, thumb, resume, resume_position_ms, up_next, series_duration_ms, device_id, app, requester } = input
+  const { query, catalog_id, ean, plex_id, iptv_stream_id, spotify_uri, spotify_device_id, title, resume, resume_position_ms, up_next, series_duration_ms, device_id, app, requester } = input
+  // Mutables : le fallback historique (catalog_id synthetique introuvable en catalog)
+  // peut reconstituer ces champs depuis playback_progress avant la resolution.
+  let { iptv_type, iptv_ext, external_url, external_platform, thumb } = input
 
   // 0. Spotify : flux à part — contrôle Spotify Connect via Web API, pas le catalogue
   //    ni l'agent WS. Le token « suit le profil actif » : on lit avec le compte du
@@ -350,6 +353,39 @@ async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, 
   } else if (catalog_id) {
     const { rows } = await db.execute({ sql: 'SELECT * FROM catalog WHERE id = ?', args: [catalog_id] })
     entry = (rows[0] as any) ?? null
+    // Fallback historique : un item d'historique relance via catalog_id, mais ce dernier
+    // est SYNTHETIQUE (plex:RATINGKEY, iptv:TYPE:STREAMID, ext:...) et n'existe pas dans
+    // catalog. On reconstruit alors la lecture depuis la ligne de progression (media_key
+    // = catalog_id), qui porte les champs de relecture (plex_id / iptv_* / external_*).
+    if (!entry) {
+      const { rows: prRows } = await db.execute({ sql: 'SELECT * FROM playback_progress WHERE media_key = ?', args: [catalog_id] })
+      const pr = prRows[0] as any | undefined
+      if (pr) {
+        if (pr.plex_id) {
+          entry = { id: catalog_id, title: pr.title ?? title ?? 'Plex', type: 'movie', plex_id: String(pr.plex_id) } as CatalogEntry
+        } else if (pr.iptv_stream_id) {
+          const t = (pr.iptv_type ?? 'live') as string
+          entry = {
+            id: catalog_id,
+            title: pr.title ?? title ?? 'IPTV',
+            type: (t === 'vod' ? 'vod' : t === 'series' ? 'episode' : 'live_channel') as any,
+            tivimate_id: String(pr.iptv_stream_id),
+          } as CatalogEntry
+          // Alimente le meme flux que si ces parametres avaient ete passes en entree.
+          iptv_type = (t === 'live' || t === 'vod' || t === 'series') ? (t as any) : undefined
+          iptv_ext = pr.iptv_ext ? String(pr.iptv_ext) : undefined
+        } else if (pr.external_url) {
+          entry = {
+            id: catalog_id,
+            title: pr.title ?? title ?? 'External',
+            type: 'movie',
+          } as CatalogEntry
+          external_url = String(pr.external_url)
+          external_platform = pr.external_platform ? String(pr.external_platform) : undefined
+        }
+        if (entry && pr.thumb && !thumb) thumb = String(pr.thumb)
+      }
+    }
   } else if (ean) {
     const { rows } = await db.execute({
       sql: `SELECT c.* FROM catalog c LEFT JOIN ean_mappings e ON e.catalog_id = c.id

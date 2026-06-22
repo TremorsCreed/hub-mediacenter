@@ -160,8 +160,33 @@ export default function UserDashboard() {
       // Rien dans Plex : on élargit au reste du catalogue (IPTV) puis au streaming.
       const m = await api.companion.match({ title: item.title, year: item.year ?? undefined, type: wantShow ? 'show' : 'movie' })
       if (m.status === 'in_catalogue' && (m.iptv?.length ?? 0) > 0) {
-        // L'écran IPTV ne lit pas de recherche depuis l'URL : on ouvre le module et
-        // on indique quoi chercher (pré-remplissage non disponible).
+        const all = m.iptv ?? []
+        // Un flux « vod » se lance directement (streamId = stream_id du film). Un flux
+        // « series » a besoin d'un épisode précis (le streamId est le series_id) : on
+        // ne peut pas le lancer sans passer par le choix saison/épisode → repli module.
+        const vods = all.filter(h => h.kind === 'vod')
+        if (vods.length > 0) {
+          if (!deviceId) { flash('Choisis un device', false); return }
+          // Meilleure langue : celle du profil si elle matche, sinon la première.
+          const pref = (currentUser?.preferred_lang ?? '').toLowerCase()
+          const hit = vods.find(h => (h.language ?? '').toLowerCase() === pref) ?? vods[0]
+          const langTxt = hit.language ? ` (${hit.language})` : ''
+          try {
+            const pr = await api.play({
+              iptv_stream_id: hit.streamId, iptv_type: hit.kind,
+              title: item.title, thumb: item.poster ?? undefined,
+              app: 'iptv', device_id: deviceId, requester: 'manual',
+            })
+            flash(`▶ ${pr.title}${langTxt}`, true); return
+          } catch (e: any) {
+            // Échec de lecture IPTV : on ne bloque pas, on ouvre le module en repli.
+            navigate('/catalog/iptv')
+            flash(`Dispo en IPTV : ouvre le module pour lancer « ${item.title} »`, false)
+            return
+          }
+        }
+        // Seulement des séries IPTV : l'écran IPTV ne lit pas de recherche depuis l'URL,
+        // on ouvre le module et on indique quoi chercher (choix de l'épisode requis).
         navigate('/catalog/iptv')
         flash(`Dispo en IPTV : ouvre le module pour lancer « ${item.title} »`, true)
         return

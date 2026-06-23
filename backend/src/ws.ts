@@ -302,11 +302,15 @@ async function persistProgress(deviceId: string, m: MediaState): Promise<void> {
     // titre correspond à ce qui joue réellement — sinon on laisse fuiter le média/poster
     // d'un lancement précédent (ex. poster d'Alien collé sur « Distant »).
     const lc = lastCatalog.get(deviceId)
-    const lcMatch = !!(lc && sameTitle(lc.title, m.title))
-    const psMatch = !!(ps && sameTitle(ps.title as string, m.title))
+    // Plex (et quelques lecteurs) n'exposent pas de titre via MediaSession → m.title est
+    // vide. Sans titre, on ne pourrait jamais identifier ni persister la progression : on
+    // fait alors confiance au dernier média lancé par le Hub sur CE device (lastCatalog).
+    const titleKnown = !!(m.title && m.title.trim())
+    const lcMatch = !!(lc && (titleKnown ? sameTitle(lc.title, m.title) : true))
+    const psMatch = !!(ps && titleKnown && sameTitle(ps.title as string, m.title))
     const catalogId = lcMatch ? lc!.catalog_id : (psMatch ? (ps.catalog_id as string) || null : null)
     const app = m.app || (psMatch ? (ps.app as string) : null) || null
-    const title = m.title || (psMatch ? (ps.title as string) : null) || null
+    const title = (titleKnown ? m.title : null) || (lcMatch ? lc!.title : null) || (psMatch ? (ps.title as string) : null) || null
     const mediaKey = catalogId || (app && title ? `${app}|${title}` : null)
     if (!mediaKey) return
     const thumb = m.art || (lcMatch ? lc!.thumb : null) || (psMatch ? (ps.thumb as string) : null) || null

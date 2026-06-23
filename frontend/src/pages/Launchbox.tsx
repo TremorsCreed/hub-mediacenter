@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Gamepad2, Search, RefreshCw, Play, Loader2, AlertCircle, RotateCcw, Library, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Gamepad2, Search, RefreshCw, Play, Loader2, AlertCircle, RotateCcw, Library, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
 import FavoriteButton from '../components/FavoriteButton'
 import AddToPlaylist from '../components/AddToPlaylist'
 import { CatalogDndProvider, DraggableMedia } from '../components/CatalogDnd'
 import { usePersistedState } from '../usePersistedState'
+import MobileSheet from '../components/MobileSheet'
 
 const BASE = '/api/launchbox'
 
@@ -152,6 +153,7 @@ export default function Launchbox() {
   const [resetting, setResetting] = useState(false)
   // Cascade : développée à l'entrée du module (la sidebar système, elle, se réduit)
   const [platformsCollapsed, setPlatformsCollapsed] = useState(false)
+  const [platSheetOpen, setPlatSheetOpen] = useState(false) // plateformes (mobile)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
@@ -271,13 +273,50 @@ export default function Launchbox() {
     finally { setReloading(false) }
   }
 
+  // Liste des plateformes, réutilisée par la sidebar desktop et le sheet mobile.
+  const platformsList = (collapsed: boolean) => (
+    <nav className="flex-1 py-1 overflow-y-auto">
+      <button
+        onClick={() => { setSelectedPlatform(''); setPlatSheetOpen(false) }}
+        title={collapsed ? 'Toutes les plateformes' : undefined}
+        className={`w-full flex items-center py-3 text-sm transition-colors text-left border-l-2 ${
+          collapsed ? 'justify-center px-0' : 'gap-2.5 px-4'
+        } ${
+          selectedPlatform === ''
+            ? 'bg-zinc-800 text-white border-amber-500'
+            : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 border-transparent'
+        }`}
+      >
+        <Library size={15} strokeWidth={1.8} />
+        {!collapsed && <span className="truncate">Toutes les plateformes</span>}
+      </button>
+      {platforms.map(p => (
+        <button
+          key={p}
+          onClick={() => { setSelectedPlatform(p); setPlatSheetOpen(false) }}
+          title={collapsed ? p : undefined}
+          className={`w-full flex items-center py-3 text-sm transition-colors text-left border-l-2 ${
+            collapsed ? 'justify-center px-0' : 'gap-2.5 px-4'
+          } ${
+            selectedPlatform === p
+              ? 'bg-zinc-800 text-white border-amber-500'
+              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 border-transparent'
+          }`}
+        >
+          <Gamepad2 size={15} strokeWidth={1.8} />
+          {!collapsed && <span className="truncate">{p}</span>}
+        </button>
+      ))}
+    </nav>
+  )
+
   return (
     <CatalogDndProvider>
     <div className="flex h-full">
 
-      {/* ── Sidebar plateformes (collapsible) ─────────────────────── */}
+      {/* ── Sidebar plateformes (desktop ; masquée sur mobile → sheet) ─────────────────────── */}
       <aside
-        className={`${platformsCollapsed ? 'w-14 cursor-pointer' : 'w-52'} shrink-0 bg-zinc-950/60 border-r border-zinc-800 flex flex-col transition-[width] duration-200 overflow-hidden`}
+        className={`hidden md:flex ${platformsCollapsed ? 'w-14 cursor-pointer' : 'w-52'} shrink-0 bg-zinc-950/60 border-r border-zinc-800 flex-col transition-[width] duration-200 overflow-hidden`}
         // Vue élargie d'un simple clic n'importe où sur la sidebar réduite
         onClick={e => {
           if (platformsCollapsed && !(e.target as HTMLElement).closest('button')) setPlatformsCollapsed(false)
@@ -289,39 +328,7 @@ export default function Launchbox() {
             : <span className="text-sm font-semibold text-white truncate">LaunchBox</span>
           }
         </div>
-        <nav className="flex-1 py-1 overflow-y-auto">
-          <button
-            onClick={() => setSelectedPlatform('')}
-            title={platformsCollapsed ? 'Toutes les plateformes' : undefined}
-            className={`w-full flex items-center py-3 text-sm transition-colors text-left border-l-2 ${
-              platformsCollapsed ? 'justify-center px-0' : 'gap-2.5 px-4'
-            } ${
-              selectedPlatform === ''
-                ? 'bg-zinc-800 text-white border-amber-500'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 border-transparent'
-            }`}
-          >
-            <Library size={15} strokeWidth={1.8} />
-            {!platformsCollapsed && <span className="truncate">Toutes les plateformes</span>}
-          </button>
-          {platforms.map(p => (
-            <button
-              key={p}
-              onClick={() => setSelectedPlatform(p)}
-              title={platformsCollapsed ? p : undefined}
-              className={`w-full flex items-center py-3 text-sm transition-colors text-left border-l-2 ${
-                platformsCollapsed ? 'justify-center px-0' : 'gap-2.5 px-4'
-              } ${
-                selectedPlatform === p
-                  ? 'bg-zinc-800 text-white border-amber-500'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 border-transparent'
-              }`}
-            >
-              <Gamepad2 size={15} strokeWidth={1.8} />
-              {!platformsCollapsed && <span className="truncate">{p}</span>}
-            </button>
-          ))}
-        </nav>
+        {platformsList(platformsCollapsed)}
         <div className="h-[45px] shrink-0 border-t border-zinc-800 flex items-center px-3">
           <button
             onClick={() => setPlatformsCollapsed(v => !v)}
@@ -333,25 +340,40 @@ export default function Launchbox() {
         </div>
       </aside>
 
+      {/* Sheet plateformes (mobile) */}
+      <MobileSheet open={platSheetOpen} onClose={() => setPlatSheetOpen(false)} title="Plateformes">
+        {platformsList(false)}
+      </MobileSheet>
+
       {/* ── Zone de contenu ───────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* Barre de contrôles */}
-        <div className="flex items-center gap-2 px-4 min-h-[53px] border-b border-zinc-800 shrink-0 flex-wrap">
-          <div className="relative flex-1 min-w-[180px] max-w-sm">
+        <div className="flex items-center gap-2 px-3 md:px-4 py-2 md:py-0 md:min-h-[53px] border-b border-zinc-800 shrink-0 flex-wrap">
+          {/* Plateformes (mobile) : ouvre le sheet */}
+          <button
+            onClick={() => setPlatSheetOpen(true)}
+            className="md:hidden flex items-center gap-2 h-9 px-3 bg-zinc-900 border border-zinc-800 rounded text-sm text-zinc-200 shrink-0"
+          >
+            <Gamepad2 size={15} strokeWidth={1.8} />
+            <span className="truncate max-w-[34vw]">{selectedPlatform || 'Plateformes'}</span>
+            <ChevronDown size={14} className="text-zinc-500" />
+          </button>
+
+          <div className="relative basis-full order-last md:order-none md:basis-auto md:flex-1 md:min-w-[180px] md:max-w-sm">
             <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
             <input
               type="text"
               placeholder="Rechercher un jeu…"
               value={q}
               onChange={e => setQ(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded pl-8 pr-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-600"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded pl-8 pr-3 py-2 md:py-1.5 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-600"
             />
           </div>
 
           {/* Tri (serveur : liste paginée) */}
           <select
-            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600 shrink-0"
+            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-2 md:py-1.5 text-sm focus:outline-none focus:border-zinc-600 shrink-0"
             value={sort}
             onChange={e => setSort(e.target.value)}
             title="Tri"

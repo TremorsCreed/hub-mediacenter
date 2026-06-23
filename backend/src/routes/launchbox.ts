@@ -37,7 +37,8 @@ async function persistGames(games: LbGame[]) {
     const placeholders = chunk.map(() => '(?, ?, ?, ?)').join(', ')
     const args = chunk.flatMap(g => [g.id, g.title, g.platform, g.publisher])
     await db.execute({
-      sql: `INSERT OR REPLACE INTO lb_games (id, title, platform, publisher) VALUES ${placeholders}`,
+      sql: `INSERT INTO lb_games (id, title, platform, publisher) VALUES ${placeholders}
+            ON CONFLICT (id) DO UPDATE SET title = excluded.title, platform = excluded.platform, publisher = excluded.publisher`,
       args
     })
   }
@@ -45,11 +46,11 @@ async function persistGames(games: LbGame[]) {
 
 async function loadFromDb(): Promise<LbGame[]> {
   const rows = await db.execute('SELECT id, title, platform, publisher FROM lb_games ORDER BY title')
-  return rows.rows.map(r => ({
-    id: r[0] as string,
-    title: r[1] as string,
-    platform: r[2] as string,
-    publisher: (r[3] as string) ?? ''
+  return rows.rows.map((r: any) => ({
+    id: r.id as string,
+    title: r.title as string,
+    platform: r.platform as string,
+    publisher: (r.publisher as string) ?? ''
   }))
 }
 

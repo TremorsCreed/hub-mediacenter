@@ -1,22 +1,146 @@
-import { createClient, Client } from '@libsql/client'
-import path from 'path'
-import fs from 'fs'
+import { Pool, PoolClient, types } from 'pg'
 import { hashPin } from './auth'
 
-const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'data', 'hub.db')
-const dir = path.dirname(DB_PATH)
-if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+// ─────────────────────────────────────────────────────────────────────────────
+// Adaptateur de compatibilité libsql → PostgreSQL.
+// Le reste du code appelle toujours db.execute({sql, args}) / executeMultiple /
+// batch / transaction comme avec @libsql/client. Cette couche traduit ces appels
+// vers node-postgres : placeholders ? → $1..$n, et un retour {rows, rowsAffected}.
+// Objectif : migrer le moteur sans toucher aux ~215 appels répartis dans le code.
+// ─────────────────────────────────────────────────────────────────────────────
 
-export const db: Client = createClient({ url: `file:${DB_PATH}` })
+// pg renvoie les BIGINT (oid 20) en string par défaut (précision JS). Nos colonnes
+// de timestamps epoch ms sont en BIGINT : on les reparse en number. Sûr tant que la
+// valeur reste < 2^53 (epoch ms ~1.7e12, ids applicatifs bien en dessous).
+types.setTypeParser(20, (v) => (v === null ? null : parseInt(v, 10)))
+
+const rawUrl = process.env.DATABASE_URL || 'postgres://hub@192.168.1.54:5432/hub?sslmode=require'
+
+// TLS pg01 = cert self-signed sur le LAN → on chiffre mais sans valider la chaîne.
+// On retire sslmode de l'URL : les versions récentes de pg le traitent comme
+// verify-full (validation stricte), ce qui écraserait notre rejectUnauthorized:false.
+// Le chiffrement reste piloté par l'objet ssl ci-dessous.
+const needSsl = /sslmode=/i.test(rawUrl) || process.env.PGSSL === '1'
+const connectionString = rawUrl.replace(/([?&])sslmode=[^&]*(&|$)/i, '$1').replace(/[?&]+$/, '')
+
+const pool = new Pool({
+  connectionString,
+  ssl: needSsl ? { rejectUnauthorized: false } : undefined,
+  max: Number(process.env.PG_POOL_MAX || 10),
+})
+
+pool.on('error', (err) => {
+  console.error('[db] erreur client pg inactif:', err.message)
+})
+
+export type Row = Record<string, any>
+export interface ExecResult {
+  rows: Row[]
+  rowsAffected: number
+}
+export type Stmt = string | { sql: string; args?: any[] }
+
+// Convertit les placeholders positionnels ? (style SQLite) en $1..$n (style pg),
+// en sautant le contenu des littéraux entre quotes simples ('' échappé géré).
+function toPg(sql: string): string {
+  let out = ''
+  let n = 0
+  let inStr = false
+  for (let i = 0; i < sql.length; i++) {
+    const c = sql[i]
+    if (inStr) {
+      out += c
+      if (c === "'") {
+        if (sql[i + 1] === "'") { out += "'"; i++; continue } // '' = quote échappée
+        inStr = false
+      }
+      continue
+    }
+    if (c === "'") { inStr = true; out += c; continue }
+    if (c === '?') { out += '$' + ++n; continue }
+    out += c
+  }
+  return out
+}
+
+function normalize(stmt: Stmt): { text: string; values: any[] } {
+  if (typeof stmt === 'string') return { text: toPg(stmt), values: [] }
+  // libsql tolère undefined ; pg veut null.
+  const values = (stmt.args ?? []).map((v) => (v === undefined ? null : v))
+  return { text: toPg(stmt.sql), values }
+}
+
+async function run(q: Pool | PoolClient, stmt: Stmt): Promise<ExecResult> {
+  const { text, values } = normalize(stmt)
+  const r = await q.query(text, values)
+  return { rows: r.rows as Row[], rowsAffected: r.rowCount ?? 0 }
+}
+
+interface Tx {
+  execute(stmt: Stmt): Promise<ExecResult>
+  commit(): Promise<void>
+  rollback(): Promise<void>
+}
+
+export const db = {
+  execute(stmt: Stmt): Promise<ExecResult> {
+    return run(pool, stmt)
+  },
+
+  // Plusieurs statements en une fois (DDL d'init). En protocole simple, pg exécute
+  // tout le bloc ; pas de paramètres ici, donc toPg est neutre (aucun ?).
+  async executeMultiple(sql: string): Promise<void> {
+    await pool.query(toPg(sql))
+  },
+
+  // Lot atomique (libsql db.batch(stmts, 'write')) → transaction pg.
+  async batch(stmts: Stmt[], _mode?: 'read' | 'write'): Promise<ExecResult[]> {
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const out: ExecResult[] = []
+      for (const s of stmts) out.push(await run(client, s))
+      await client.query('COMMIT')
+      return out
+    } catch (e) {
+      try { await client.query('ROLLBACK') } catch {}
+      throw e
+    } finally {
+      client.release()
+    }
+  },
+
+  // Transaction explicite (libsql db.transaction('write')) → client dédié du pool.
+  async transaction(_mode?: 'read' | 'write'): Promise<Tx> {
+    const client = await pool.connect()
+    await client.query('BEGIN')
+    let done = false
+    const finish = async (verb: 'COMMIT' | 'ROLLBACK') => {
+      if (done) return
+      done = true
+      try { await client.query(verb) } finally { client.release() }
+    }
+    return {
+      execute: (stmt: Stmt) => run(client, stmt),
+      commit: () => finish('COMMIT'),
+      rollback: () => finish('ROLLBACK'),
+    }
+  },
+}
 
 export async function initDb() {
+  // Schéma PostgreSQL. AUTOINCREMENT → GENERATED BY DEFAULT AS IDENTITY (permet
+  // l'insertion d'id explicites lors du transfert de données). Toutes les colonnes
+  // de timestamps epoch ms/s sont en BIGINT (INTEGER pg = int4, max ~2,1e9, trop
+  // petit pour un epoch ms ~1,7e12). Les colonnes auparavant ajoutées par ALTER
+  // idempotents sont directement intégrées aux CREATE TABLE.
   await db.executeMultiple(`
     CREATE TABLE IF NOT EXISTS devices (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       platform TEXT NOT NULL,
       ip TEXT,
-      last_seen INTEGER NOT NULL,
+      last_seen BIGINT NOT NULL,
       capabilities TEXT NOT NULL DEFAULT '[]'
     );
 
@@ -46,19 +170,21 @@ export async function initDb() {
       catalog_id TEXT,
       app TEXT,
       title TEXT,
+      thumb TEXT,
       status TEXT NOT NULL DEFAULT 'stopped',
-      started_at INTEGER
+      started_at BIGINT
     );
 
     CREATE TABLE IF NOT EXISTS playback_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
       device_id TEXT NOT NULL,
       catalog_id TEXT,
       app TEXT,
       title TEXT,
-      started_at INTEGER NOT NULL,
-      ended_at INTEGER,
-      requester TEXT NOT NULL DEFAULT 'manual'
+      started_at BIGINT NOT NULL,
+      ended_at BIGINT,
+      requester TEXT NOT NULL DEFAULT 'manual',
+      user_id INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS device_config (
@@ -70,16 +196,19 @@ export async function initDb() {
       plex_server_id TEXT NOT NULL DEFAULT '',
       app_mappings TEXT NOT NULL DEFAULT '{}',
       xtream_credential_id INTEGER,
-      updated_at INTEGER NOT NULL DEFAULT 0
+      tvoverlay_enabled INTEGER NOT NULL DEFAULT 0,
+      overlay_player_duration INTEGER NOT NULL DEFAULT 0,
+      iptv_player TEXT NOT NULL DEFAULT 'auto',
+      updated_at BIGINT NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS credentials (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
       name TEXT NOT NULL,
       type TEXT NOT NULL,
       data TEXT NOT NULL DEFAULT '{}',
-      created_at INTEGER NOT NULL DEFAULT 0,
-      updated_at INTEGER NOT NULL DEFAULT 0
+      created_at BIGINT NOT NULL DEFAULT 0,
+      updated_at BIGINT NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS plex_config (
@@ -88,10 +217,10 @@ export async function initDb() {
       auth_token TEXT NOT NULL DEFAULT '',
       server_url TEXT NOT NULL DEFAULT '',
       server_machine_id TEXT NOT NULL DEFAULT '',
-      updated_at INTEGER NOT NULL DEFAULT 0
+      updated_at BIGINT NOT NULL DEFAULT 0
     );
 
-    INSERT OR IGNORE INTO plex_config (id) VALUES (1);
+    INSERT INTO plex_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
     CREATE TABLE IF NOT EXISTS lb_games (
       id TEXT PRIMARY KEY,
@@ -104,32 +233,39 @@ export async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_lb_games_title ON lb_games(title);
 
     CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
       name TEXT NOT NULL,
       avatar_color TEXT NOT NULL DEFAULT '#f59e0b',
       is_admin INTEGER NOT NULL DEFAULT 0,
       pin_hash TEXT,
-      created_at INTEGER NOT NULL DEFAULT 0
+      created_at BIGINT NOT NULL DEFAULT 0,
+      nfc_token TEXT,
+      preferred_lang TEXT NOT NULL DEFAULT 'FR',
+      default_device_id TEXT,
+      default_player TEXT,
+      default_playlist_id INTEGER,
+      autoplay_next INTEGER NOT NULL DEFAULT 1,
+      dashboard_prefs TEXT
     );
 
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nfc ON users(nfc_token) WHERE nfc_token IS NOT NULL;
+
     CREATE TABLE IF NOT EXISTS favorites (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
       user_id INTEGER NOT NULL,
       app TEXT NOT NULL,
       ref_id TEXT NOT NULL,
       ref_type TEXT,
       title TEXT,
       thumb TEXT,
-      created_at INTEGER NOT NULL DEFAULT 0,
+      created_at BIGINT NOT NULL DEFAULT 0,
       UNIQUE(user_id, app, ref_id)
     );
 
     CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);
 
-    -- Suivi « vu » par profil : films, séries, saisons, épisodes, jeux. parent_id relie
-    -- un épisode/saison à sa série (pour agréger plus tard côté algo de reco).
     CREATE TABLE IF NOT EXISTS watched (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
       user_id INTEGER NOT NULL,
       app TEXT NOT NULL,
       ref_id TEXT NOT NULL,
@@ -137,17 +273,14 @@ export async function initDb() {
       title TEXT,
       thumb TEXT,
       parent_id TEXT,
-      watched_at INTEGER NOT NULL DEFAULT 0,
+      watched_at BIGINT NOT NULL DEFAULT 0,
       UNIQUE(user_id, app, ref_id)
     );
 
     CREATE INDEX IF NOT EXISTS idx_watched_user ON watched(user_id);
 
-    -- « Favori du moment » / en cours : la série ou playlist que le profil suit en ce
-    -- moment (épinglée manuellement), affichée dans une rangée dédiée du dashboard.
-    -- key = 'playlist:<id>' ou '<app>:<ref_id>' (dédup par profil).
     CREATE TABLE IF NOT EXISTS current_picks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
       user_id INTEGER NOT NULL,
       key TEXT NOT NULL,
       kind TEXT NOT NULL,
@@ -156,14 +289,14 @@ export async function initDb() {
       playlist_id INTEGER,
       title TEXT,
       thumb TEXT,
-      created_at INTEGER NOT NULL DEFAULT 0,
+      created_at BIGINT NOT NULL DEFAULT 0,
       UNIQUE(user_id, key)
     );
 
     CREATE INDEX IF NOT EXISTS idx_current_user ON current_picks(user_id);
 
     CREATE TABLE IF NOT EXISTS playlists (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
       owner_user_id INTEGER NOT NULL,
       name TEXT NOT NULL,
       description TEXT,
@@ -171,12 +304,12 @@ export async function initDb() {
       is_shared INTEGER NOT NULL DEFAULT 0,
       source TEXT NOT NULL DEFAULT 'manual',
       source_url TEXT,
-      created_at INTEGER NOT NULL DEFAULT 0,
-      updated_at INTEGER NOT NULL DEFAULT 0
+      created_at BIGINT NOT NULL DEFAULT 0,
+      updated_at BIGINT NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS playlist_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
       playlist_id INTEGER NOT NULL,
       position INTEGER NOT NULL DEFAULT 0,
       app TEXT NOT NULL DEFAULT 'unresolved',
@@ -187,35 +320,32 @@ export async function initDb() {
       thumb TEXT,
       lang TEXT,
       status TEXT NOT NULL DEFAULT 'resolved',
-      created_at INTEGER NOT NULL DEFAULT 0,
+      ext TEXT,
+      created_at BIGINT NOT NULL DEFAULT 0,
       FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
     );
 
     CREATE INDEX IF NOT EXISTS idx_playlist_items_pl ON playlist_items(playlist_id, position);
 
     CREATE TABLE IF NOT EXISTS epg_reminders (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
       user_id INTEGER,
       cred_id INTEGER,
       stream_id TEXT NOT NULL,
       channel_name TEXT,
       title TEXT,
-      start_ts INTEGER NOT NULL,
+      start_ts BIGINT NOT NULL,
       device_id TEXT,
       lead_min INTEGER NOT NULL DEFAULT 5,
       notified INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL DEFAULT 0
+      logo TEXT,
+      created_at BIGINT NOT NULL DEFAULT 0
     );
 
     CREATE INDEX IF NOT EXISTS idx_reminders_due ON epg_reminders(notified, start_ts);
 
-    -- Préférences de catégories IPTV : masquer (déclutter) ou verrouiller (parental).
-    -- scope = 'global' (base posée par l'admin) ou un user_id en texte (surcharge par
-    -- profil). La surcharge profil REMPLACE la base pour cette catégorie : 'visible'
-    -- ré-affiche un groupe masqué/verrouillé globalement, 'hidden'/'locked' restreint
-    -- plus. Absence de ligne = hérite (profil) / visible (global).
     CREATE TABLE IF NOT EXISTS iptv_category_prefs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
       cred_id INTEGER NOT NULL,
       content_type TEXT NOT NULL,
       category_id TEXT NOT NULL,
@@ -223,74 +353,7 @@ export async function initDb() {
       state TEXT NOT NULL CHECK (state IN ('hidden','locked','visible')),
       UNIQUE(cred_id, content_type, category_id, scope)
     );
-  `)
 
-  // Migration : la première version de la table n'acceptait pas 'visible' dans le
-  // CHECK. SQLite ne modifie pas une contrainte : on sonde avec un insert témoin
-  // et on reconstruit la table si l'ancienne contrainte est encore en place.
-  try {
-    await db.execute("INSERT INTO iptv_category_prefs (cred_id, content_type, category_id, scope, state) VALUES (-999, 'live', '__probe__', 'global', 'visible')")
-    await db.execute("DELETE FROM iptv_category_prefs WHERE cred_id = -999")
-  } catch {
-    await db.executeMultiple(`
-      CREATE TABLE iptv_category_prefs_v2 (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        cred_id INTEGER NOT NULL,
-        content_type TEXT NOT NULL,
-        category_id TEXT NOT NULL,
-        scope TEXT NOT NULL DEFAULT 'global',
-        state TEXT NOT NULL CHECK (state IN ('hidden','locked','visible')),
-        UNIQUE(cred_id, content_type, category_id, scope)
-      );
-      INSERT INTO iptv_category_prefs_v2 (id, cred_id, content_type, category_id, scope, state)
-        SELECT id, cred_id, content_type, category_id, scope, state FROM iptv_category_prefs;
-      DROP TABLE iptv_category_prefs;
-      ALTER TABLE iptv_category_prefs_v2 RENAME TO iptv_category_prefs;
-    `)
-  }
-
-  // Migrations idempotentes (ALTER TABLE échoue silencieusement si la colonne existe)
-  try { await db.execute("ALTER TABLE device_config ADD COLUMN xtream_credential_id INTEGER") } catch {}
-  try { await db.execute("ALTER TABLE playback_state ADD COLUMN title TEXT") } catch {}
-  // Miniature du média en cours (URL absolue déjà proxifiée) — affichée dans la barre
-  // « lecture en cours » quand la MediaSession ne fournit pas d'art (cas Just Player/IPTV).
-  try { await db.execute("ALTER TABLE playback_state ADD COLUMN thumb TEXT") } catch {}
-  try { await db.execute("ALTER TABLE device_config ADD COLUMN tvoverlay_enabled INTEGER NOT NULL DEFAULT 0") } catch {}
-  try { await db.execute("ALTER TABLE device_config ADD COLUMN overlay_player_duration INTEGER NOT NULL DEFAULT 0") } catch {}
-  // Lecteur IPTV préféré par device : 'auto' | 'mxplayer' | 'vlc' | 'tivimate'
-  try { await db.execute("ALTER TABLE device_config ADD COLUMN iptv_player TEXT NOT NULL DEFAULT 'auto'") } catch {}
-  try { await db.execute("ALTER TABLE playback_history ADD COLUMN user_id INTEGER") } catch {}
-  // Carte NFC Zaparoo → profil (groundwork ; logique de session dans le sprint Zaparoo)
-  try { await db.execute("ALTER TABLE users ADD COLUMN nfc_token TEXT") } catch {}
-  try { await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nfc ON users(nfc_token) WHERE nfc_token IS NOT NULL") } catch {}
-  // Langue préférée du profil (matching des imports de playlists IPTV/Plex)
-  try { await db.execute("ALTER TABLE users ADD COLUMN preferred_lang TEXT NOT NULL DEFAULT 'FR'") } catch {}
-  // Défauts par profil : device cible (présélectionné à l'activation du profil)
-  // et lecteur IPTV (prime sur le réglage du device s'il est défini)
-  try { await db.execute("ALTER TABLE users ADD COLUMN default_device_id TEXT") } catch {}
-  try { await db.execute("ALTER TABLE users ADD COLUMN default_player TEXT") } catch {}
-  // Playlist cible par défaut du profil (présélectionnée à l'ajout depuis le companion / la fiche)
-  try { await db.execute("ALTER TABLE users ADD COLUMN default_playlist_id INTEGER") } catch {}
-  // Autoplay de l'épisode suivant des séries (compte à rebours en fin d'épisode), par profil
-  try { await db.execute("ALTER TABLE users ADD COLUMN autoplay_next INTEGER NOT NULL DEFAULT 1") } catch {}
-  // Personnalisation du dashboard d'accueil (rangées activées + ordre), JSON, par profil
-  try { await db.execute("ALTER TABLE users ADD COLUMN dashboard_prefs TEXT") } catch {}
-  // Extension de conteneur (épisodes IPTV séries, pour la relecture depuis une playlist)
-  try { await db.execute("ALTER TABLE playlist_items ADD COLUMN ext TEXT") } catch {}
-  // Logo de la chaîne pour l'overlay de rappel EPG (carte du bas)
-  try { await db.execute("ALTER TABLE epg_reminders ADD COLUMN logo TEXT") } catch {}
-
-  // ── Progression de lecture ───────────────────────────────────────────────────
-  // Avancement du dernier passage de CHAQUE média (Hub ou lancé hors Hub), pour
-  // pouvoir reprendre ailleurs (« continuer la lecture sur… ») ou plus tard.
-  // media_key = catalog_id (synthétique : plex:…/iptv:type:…/ext:…) si lancé par le
-  // Hub, sinon `${app}|${title}` (sessions détectées sans passer par /play).
-  // Les champs de relecture (plex_id, iptv_*, external_*) ne sont remplis QUE pour
-  // les lancements Hub — c'est ce qui rend le transfert possible. Le live et les
-  // flux non-seekable ne sont pas suivis (aucune position à reprendre).
-  // Pas de scoping par profil en v1 : la notion de session active par device
-  // arrivera avec le sprint Zaparoo (cf. mémoire). user_id reste nullable.
-  await db.execute(`
     CREATE TABLE IF NOT EXISTS playback_progress (
       media_key TEXT PRIMARY KEY,
       catalog_id TEXT,
@@ -303,21 +366,16 @@ export async function initDb() {
       iptv_ext TEXT,
       external_url TEXT,
       external_platform TEXT,
-      position INTEGER NOT NULL DEFAULT 0,
-      duration INTEGER NOT NULL DEFAULT 0,
+      position BIGINT NOT NULL DEFAULT 0,
+      duration BIGINT NOT NULL DEFAULT 0,
       seekable INTEGER NOT NULL DEFAULT 0,
       device_id TEXT,
       user_id INTEGER,
-      updated_at INTEGER NOT NULL DEFAULT 0
-    )
-  `)
-  await db.execute("CREATE INDEX IF NOT EXISTS idx_progress_updated ON playback_progress(updated_at DESC)")
+      updated_at BIGINT NOT NULL DEFAULT 0
+    );
 
-  // ── Spotify : un compte Spotify lié par profil hub ───────────────────────────
-  // Le token « suit le profil actif » (cf. design Spotify). user_id = id du profil hub,
-  // ou MAISON_USER_ID (-1) pour le compte « Maison » dédié aux enceintes partagées
-  // (Echo) — découplé du compte perso de l'admin pour ne plus polluer ses recos.
-  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_progress_updated ON playback_progress(updated_at DESC);
+
     CREATE TABLE IF NOT EXISTS spotify_accounts (
       user_id INTEGER PRIMARY KEY,
       spotify_user_id TEXT,
@@ -326,18 +384,13 @@ export async function initDb() {
       product TEXT,
       access_token TEXT NOT NULL,
       refresh_token TEXT NOT NULL,
-      expires_at INTEGER NOT NULL DEFAULT 0,
+      expires_at BIGINT NOT NULL DEFAULT 0,
       scopes TEXT NOT NULL DEFAULT '',
       image TEXT,
-      created_at INTEGER NOT NULL DEFAULT 0,
-      updated_at INTEGER NOT NULL DEFAULT 0
-    )
-  `)
+      created_at BIGINT NOT NULL DEFAULT 0,
+      updated_at BIGINT NOT NULL DEFAULT 0
+    );
 
-  // ── Trakt : un compte Trakt lié par profil hub (token suit le profil actif) ──
-  // Device flow OAuth. user_id = id du profil hub. Sert au scrobbling universel,
-  // au « prochain épisode » multi-sources et à la publication de listes.
-  await db.execute(`
     CREATE TABLE IF NOT EXISTS trakt_accounts (
       user_id INTEGER PRIMARY KEY,
       trakt_user_id TEXT,
@@ -345,22 +398,15 @@ export async function initDb() {
       name TEXT,
       access_token TEXT NOT NULL,
       refresh_token TEXT NOT NULL,
-      expires_at INTEGER NOT NULL DEFAULT 0,
+      expires_at BIGINT NOT NULL DEFAULT 0,
       scopes TEXT NOT NULL DEFAULT '',
       image TEXT,
-      created_at INTEGER NOT NULL DEFAULT 0,
-      updated_at INTEGER NOT NULL DEFAULT 0
-    )
-  `)
+      created_at BIGINT NOT NULL DEFAULT 0,
+      updated_at BIGINT NOT NULL DEFAULT 0
+    );
 
-  // ── Companion : boîte de réception des partages (TikTok au départ) ───────────
-  // Un partage entrant (URL + caption résolue via oEmbed) atterrit ici avec une
-  // extraction heuristique du titre candidat. status : 'pending' (à traiter),
-  // 'matched' (rattaché à un item du catalogue), 'wishlist' (existe mais hors
-  // catalogue), 'ignored'. Les champs matched_* sont remplis à la résolution.
-  await db.execute(`
     CREATE TABLE IF NOT EXISTS companion_inbox (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
       user_id INTEGER,
       source_platform TEXT NOT NULL DEFAULT 'tiktok',
       source_url TEXT NOT NULL,
@@ -379,42 +425,34 @@ export async function initDb() {
       matched_ref_id TEXT,
       matched_title TEXT,
       raw TEXT,
-      created_at INTEGER NOT NULL DEFAULT 0,
-      updated_at INTEGER NOT NULL DEFAULT 0
-    )
-  `)
-  await db.execute("CREATE INDEX IF NOT EXISTS idx_companion_status ON companion_inbox(status, created_at DESC)")
+      created_at BIGINT NOT NULL DEFAULT 0,
+      updated_at BIGINT NOT NULL DEFAULT 0
+    );
 
-  // ── Connecteur LLM générique : config par fournisseur + fournisseur actif ────
-  // Brancher au choix Claude (Anthropic), ChatGPT (OpenAI), Gemini (Google) ou
-  // Ollama (local). base_url sert surtout à Ollama (ex. http://192.168.1.x:11434).
-  // api_key sert aux 3 fournisseurs cloud. Premier consommateur : le Companion
-  // (extraction de titres de films depuis des commentaires).
-  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_companion_status ON companion_inbox(status, created_at DESC);
+
     CREATE TABLE IF NOT EXISTS llm_providers (
       provider TEXT PRIMARY KEY,
       api_key TEXT,
       base_url TEXT,
       model TEXT,
-      updated_at INTEGER NOT NULL DEFAULT 0
-    )
-  `)
+      updated_at BIGINT NOT NULL DEFAULT 0
+    );
 
-  // Réglage singleton du fournisseur actif (id figé à 1).
-  await db.execute(`
     CREATE TABLE IF NOT EXISTS llm_settings (
       id INTEGER PRIMARY KEY DEFAULT 1,
       active_provider TEXT
-    )
-  `)
-  await db.execute("INSERT OR IGNORE INTO llm_settings (id) VALUES (1)")
+    );
 
-  // Seed : crée un profil Admin par défaut (PIN 0000) si aucun utilisateur n'existe.
+    INSERT INTO llm_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+  `)
+
+  // Seed : profil Admin par défaut (PIN 0000) si aucun utilisateur n'existe.
   const { rows: userCount } = await db.execute("SELECT COUNT(*) as n FROM users")
   if (Number((userCount[0] as any).n) === 0) {
     await db.execute({
       sql: "INSERT INTO users (name, avatar_color, is_admin, pin_hash, created_at) VALUES (?, ?, 1, ?, ?)",
-      args: ['Admin', '#f59e0b', hashPin('0000'), Date.now()]
+      args: ['Admin', '#f59e0b', hashPin('0000'), Date.now()],
     })
     console.log('[db] Profil Admin créé (PIN par défaut: 0000 — à changer dans Admin → Profils)')
   }

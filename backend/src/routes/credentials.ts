@@ -37,10 +37,10 @@ router.post('/', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
   const now = Date.now()
   const r = await db.execute({
-    sql: 'INSERT INTO credentials (name, type, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+    sql: 'INSERT INTO credentials (name, type, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?) RETURNING id',
     args: [parsed.data.name, parsed.data.type, JSON.stringify(parsed.data.data), now, now]
   })
-  const id = Number(r.lastInsertRowid)
+  const id = Number((r.rows[0] as any).id)
   // Préchauffe le cache pour le nouveau credential en arrière-plan
   if (parsed.data.type === 'xtream') {
     getVodList(id).catch(() => {})

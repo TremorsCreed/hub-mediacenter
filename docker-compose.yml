@@ -8,6 +8,9 @@ services:
     container_name: hub-mediacenter-backend
     restart: unless-stopped
     environment:
+      # DATABASE_URL : connexion Postgres pg01 (valeur fournie par la stack Portainer,
+      # jamais committée). DB_PATH/DATA_DIR ne servent plus qu'aux caches disque.
+      - DATABASE_URL=${DATABASE_URL:-}
       - DB_PATH=/data/hub.db
       - DATA_DIR=/data
       - PORT=8020

@@ -136,14 +136,15 @@ async function handleAgentMessage(device_id: string, msg: WsMessage) {
         // Transférer la config seulement si le nouveau device n'en a pas encore.
         // ⚠ Inclure TOUS les champs ici sinon ils sont perdus au reinstall agent.
         await db.execute({
-          sql: `INSERT OR IGNORE INTO device_config
+          sql: `INSERT INTO device_config
                 (device_id, xtream_server, xtream_user, xtream_pass, xtream_ext,
                  plex_server_id, app_mappings, xtream_credential_id,
                  tvoverlay_enabled, overlay_player_duration, updated_at)
                 SELECT ?, xtream_server, xtream_user, xtream_pass, xtream_ext,
                        plex_server_id, app_mappings, xtream_credential_id,
                        tvoverlay_enabled, overlay_player_duration, updated_at
-                FROM device_config WHERE device_id = ?`,
+                FROM device_config WHERE device_id = ?
+                ON CONFLICT (device_id) DO NOTHING`,
           args: [device_id, oldId]
         })
         // Réécrire l'historique sur le nouveau device_id pour garder une vue cohérente

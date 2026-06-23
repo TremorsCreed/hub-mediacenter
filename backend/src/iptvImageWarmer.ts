@@ -10,7 +10,10 @@ import { existsSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { isDead, markDead } from './imageNegCache'
 
-const IMAGE_CACHE_DIR = join(process.env.DB_PATH ? dirname(process.env.DB_PATH) : process.cwd(), 'iptv-image-cache')
+// Cache disque sur le volume persistant. La base étant désormais distante (pg01),
+// le cache n'est plus rattaché au fichier DB : on utilise DATA_DIR (repli DB_PATH).
+const DATA_DIR = process.env.DATA_DIR || (process.env.DB_PATH ? dirname(process.env.DB_PATH) : process.cwd())
+const IMAGE_CACHE_DIR = join(DATA_DIR, 'iptv-image-cache')
 if (!existsSync(IMAGE_CACHE_DIR)) mkdirSync(IMAGE_CACHE_DIR, { recursive: true })
 
 const inFlight = new Set<string>()  // évite de re-warm la même URL en parallèle

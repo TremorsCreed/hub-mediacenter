@@ -472,7 +472,7 @@ router.get('/:credId/languages', async (req, res) => {
 // Cache disque (data/iptv-image-cache/) en plus du Cache-Control browser.
 // Les logos IPTV sont immutables → on les sert pour toujours depuis le disque
 // dès le premier fetch, plus jamais besoin de retoucher au serveur upstream.
-const IMAGE_CACHE_DIR = join(process.env.DB_PATH ? dirname(process.env.DB_PATH) : process.cwd(), 'iptv-image-cache')
+const IMAGE_CACHE_DIR = join(process.env.DATA_DIR || (process.env.DB_PATH ? dirname(process.env.DB_PATH) : process.cwd()), 'iptv-image-cache')
 if (!existsSync(IMAGE_CACHE_DIR)) mkdirSync(IMAGE_CACHE_DIR, { recursive: true })
 
 router.get('/image', async (req, res) => {

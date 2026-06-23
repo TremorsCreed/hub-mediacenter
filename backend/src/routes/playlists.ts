@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db'
 import { isValidAdminToken } from '../auth'
+import { reresolveStream, ensureWork } from '../resolver'
 
 const router = Router()
 
@@ -126,7 +127,30 @@ const ItemSchema = z.object({
   lang: z.string().optional(),
   ext: z.string().optional(),
   status: z.enum(['resolved', 'missing']).optional(),
+  // Identité de l'œuvre (Chantier B) : IDs externes possédés + saison/épisode.
+  tmdb_id: z.number().optional(),
+  imdb_id: z.string().optional(),
+  tvdb_id: z.number().optional(),
+  season: z.number().optional(),
+  episode: z.number().optional(),
 })
+
+// Ancre l'item sur une œuvre canonique (works) et renvoie son work_id (ou null si
+// rien pour ancrer). Capture les IDs externes une fois pour toutes.
+async function workIdForItem(d: z.infer<typeof ItemSchema>): Promise<number | null> {
+  const isEpisode = d.season != null
+  const isShow = isEpisode || d.ref_type === 'series' || d.ref_type === 'episode'
+  if (!d.title && !d.tmdb_id && !d.imdb_id) return null
+  // Pour un épisode, d.title est le titre de l'épisode, pas de la série : on n'ancre
+  // par titre que les films/séries-entières ; un épisode ne s'ancre que par l'ID
+  // externe de sa série (sinon on créerait un work par épisode).
+  return ensureWork({
+    type: isShow ? 'show' : 'movie',
+    title: isEpisode ? undefined : d.title, year: d.year,
+    tmdb_id: d.tmdb_id, imdb_id: d.imdb_id, tvdb_id: d.tvdb_id,
+    season: d.season, episode: d.episode,
+  }).catch(() => null)
+}
 router.post('/:id/items', async (req, res) => {
   const pl = await loadPlaylist(parseInt(req.params.id, 10))
   if (!pl) return res.status(404).json({ error: 'introuvable' })
@@ -136,10 +160,11 @@ router.post('/:id/items', async (req, res) => {
   const d = parsed.data
   const { rows: maxRows } = await db.execute({ sql: 'SELECT COALESCE(MAX(position), -1) + 1 as pos FROM playlist_items WHERE playlist_id = ?', args: [pl.id] })
   const pos = Number((maxRows[0] as any).pos)
+  const workId = await workIdForItem(d)
   const { rows } = await db.execute({
-    sql: `INSERT INTO playlist_items (playlist_id, position, app, ref_id, ref_type, title, year, thumb, lang, ext, status, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-    args: [pl.id, pos, d.app, d.ref_id ?? null, d.ref_type ?? null, d.title ?? null, d.year ?? null, d.thumb ?? null, d.lang ?? null, d.ext ?? null, d.status ?? 'resolved', Date.now()],
+    sql: `INSERT INTO playlist_items (playlist_id, position, app, ref_id, ref_type, title, year, thumb, lang, ext, status, work_id, season, episode, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+    args: [pl.id, pos, d.app, d.ref_id ?? null, d.ref_type ?? null, d.title ?? null, d.year ?? null, d.thumb ?? null, d.lang ?? null, d.ext ?? null, d.status ?? 'resolved', workId, d.season ?? null, d.episode ?? null, Date.now()],
   })
   await db.execute({ sql: 'UPDATE playlists SET updated_at = ? WHERE id = ?', args: [Date.now(), pl.id] })
   res.json({ ok: true, id: (rows[0] as any).id })
@@ -160,10 +185,11 @@ router.put('/:id/items', async (req, res) => {
     await tx.execute({ sql: 'DELETE FROM playlist_items WHERE playlist_id = ?', args: [pl.id] })
     for (let i = 0; i < parsed.data.items.length; i++) {
       const d = parsed.data.items[i]
+      const workId = await workIdForItem(d)
       await tx.execute({
-        sql: `INSERT INTO playlist_items (playlist_id, position, app, ref_id, ref_type, title, year, thumb, lang, ext, status, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [pl.id, i, d.app, d.ref_id ?? null, d.ref_type ?? null, d.title ?? null, d.year ?? null, d.thumb ?? null, d.lang ?? null, d.ext ?? null, d.status ?? 'resolved', now],
+        sql: `INSERT INTO playlist_items (playlist_id, position, app, ref_id, ref_type, title, year, thumb, lang, ext, status, work_id, season, episode, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [pl.id, i, d.app, d.ref_id ?? null, d.ref_type ?? null, d.title ?? null, d.year ?? null, d.thumb ?? null, d.lang ?? null, d.ext ?? null, d.status ?? 'resolved', workId, d.season ?? null, d.episode ?? null, now],
       })
     }
     await tx.execute({ sql: 'UPDATE playlists SET updated_at = ? WHERE id = ?', args: [now, pl.id] })
@@ -216,6 +242,38 @@ router.put('/:id/items/:itemId', async (req, res) => {
   })
   await db.execute({ sql: 'UPDATE playlists SET updated_at = ? WHERE id = ?', args: [Date.now(), pl.id] })
   res.json({ ok: true })
+})
+
+// POST /:id/items/:itemId/reresolve — re-résout un item IPTV par son identité
+// (titre/année/langue/saison/épisode/work_id) sur les sources actives, et met à jour
+// son ref_id/ext. Filet manuel pour récupérer un item cassé par un changement de
+// provider, sans re-pointage à la main.
+router.post('/:id/items/:itemId/reresolve', async (req, res) => {
+  const pl = await loadPlaylist(parseInt(req.params.id, 10))
+  if (!pl) return res.status(404).json({ error: 'introuvable' })
+  if (!await canEdit(req, pl)) return res.status(403).json({ error: 'forbidden' })
+  const { rows } = await db.execute({ sql: 'SELECT * FROM playlist_items WHERE id = ? AND playlist_id = ?', args: [parseInt(req.params.itemId, 10), pl.id] })
+  const it = rows[0] as any
+  if (!it) return res.status(404).json({ error: 'item introuvable' })
+  const isShow = it.ref_type === 'series' || it.ref_type === 'episode' || it.season != null
+  const r = await reresolveStream({
+    work_id: it.work_id ?? undefined,
+    type: isShow ? 'show' : 'movie',
+    title: it.title ?? undefined,
+    year: it.year ?? undefined,
+    season: it.season ?? undefined,
+    episode: it.episode ?? undefined,
+    preferred_lang: it.lang ?? undefined,
+  })
+  if (!r) return res.json({ ok: true, resolved: false })
+  await db.execute({
+    sql: `UPDATE playlist_items SET app = 'iptv', ref_id = ?, ref_type = ?, ext = ?, lang = COALESCE(?, lang),
+                                   work_id = COALESCE(work_id, ?), status = 'resolved'
+          WHERE id = ? AND playlist_id = ?`,
+    args: [r.stream_id, r.kind, r.ext ?? it.ext ?? null, r.lang ?? null, r.work_id ?? null, it.id, pl.id],
+  })
+  await db.execute({ sql: 'UPDATE playlists SET updated_at = ? WHERE id = ?', args: [Date.now(), pl.id] })
+  res.json({ ok: true, resolved: true, ref_id: r.stream_id, cred_id: r.cred_id, lang: r.lang })
 })
 
 router.delete('/:id/items/:itemId', async (req, res) => {

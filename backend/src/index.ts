@@ -27,6 +27,7 @@ import companionRouter from './routes/companion'
 import llmRouter from './routes/llm'
 import { attachUser, requireAdmin } from './auth'
 import { preloadAll as preloadIptvVod } from './iptvVodCache'
+import { backfillWorks } from './migrations/backfillWorks'
 import { startReminderChecker } from './epgReminders'
 import { startScrobbler } from './scrobble'
 
@@ -67,6 +68,8 @@ async function start() {
   // Préchauffe les listes VOD IPTV en arrière-plan pour que le 1er cross-ref Discover
   // soit instantané. Ne bloque pas le démarrage.
   preloadIptvVod().catch(() => {})
+  // Ancre les favoris/playlists existants sur des œuvres canoniques (idempotent).
+  backfillWorks().catch(() => {})
   startReminderChecker()
   startScrobbler()
   const server = http.createServer(app)

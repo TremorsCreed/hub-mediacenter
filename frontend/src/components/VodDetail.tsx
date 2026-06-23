@@ -40,6 +40,9 @@ export default function VodDetail({ credId, stream, deviceName, onPlay, onClose 
   const title = info?.name || stream.name
   const cover = info?.cover || stream.logo
   const yt = info ? ytId(info.trailer) : null
+  // Identité de l'œuvre captée depuis la fiche (tmdb_id + année) → ancrage souverain.
+  const tmdbNum = info?.tmdb_id ? Number(info.tmdb_id) || undefined : undefined
+  const yearNum = info?.year ? Number(info.year) || undefined : undefined
 
   return createPortal(
     <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center sm:p-4" onClick={onClose}>
@@ -110,7 +113,7 @@ export default function VodDetail({ credId, stream, deviceName, onPlay, onClose 
             )}
             <FavoriteButton fav={{ app: 'iptv', ref_id: stream.stream_id, ref_type: 'vod', title, thumb: cover }} className="w-10 h-10 border border-zinc-700 rounded-lg" />
             <WatchedButton item={{ app: 'iptv', ref_id: stream.stream_id, ref_type: 'vod', title, thumb: cover }} className="w-10 h-10 border border-zinc-700 rounded-lg" />
-            <AddToPlaylist item={{ app: 'iptv', ref_id: stream.stream_id, ref_type: 'vod', title, thumb: cover }} className="w-10 h-10 border border-zinc-700 rounded-lg" />
+            <AddToPlaylist item={{ app: 'iptv', ref_id: stream.stream_id, ref_type: 'vod', title, thumb: cover, tmdb_id: tmdbNum, year: yearNum }} className="w-10 h-10 border border-zinc-700 rounded-lg" />
           </div>
 
           {/* Bande-annonce (embed) */}

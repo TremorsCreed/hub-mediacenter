@@ -7,6 +7,7 @@ import { AppId, CatalogEntry, RequesterType, WsPlayCommand } from '../types'
 import { resolvePlexWatchUrl } from './plex'
 import { spotifyFetch, MAISON_USER_ID } from './spotify'
 import { notifyOverlay, notifyOverlayPlayer, hideOverlay } from '../notify'
+import { resolveStream, reresolveStream, findCredForVodStream, type WorkIdentity } from '../resolver'
 
 // Helper pour construire l'URL stream Xtream complète côté backend.
 // On résout l'extension réelle pour les VOD via get_vod_info (container_extension).
@@ -17,26 +18,37 @@ async function buildIptvStreamUrl(
   streamId: string,
   type: 'live' | 'vod' | 'series',
   explicitExt?: string,
+  credIdOverride?: number,
 ): Promise<{ url: string; container: string } | null> {
-  const { rows: cfgRows } = await db.execute({ sql: 'SELECT * FROM device_config WHERE device_id = ?', args: [deviceId] })
-  const cfg = cfgRows[0] as any | undefined
   let server = '', user = '', pass = '', ext = 'ts'
-  if (cfg?.xtream_credential_id) {
-    const { rows: cr } = await db.execute({ sql: 'SELECT data FROM credentials WHERE id = ?', args: [cfg.xtream_credential_id] })
+  if (credIdOverride) {
+    // Stream re-résolu sur un provider précis (resolver) : on construit l'URL avec
+    // CE credential, pas celui du device (qui peut être une autre source).
+    const { rows: cr } = await db.execute({ sql: 'SELECT data FROM credentials WHERE id = ?', args: [credIdOverride] })
     if (cr.length) {
       const data = JSON.parse((cr[0] as any).data as string)
       server = data.server ?? ''; user = data.user ?? ''; pass = data.pass ?? ''; ext = data.ext ?? 'ts'
     }
-  }
-  if (!server) {
-    server = cfg?.xtream_server ?? ''; user = cfg?.xtream_user ?? ''; pass = cfg?.xtream_pass ?? ''; ext = cfg?.xtream_ext ?? 'ts'
-  }
-  // Fallback : premier profil Xtream si rien sur le device
-  if (!server) {
-    const { rows } = await db.execute("SELECT data FROM credentials WHERE type = 'xtream' ORDER BY id LIMIT 1")
-    if (rows.length) {
-      const data = JSON.parse((rows[0] as any).data as string)
-      server = data.server ?? ''; user = data.user ?? ''; pass = data.pass ?? ''; ext = data.ext ?? 'ts'
+  } else {
+    const { rows: cfgRows } = await db.execute({ sql: 'SELECT * FROM device_config WHERE device_id = ?', args: [deviceId] })
+    const cfg = cfgRows[0] as any | undefined
+    if (cfg?.xtream_credential_id) {
+      const { rows: cr } = await db.execute({ sql: 'SELECT data FROM credentials WHERE id = ?', args: [cfg.xtream_credential_id] })
+      if (cr.length) {
+        const data = JSON.parse((cr[0] as any).data as string)
+        server = data.server ?? ''; user = data.user ?? ''; pass = data.pass ?? ''; ext = data.ext ?? 'ts'
+      }
+    }
+    if (!server) {
+      server = cfg?.xtream_server ?? ''; user = cfg?.xtream_user ?? ''; pass = cfg?.xtream_pass ?? ''; ext = cfg?.xtream_ext ?? 'ts'
+    }
+    // Fallback : premier profil Xtream si rien sur le device
+    if (!server) {
+      const { rows } = await db.execute("SELECT data FROM credentials WHERE type = 'xtream' ORDER BY id LIMIT 1")
+      if (rows.length) {
+        const data = JSON.parse((rows[0] as any).data as string)
+        server = data.server ?? ''; user = data.user ?? ''; pass = data.pass ?? ''; ext = data.ext ?? 'ts'
+      }
     }
   }
   // Sanitize : protège contre les espaces parasites dans les credentials saisis
@@ -217,6 +229,15 @@ const PlaySchema = z.object({
   series_duration_ms: z.number().nullable().optional().transform(v => v ?? undefined),
   device_id: z.string().optional(),
   app: z.string().optional(),
+  // Identité de l'œuvre (Chantier B) — permet la re-résolution souveraine du flux
+  // IPTV si le stream_id stocké est périmé (changement de provider).
+  work_id: z.number().nullable().optional().transform(v => v ?? undefined),
+  tmdb_id: z.number().nullable().optional().transform(v => v ?? undefined),
+  imdb_id: z.string().nullable().optional().transform(v => v ?? undefined),
+  year: z.number().nullable().optional().transform(v => v ?? undefined),
+  iptv_season: z.number().nullable().optional().transform(v => v ?? undefined),
+  iptv_episode: z.number().nullable().optional().transform(v => v ?? undefined),
+  preferred_lang: z.string().nullable().optional().transform(v => v ?? undefined),
   requester: z.enum(['zaparoo', 'llm', 'n8n', 'manual', 'ha']).default('manual')
 })
 
@@ -297,7 +318,8 @@ type PlayResult = { status: number; body: any }
 // POST /play/transfer (« continuer sur… »). Retourne { status, body } au lieu d'écrire
 // la réponse, pour que les deux routes décident du code HTTP.
 async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, req: any): Promise<PlayResult> {
-  const { query, catalog_id, ean, plex_id, iptv_stream_id, spotify_uri, spotify_device_id, title, resume, resume_position_ms, up_next, series_duration_ms, device_id, app, requester } = input
+  const { query, catalog_id, ean, plex_id, iptv_stream_id, spotify_uri, spotify_device_id, title, resume, resume_position_ms, up_next, series_duration_ms, device_id, app, requester,
+    work_id, tmdb_id, imdb_id, year, iptv_season, iptv_episode, preferred_lang } = input
   // Mutables : le fallback historique (catalog_id synthetique introuvable en catalog)
   // peut reconstituer ces champs depuis playback_progress avant la resolution.
   let { iptv_type, iptv_ext, external_url, external_platform, thumb } = input
@@ -537,14 +559,51 @@ async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, 
     ?? (entry.type === 'vod' ? 'vod' : entry.type === 'episode' ? 'series' : entry.type === 'live_channel' ? 'live' : undefined)
   let streamUrl: string | undefined
   let iptvContainer: string | undefined
-  if (resolved_app === 'iptv' && entry.tivimate_id && resolvedIptvType) {
-    const built = await buildIptvStreamUrl(target_device_id, entry.tivimate_id, resolvedIptvType, iptv_ext)
-    if (built) {
-      streamUrl = built.url
-      iptvContainer = built.container
-      console.log(`[iptv] resolved ${resolvedIptvType} stream URL: ${built.url} (container=${built.container})`)
-    } else {
-      console.warn(`[iptv] failed to build stream URL for ${entry.tivimate_id} — agent will fallback`)
+  if (resolved_app === 'iptv' && resolvedIptvType) {
+    // Identité de l'œuvre pour la re-résolution souveraine (Chantier B).
+    const identity: WorkIdentity = {
+      work_id, tmdb_id, imdb_id, year, preferred_lang,
+      type: resolvedIptvType === 'series' ? 'show' : 'movie',
+      title: title ?? entry.title,
+      season: iptv_season, episode: iptv_episode,
+    }
+    let credForUrl: number | undefined
+
+    if (resolvedIptvType === 'vod' && entry.tivimate_id) {
+      // VOD : on valide que le stream_id stocké existe encore sur une source active.
+      // Bonus : ça identifie le bon credential (multi-sources). Absent partout = périmé.
+      const owner = await findCredForVodStream(entry.tivimate_id)
+      if (owner != null) credForUrl = owner
+    }
+
+    // Re-résolution si : VOD périmée/introuvable, ou flux sans stream_id, ou épisode
+    // de série dont on connaît saison+épisode (l'episode_id stocké n'est pas validable).
+    const needsResolve =
+      (resolvedIptvType === 'vod' && credForUrl == null) ||
+      (resolvedIptvType === 'series' && iptv_season != null && iptv_episode != null) ||
+      (!entry.tivimate_id)
+    if (needsResolve && (identity.title || identity.work_id)) {
+      const r = await reresolveStream(identity)
+      if (r) {
+        const built = await buildIptvStreamUrl(target_device_id, r.stream_id, r.kind, r.ext ?? iptv_ext, r.cred_id)
+        if (built) {
+          streamUrl = built.url; iptvContainer = built.container
+          entry.tivimate_id = r.stream_id  // l'agent reçoit le stream à jour
+          console.log(`[iptv] re-résolu ${r.kind} « ${identity.title} » → cred#${r.cred_id} ${r.stream_id}`)
+        }
+      }
+    }
+
+    // Chemin direct : ref_id stocké encore valide (VOD avec son credential, ou
+    // série/live inchangés). Construit l'URL si la re-résolution n'a pas déjà servi.
+    if (!streamUrl && entry.tivimate_id) {
+      const built = await buildIptvStreamUrl(target_device_id, entry.tivimate_id, resolvedIptvType, iptv_ext, credForUrl)
+      if (built) {
+        streamUrl = built.url; iptvContainer = built.container
+        console.log(`[iptv] resolved ${resolvedIptvType} stream URL: ${built.url} (container=${built.container})`)
+      } else {
+        console.warn(`[iptv] failed to build stream URL for ${entry.tivimate_id} — agent will fallback`)
+      }
     }
   }
 

@@ -64,27 +64,32 @@ async function findIptvSeries(showTitle: string, credId: number, cache: ResolveC
 // Résout un épisode vers l'épisode Plex précis, sinon vers l'épisode IPTV, sinon « manquant ».
 async function resolveEpisode(item: ScrapedListItem, sections: PlexSection[], credId: number | null, cache: ResolveCache, lang: string): Promise<PlaylistItemInput> {
   const showTitle = item.show_title ?? item.title
+  // Identité de l'œuvre (la SÉRIE) : IDs de la série + coordonnées saison/épisode.
+  const sids = item.show_ids ?? item.ids
+  const epId = { tmdb_id: sids?.tmdb, imdb_id: sids?.imdb ?? undefined, tvdb_id: sids?.tvdb, season: item.season ?? undefined, episode: item.episode ?? undefined }
   // 1) Plex
   const show = await findPlexShow(showTitle, item.year, sections, cache)
   if (show && item.season != null && item.episode != null) {
     const season = show.seasons.find(s => s.season_number === item.season)
     const ep = season?.episodes.find(e => e.episode_number === item.episode)
-    if (ep) return { app: 'plex', ref_id: ep.ratingKey, ref_type: 'episode', title: item.title, year: item.year ?? undefined, thumb: ep.thumb ?? show.info.thumb, status: 'resolved' }
+    if (ep) return { app: 'plex', ref_id: ep.ratingKey, ref_type: 'episode', title: item.title, year: item.year ?? undefined, thumb: ep.thumb ?? show.info.thumb, status: 'resolved', ...epId }
   }
   // 2) IPTV (épisode VOD de série) — récupère ce que Plex n'a pas
   if (credId != null && item.season != null && item.episode != null) {
     const series = await findIptvSeries(showTitle, credId, cache)
     const season = series?.info.seasons.find(s => s.season_number === item.season)
     const ep = season?.episodes.find(e => e.episode_num === item.episode)
-    if (ep) return { app: 'iptv', ref_id: ep.episode_id, ref_type: 'series', title: item.title, year: item.year ?? undefined, thumb: ep.movie_image ?? series?.logo, lang, ext: ep.container_extension, status: 'resolved' }
+    if (ep) return { app: 'iptv', ref_id: ep.episode_id, ref_type: 'series', title: item.title, year: item.year ?? undefined, thumb: ep.movie_image ?? series?.logo, lang, ext: ep.container_extension, status: 'resolved', ...epId }
   }
-  return { app: 'unresolved', ref_type: 'episode', title: item.title, year: item.year ?? undefined, status: 'missing' }
+  return { app: 'unresolved', ref_type: 'episode', title: item.title, year: item.year ?? undefined, status: 'missing', ...epId }
 }
 
 // Résout un film/série vers Plex (prioritaire) puis IPTV (langue donnée).
 export async function resolveScrapedItem(item: ScrapedListItem, sections: PlexSection[], credId: number | null, cache: ResolveCache, lang: string): Promise<PlaylistItemInput> {
   if (item.kind === 'episode') return resolveEpisode(item, sections, credId, cache, lang)
   const wantShow = item.type === 'series'
+  // Identité de l'œuvre : IDs externes possédés, capturés une fois.
+  const wid = { tmdb_id: item.ids?.tmdb, imdb_id: item.ids?.imdb ?? undefined, tvdb_id: item.ids?.tvdb }
   const secs = sections.filter(s => (wantShow ? s.type === 'show' : s.type === 'movie'))
   for (const sec of secs) {
     for (const q of [item.title, item.original_title].filter(Boolean) as string[]) {
@@ -94,7 +99,7 @@ export async function resolveScrapedItem(item: ScrapedListItem, sections: PlexSe
         const best =
           cands.find(c => titleMatches(c.title, item.title) && !!item.year && !!c.year && Math.abs((c.year ?? 0) - item.year) <= 1) ||
           cands.find(c => titleMatches(c.title, q))
-        if (best) return { app: 'plex', ref_id: best.ratingKey, ref_type: best.type, title: best.title, year: best.year ?? item.year ?? undefined, thumb: best.thumb, status: 'resolved' }
+        if (best) return { app: 'plex', ref_id: best.ratingKey, ref_type: best.type, title: best.title, year: best.year ?? item.year ?? undefined, thumb: best.thumb, status: 'resolved', ...wid }
       } catch { /* section search KO, on continue */ }
     }
   }
@@ -103,8 +108,8 @@ export async function resolveScrapedItem(item: ScrapedListItem, sections: PlexSe
     try {
       const r = await api.iptv.streams(credId, { type, search: item.title, languages: lang ? [lang] : undefined, limit: 8 })
       const best = r.items.find(s => titleMatches(s.name, item.title)) ?? r.items[0]
-      if (best) return { app: 'iptv', ref_id: best.stream_id, ref_type: type, title: item.title, year: item.year ?? undefined, thumb: best.logo, lang, status: 'resolved' }
+      if (best) return { app: 'iptv', ref_id: best.stream_id, ref_type: type, title: item.title, year: item.year ?? undefined, thumb: best.logo, lang, status: 'resolved', ...wid }
     } catch { /* */ }
   }
-  return { app: 'unresolved', ref_type: item.type, title: item.title, year: item.year ?? undefined, status: 'missing' }
+  return { app: 'unresolved', ref_type: item.type, title: item.title, year: item.year ?? undefined, status: 'missing', ...wid }
 }

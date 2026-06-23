@@ -17,7 +17,7 @@ import PlaylistJsonModal from '../components/PlaylistJsonModal'
 import {
   ArrowLeft, Play, Loader2, Trash2, GripVertical, Film, Tv, Gamepad2, Radio, MonitorPlay,
   Users, Lock, AlertTriangle, Check, Eye, EyeOff, RotateCcw, Replace, Pencil, Share2, Menu, Braces,
-  ChevronRight, ChevronDown,
+  ChevronRight, ChevronDown, RefreshCw,
 } from 'lucide-react'
 
 // Menu d'actions d'une ligne (burger) : ouvert en position fixe pour ne pas être
@@ -110,12 +110,13 @@ type RowActions = {
   canEdit: boolean
   onPlay: (it: PlaylistItem) => void; onRemove: (it: PlaylistItem) => void
   onToggleSeen: (it: PlaylistItem) => void; onResolve: (it: PlaylistItem) => void
+  onReresolve: (it: PlaylistItem) => void
   busy: boolean; seen: boolean; progressPct: number | null
 }
 
 // Contenu visuel d'une ligne (n° + visuel + titre + menu burger), partagé entre une
 // ligne déplaçable (SortableRow) et une ligne d'épisode dans un groupe (EpisodeRow).
-function RowBody({ it, label, indent, listeners, handle, canEdit, onPlay, onRemove, onToggleSeen, onResolve, busy, seen, progressPct }: RowActions & {
+function RowBody({ it, label, indent, listeners, handle, canEdit, onPlay, onRemove, onToggleSeen, onResolve, onReresolve, busy, seen, progressPct }: RowActions & {
   it: PlaylistItem; label: ReactNode; indent?: boolean; listeners?: any; handle?: ReactNode
 }) {
   const Icon = APP_ICON[it.app] ?? Tv
@@ -160,6 +161,7 @@ function RowBody({ it, label, indent, listeners, handle, canEdit, onPlay, onRemo
               {!missing && <MenuItem icon={Play} label="Lancer" onClick={() => { close(); onPlay(it) }} />}
               {!missing && <MenuItem icon={seen ? EyeOff : Eye} label={seen ? 'Marquer non vu' : 'Marquer vu'} onClick={() => { close(); onToggleSeen(it) }} />}
               {canEdit && <MenuItem icon={Replace} label={missing ? 'Résoudre' : 'Changer la version'} onClick={() => { close(); onResolve(it) }} />}
+              {canEdit && it.app === 'iptv' && <MenuItem icon={RefreshCw} label="Re-résoudre (auto)" onClick={() => { close(); onReresolve(it) }} />}
               {canEdit && <MenuItem icon={Trash2} label="Retirer" danger onClick={() => { close(); onRemove(it) }} />}
             </>
           )}
@@ -379,6 +381,21 @@ export default function PlaylistDetail() {
     await api.playlists.removeItem(plId, it.id).catch(load)
   }
 
+  // Re-résolution automatique d'un item IPTV cassé (changement de provider) : le
+  // backend retrouve le flux par l'identité de l'œuvre et met à jour le ref_id.
+  const reresolve = async (it: PlaylistItem) => {
+    setBusy(it.id)
+    try {
+      const r = await api.playlists.reresolveItem(plId, it.id)
+      flash(r.resolved ? `✓ « ${it.title} » re-résolu` : `Introuvable sur les sources actives`, r.resolved)
+      await load()
+    } catch (e: any) {
+      flash(`Échec : ${e.message}`, false)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const toggleGroup = (gid: string) => setExpandedGroups(prev => {
     const next = new Set(prev)
     next.has(gid) ? next.delete(gid) : next.add(gid)
@@ -421,7 +438,9 @@ export default function PlaylistDetail() {
         if (!r.ok) throw new Error('échec')
         flash(`▶ ${it.title}`, true)
       } else if (it.app === 'iptv') {
-        const r = await api.play({ iptv_stream_id: it.ref_id, iptv_type: (it.ref_type as any) ?? 'vod', iptv_ext: it.ext ?? undefined, title: it.title, thumb: it.thumb, resume_position_ms: prog?.position, app: 'iptv', device_id: deviceId, requester: 'manual' })
+        const r = await api.play({ iptv_stream_id: it.ref_id, iptv_type: (it.ref_type as any) ?? 'vod', iptv_ext: it.ext ?? undefined, title: it.title, thumb: it.thumb, resume_position_ms: prog?.position, app: 'iptv', device_id: deviceId, requester: 'manual',
+          // Identité de l'œuvre → re-résolution souveraine si le stream_id est périmé.
+          work_id: it.work_id, year: it.year, iptv_season: it.season, iptv_episode: it.episode, preferred_lang: it.lang ?? undefined })
         flash(prog ? `⟲ ${r.title}` : `▶ ${r.title}`, true)
       } else if (it.app === 'plex') {
         const r = await api.play({ plex_id: it.ref_id, title: it.title, thumb: it.thumb, resume: true, resume_position_ms: prog?.position, app: 'plex', device_id: deviceId, requester: 'manual' })
@@ -595,7 +614,7 @@ export default function PlaylistDetail() {
             <div className="space-y-1.5">
               {blocks.map(b => b.kind === 'single' ? (
                 <SortableRow key={b.id} it={b.item} label={items.indexOf(b.item) + 1} canEdit={canEdit}
-                  onPlay={play} onRemove={removeItem} onToggleSeen={onToggleSeen} onResolve={setResolveTarget}
+                  onPlay={play} onRemove={removeItem} onToggleSeen={onToggleSeen} onResolve={setResolveTarget} onReresolve={reresolve}
                   busy={busy === b.item.id} seen={isSeen(b.item)} progressPct={progressFor(b.item)?.percent ?? null} />
               ) : (
                 <div key={b.id} className="space-y-1.5">
@@ -614,7 +633,7 @@ export default function PlaylistDetail() {
                     <div className="space-y-1.5 ml-3 pl-3 border-l border-zinc-800">
                       {b.items.map(it => (
                         <EpisodeRow key={it.id} it={it} label={`E${parseEp(it)?.episode ?? ''}`} canEdit={canEdit}
-                          onPlay={play} onRemove={removeItem} onToggleSeen={onToggleSeen} onResolve={setResolveTarget}
+                          onPlay={play} onRemove={removeItem} onToggleSeen={onToggleSeen} onResolve={setResolveTarget} onReresolve={reresolve}
                           busy={busy === it.id} seen={isSeen(it)} progressPct={progressFor(it)?.percent ?? null} />
                       ))}
                     </div>

@@ -132,7 +132,7 @@ export function normalizeTitle(s: string): string {
     .trim()
 }
 
-function findAllInList(list: StreamEntry[], title: string, year?: number): StreamEntry[] {
+export function findAllInList(list: StreamEntry[], title: string, year?: number): StreamEntry[] {
   if (list.length === 0) return []
   const target = normalizeTitle(title)
   if (target.length < 3) return []

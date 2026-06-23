@@ -195,6 +195,9 @@ export interface PlaylistItem {
   lang?: string
   ext?: string
   status: 'resolved' | 'missing'
+  work_id?: number
+  season?: number
+  episode?: number
   created_at: number
 }
 export interface Playlist {
@@ -222,6 +225,13 @@ export interface PlaylistItemInput {
   lang?: string
   ext?: string
   status?: 'resolved' | 'missing'
+  // Identité de l'œuvre (Chantier B) : IDs externes possédés + saison/épisode,
+  // capturés à l'ajout pour la re-résolution souveraine.
+  tmdb_id?: number
+  imdb_id?: string
+  tvdb_id?: number
+  season?: number
+  episode?: number
 }
 
 export interface Device {
@@ -346,6 +356,15 @@ export interface PlayIntent {
   series_duration_ms?: number  // durée attendue de l'épisode courant (détection fin IPTV)
   device_id?: string
   app?: string
+  // Identité de l'œuvre (Chantier B) : permet au backend de re-résoudre le flux IPTV
+  // si le stream_id stocké est périmé (changement de provider).
+  work_id?: number
+  tmdb_id?: number
+  imdb_id?: string
+  year?: number
+  iptv_season?: number
+  iptv_episode?: number
+  preferred_lang?: string
   requester: string
 }
 
@@ -792,6 +811,8 @@ export const api = {
     replaceItems: (id: number, items: PlaylistItemInput[]) => put<{ ok: boolean; count: number }>(`/playlists/${id}/items`, { items }),
     updateItem: (id: number, itemId: number, item: PlaylistItemInput) => put<{ ok: boolean }>(`/playlists/${id}/items/${itemId}`, item),
     removeItem: (id: number, itemId: number) => del<{ ok: boolean }>(`/playlists/${id}/items/${itemId}`),
+    // Re-résout un item IPTV cassé (changement de provider) par son identité.
+    reresolveItem: (id: number, itemId: number) => post<{ ok: boolean; resolved: boolean; ref_id?: string; cred_id?: number; lang?: string }>(`/playlists/${id}/items/${itemId}/reresolve`, {}),
     reorder: (id: number, order: number[]) => put<{ ok: boolean }>(`/playlists/${id}/reorder`, { order }),
   },
   senscritique: {

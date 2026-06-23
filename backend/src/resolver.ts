@@ -183,10 +183,15 @@ async function resolve(id: WorkIdentity, fresh: boolean): Promise<ResolvedStream
   // l'épisode via get_series_info). Sinon on chercherait une série au titre complet.
   const norm: WorkIdentity = { ...id }
   if (id.season != null && id.episode != null && id.title) {
-    const show = id.title.replace(/\s*·\s*s\d{1,3}e\d{1,4}.*$/i, '').trim()
+    // Coupe au token SxxExx, quel que soit le séparateur (· / - / | …) — robuste aux
+    // variantes d'encodage du point médian. Retire ensuite séparateurs/espaces traînants.
+    const m = id.title.match(/S\d{1,3}E\d{1,4}/i)
+    const show = (m && m.index ? id.title.slice(0, m.index) : id.title)
+      .replace(/[\s·•\-|:]+$/u, '').trim()
     if (show) norm.title = show
   }
   const workId = await ensureWork(norm)
+  console.log(`[resolver] recherche ${kind} ${JSON.stringify(norm.title)} (s${season}e${episode}, fresh=${fresh})`)
 
   if (!fresh && workId != null) {
     const { rows } = await db.execute({

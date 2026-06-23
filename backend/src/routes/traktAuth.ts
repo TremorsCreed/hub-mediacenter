@@ -200,11 +200,13 @@ const tnorm = (s?: string | null) =>
   (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
 
 // Cherche le meilleur match Trakt pour un titre (+ année), renvoie ses ids ({trakt,…}).
+// Lance sur erreur API (token/app/réseau) pour la distinguer d'un titre introuvable
+// (renvoie null) — sinon une panne d'auth ressemble à « aucun titre trouvé ».
 async function searchTraktIds(userId: number, kind: 'movie' | 'show', title: string, year?: number | null): Promise<any | null> {
   const q = encodeURIComponent(title)
   const yr = year ? `&years=${year}` : ''
   const r = await traktFetch(userId, `/search/${kind}?query=${q}${yr}&limit=5`)
-  if (!r.ok) return null
+  if (!r.ok) throw new Error(`trakt_search_${r.status}`)
   const arr = (await r.json()) as any[]
   if (!Array.isArray(arr) || !arr.length) return null
   // Priorité à un titre normalisé identique, sinon le 1er résultat (déjà trié par score).
@@ -219,6 +221,7 @@ const PushSchema = z.object({
 router.post('/lists/push', async (req, res) => {
   const userId = req.query.user_id !== undefined ? parseInt(String(req.query.user_id), 10) : (req as any).userId
   if (userId == null || !Number.isFinite(userId)) return res.status(400).json({ error: 'user_id_required' })
+  if (!(await getAppConfig())) return res.status(400).json({ error: 'Trakt non configuré : client_id/secret de l\'app manquants côté serveur.' })
   const acc = await getAccountRow(userId)
   if (!acc) return res.status(400).json({ error: 'no_trakt_account' })
   const parsed = PushSchema.safeParse(req.body)
@@ -233,17 +236,20 @@ router.post('/lists/push', async (req, res) => {
   // ── Résolution titre → ID Trakt (séquentiel : on reste sous le rate-limit Trakt) ──
   const movies: any[] = [], shows: any[] = [], episodes: any[] = []
   const missing: string[] = []
+  let apiErrors = 0
   for (const raw of items) {
     const it = raw as any
     const title = (it.title as string) || ''
     if (!title || it.status === 'missing') { if (title) missing.push(title); continue }
+    // Un titre au format « Show · S01E02 · Titre épisode » est un épisode même si le
+    // ref_type stocké dit « series » (selon la source d'import) → on se fie au motif.
+    const se = title.match(/s(\d{1,2})e(\d{1,3})/i)
+    const isEpisode = it.ref_type === 'episode' || (!!se && title.includes('·'))
     try {
-      if (it.ref_type === 'episode') {
-        // Titre stocké au format « Show · S01E02 · Titre épisode ».
+      if (isEpisode && se) {
         const showTitle = title.split('·')[0].trim()
-        const se = title.match(/s(\d{1,2})e(\d{1,3})/i)
         const showIds = await searchTraktIds(userId, 'show', showTitle, it.year)
-        if (showIds?.trakt && se) {
+        if (showIds?.trakt) {
           const er = await traktFetch(userId, `/shows/${showIds.trakt}/seasons/${Number(se[1])}/episodes/${Number(se[2])}`)
           const ep: any = er.ok ? await er.json() : null
           if (ep?.ids?.trakt) { episodes.push({ ids: { trakt: ep.ids.trakt } }); continue }
@@ -256,11 +262,18 @@ router.post('/lists/push', async (req, res) => {
         const ids = await searchTraktIds(userId, 'movie', title, it.year)
         if (ids?.trakt) movies.push({ ids: { trakt: ids.trakt } }); else missing.push(title)
       }
-    } catch { missing.push(title) }
+    } catch { apiErrors++; missing.push(title) }
   }
 
   const resolvedCount = movies.length + shows.length + episodes.length
-  if (resolvedCount === 0) return res.status(422).json({ error: 'Aucun titre n\'a pu être résolu sur Trakt.', missing })
+  if (resolvedCount === 0) {
+    // Si tout a échoué sur des erreurs API (token expiré, app injoignable…), ce n'est
+    // pas « titres introuvables » : on le signale comme un problème côté Trakt.
+    if (apiErrors > 0 && apiErrors === missing.length) {
+      return res.status(502).json({ error: 'Trakt injoignable (token expiré ou API en erreur). Vérifie la liaison du profil.', missing })
+    }
+    return res.status(422).json({ error: 'Aucun titre n\'a pu être résolu sur Trakt.', missing })
+  }
 
   // ── Création de la liste puis ajout des items ──────────────────────────────
   try {

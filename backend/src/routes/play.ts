@@ -417,7 +417,7 @@ async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, 
     entry = (rows[0] as any) ?? null
   } else if (query) {
     const { rows } = await db.execute({
-      sql: `SELECT * FROM catalog WHERE title LIKE ? ORDER BY title LIMIT 1`,
+      sql: `SELECT * FROM catalog WHERE title ILIKE ? ORDER BY title LIMIT 1`,
       args: [`%${query}%`]
     })
     entry = (rows[0] as any) ?? null

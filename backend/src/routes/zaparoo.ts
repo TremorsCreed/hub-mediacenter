@@ -28,7 +28,7 @@ router.post('/scan', async (req, res) => {
 
   if (!entry) {
     const { rows } = await db.execute({
-      sql: `SELECT * FROM catalog WHERE title LIKE ? ORDER BY title LIMIT 1`,
+      sql: `SELECT * FROM catalog WHERE title ILIKE ? ORDER BY title LIMIT 1`,
       args: [`%${token}%`]
     })
     entry = (rows[0] as any) ?? null

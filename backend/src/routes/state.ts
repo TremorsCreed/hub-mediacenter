@@ -140,7 +140,7 @@ router.get('/progress', async (req, res) => {
     FROM playback_progress
     WHERE seekable = 1 AND duration > 0
       AND ${lowBound} AND ${highBound}
-      AND iptv_type IS NOT 'live'
+      AND iptv_type IS DISTINCT FROM 'live'
     ORDER BY updated_at DESC
     LIMIT ${limit}
   `)

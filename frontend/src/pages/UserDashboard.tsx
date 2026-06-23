@@ -33,7 +33,11 @@ function normalizeRails(prefs: DashboardPrefs | null | undefined): { id: RailId;
   const stored = (prefs?.rails ?? []).filter(r => valid.has(r.id)) as { id: RailId; on: boolean }[]
   const seen = new Set(stored.map(r => r.id))
   for (const d of DEFAULT_RAILS) if (!seen.has(d.id)) stored.push(d)
-  return stored.length ? stored : [...DEFAULT_RAILS]
+  const out = stored.length ? stored : [...DEFAULT_RAILS]
+  // « Reprendre » (lecture en cours) est prioritaire : toujours en tête de l'Accueil.
+  const ri = out.findIndex(r => r.id === 'resume')
+  if (ri > 0) { const [r] = out.splice(ri, 1); out.unshift(r) }
+  return out
 }
 
 function fmt(ms: number): string {
@@ -89,6 +93,20 @@ function Rail({ icon: Icon, title, count, children }: { icon: typeof Tv; title: 
   )
 }
 
+// Placeholder de chargement d'une rangée : quelques vignettes grisées + spinner,
+// affiché tant que le module charge (au lieu d'un trou ou d'un flash).
+function RailLoading({ wide }: { wide?: boolean }) {
+  return (
+    <>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className={`relative ${wide ? 'w-60 aspect-video' : 'w-32 aspect-[2/3]'} shrink-0 rounded-lg bg-zinc-900 border border-zinc-800 overflow-hidden animate-pulse`}>
+          {i === 0 && <div className="absolute inset-0 flex items-center justify-center"><Loader2 size={20} className="animate-spin text-amber-400/70" /></div>}
+        </div>
+      ))}
+    </>
+  )
+}
+
 export default function UserDashboard() {
   const { currentUser, adminUnlocked } = useUser()
   const { favorites, toggle } = useFavorites()
@@ -97,10 +115,13 @@ export default function UserDashboard() {
   const [devices, setDevices] = useState<Device[]>([])
   const { deviceId, setDeviceId, reconcile } = usePersistentDevice()
   const [resume, setResume] = useState<ProgressItem[]>([])
+  const [resumeLoading, setResumeLoading] = useState(true)
   const [onDeck, setOnDeck] = useState<PlexOnDeckItem[]>([])
+  const [onDeckLoading, setOnDeckLoading] = useState(true)
   const [launching, setLaunching] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [discover, setDiscover] = useState<TraktDiscover | null>(null)
+  const [discoverLoading, setDiscoverLoading] = useState(true)
   const [ficheItem, setFicheItem] = useState<CompanionInboxItem | null>(null)
   const [editing, setEditing] = useState(false)
   const [rails, setRails] = useState(() => normalizeRails(currentUser?.dashboard_prefs))
@@ -111,8 +132,8 @@ export default function UserDashboard() {
   // périodiquement (le dashboard reste ouvert en permanence).
   useEffect(() => {
     const refresh = () => {
-      api.state.progress().then(setResume).catch(() => {})
-      api.plex.onDeck(20).then(setOnDeck).catch(() => setOnDeck([]))
+      api.state.progress().then(setResume).catch(() => {}).finally(() => setResumeLoading(false))
+      api.plex.onDeck(20).then(setOnDeck).catch(() => setOnDeck([])).finally(() => setOnDeckLoading(false))
     }
     refresh()
     const onFocus = () => refresh()
@@ -125,7 +146,7 @@ export default function UserDashboard() {
 
   // Découverte Trakt (tendances).
   useEffect(() => {
-    api.trakt.discover().then(setDiscover).catch(() => {})
+    api.trakt.discover().then(setDiscover).catch(() => {}).finally(() => setDiscoverLoading(false))
   }, [])
 
   // Clic sur une tendance : on n'auto-lance plus rien. On ouvre la fiche (détail +
@@ -165,7 +186,7 @@ export default function UserDashboard() {
   }
 
   // ── Lancements ─────────────────────────────────────────────────────────────
-  const resumePlay = async (it: ProgressItem) => {
+  const resumePlay = async (it: ProgressItem, fromStart = false) => {
     // Reprise non disponible pour les contenus lancés hors Hub (YouTube, etc.) : pas
     // d'identifiant relançable. On le signale plutôt que d'échouer silencieusement.
     if (!it.plex_id && !it.iptv_stream_id) { flash('Reprise non disponible pour ce contenu (lancé hors du Hub)', false); return }
@@ -178,11 +199,13 @@ export default function UserDashboard() {
         iptv_type: (it.iptv_type as 'live' | 'vod' | 'series' | undefined) || undefined,
         iptv_ext: it.iptv_ext || undefined,
         title: it.title, thumb: it.thumb,
-        resume_position_ms: it.position,
+        // fromStart : relance à 0 (« depuis le début ») ; sinon reprend à la position.
+        resume: fromStart ? false : true,
+        resume_position_ms: fromStart ? 0 : it.position,
         app: it.plex_id ? 'plex' : 'iptv',
         device_id: deviceId, requester: 'manual',
       })
-      flash(`⟲ ${r.title}`, true)
+      flash(fromStart ? `▶ ${r.title}` : `⟲ ${r.title}`, true)
     } catch (e: any) { flash(`Échec : ${e.message}`, false) } finally { setLaunching(null) }
   }
 
@@ -323,11 +346,15 @@ export default function UserDashboard() {
           )
         }
         if (id === 'resume') {
-          if (!resume.length) return null
+          if (!resume.length) {
+            if (!resumeLoading) return null
+            return <Rail key={id} icon={RotateCcw} title={RAIL_META.resume.label}><RailLoading wide /></Rail>
+          }
           return (
             <Rail key={id} icon={RotateCcw} title={RAIL_META.resume.label} count={resume.length}>
               {resume.map(it => {
                 const busy = launching === `resume:${it.media_key}`
+                const offHub = !it.plex_id && !it.iptv_stream_id
                 return (
                   <div key={it.media_key} className="hover-pop group relative w-60 shrink-0 snap-start">
                   <button onClick={() => resumePlay(it)} disabled={busy}
@@ -351,6 +378,17 @@ export default function UserDashboard() {
                     <div className="text-sm mt-1.5 truncate">{it.title}</div>
                     <div className="text-[11px] text-zinc-500">{fmt(it.duration - it.position)} restantes</div>
                   </button>
+                  {/* Boutons explicites : reprendre à la position / relancer depuis le début */}
+                  <div className="flex gap-1.5 mt-1.5">
+                    <button onClick={() => resumePlay(it)} disabled={busy || offHub}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-2 py-1.5 rounded bg-amber-500 text-zinc-950 text-xs font-semibold hover:bg-amber-400 disabled:opacity-40">
+                      <Play size={13} fill="currentColor" /> Reprendre
+                    </button>
+                    <button onClick={() => resumePlay(it, true)} disabled={busy || offHub} title="Relancer depuis le début"
+                      className="inline-flex items-center justify-center px-2 py-1.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 text-xs hover:border-zinc-500 disabled:opacity-40">
+                      <RotateCcw size={13} />
+                    </button>
+                  </div>
                   <button onClick={() => removeProgress(it.media_key)} title="Retirer de Reprendre"
                     className="reveal tap-target absolute top-1.5 right-1.5 w-7 h-7 flex items-center justify-center rounded-full bg-black/55 backdrop-blur-sm hover:bg-black/75">
                     <X size={14} className="text-white/90" />
@@ -400,7 +438,10 @@ export default function UserDashboard() {
           )
         }
         if (id === 'ondeck') {
-          if (!onDeck.length) return null
+          if (!onDeck.length) {
+            if (!onDeckLoading) return null
+            return <Rail key={id} icon={Film} title={RAIL_META.ondeck.label}><RailLoading wide /></Rail>
+          }
           return (
             <Rail key={id} icon={Film} title={RAIL_META.ondeck.label} count={onDeck.length}>
               {onDeck.map(it => {
@@ -452,7 +493,10 @@ export default function UserDashboard() {
         return null
       })}
 
-      {/* Tendances Trakt (toujours affichée si dispo) — films + séries du moment */}
+      {/* Tendances Trakt — spinner pendant le chargement, puis films + séries du moment */}
+      {discoverLoading && !discover && (
+        <Rail icon={TrendingUp} title="Tendances Trakt"><RailLoading /></Rail>
+      )}
       {discover && (discover.movies.length > 0 || discover.shows.length > 0) && (
         <Rail icon={TrendingUp} title="Tendances Trakt">
           {[...discover.movies.slice(0, 12), ...discover.shows.slice(0, 12)].map((item, i) => {

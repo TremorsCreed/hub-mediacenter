@@ -123,6 +123,28 @@ router.get('/now/:deviceId', async (req, res) => {
   res.json({ ...m, thumb })
 })
 
+// Position/durée Plex côté SERVEUR (source de vérité) pour un lot de ratingKeys.
+// Le lecteur Plex n'expose ni titre ni durée fiable via MediaSession, mais le serveur
+// Plex garde le viewOffset à jour. Un seul appel batch /library/metadata/{a,b,c}.
+async function fetchPlexProgress(ratingKeys: string[]): Promise<Record<string, { viewOffset: number; duration: number }>> {
+  const out: Record<string, { viewOffset: number; duration: number }> = {}
+  const ids = [...new Set(ratingKeys.filter(Boolean))]
+  if (!ids.length) return out
+  try {
+    const { rows: pc } = await db.execute('SELECT auth_token, server_url FROM plex_config WHERE id = 1')
+    const cfg = pc[0] as any
+    if (!cfg?.auth_token || !cfg?.server_url) return out
+    const r = await fetch(`${cfg.server_url}/library/metadata/${ids.join(',')}?X-Plex-Token=${cfg.auth_token}`,
+      { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(5000) as any })
+    if (!r.ok) return out
+    const j: any = await r.json()
+    for (const m of (j?.MediaContainer?.Metadata ?? [])) {
+      out[String(m.ratingKey)] = { viewOffset: Number(m.viewOffset ?? 0), duration: Number(m.duration ?? 0) }
+    }
+  } catch { /* best-effort */ }
+  return out
+}
+
 // GET /progress — « Reprendre » (continue watching) : médias en cours, ni à peine
 // commencés ni quasi terminés, triés par récence. Fournit les identifiants de reprise
 // (plex/iptv) + la position pour relancer à la bonne seconde. Progression globale en v1
@@ -131,22 +153,32 @@ router.get('/progress', async (req, res) => {
   // ?all=1 : relâche le plancher (un film à peine entamé compte aussi) et élargit la
   // fenêtre — utilisé pour « reprendre une playlist » où même 1 min comptée doit reprendre.
   const all = req.query.all === '1'
-  const lowBound = all ? 'position > 30000' : 'position > duration * 0.02'
-  const highBound = all ? 'position < duration * 0.98' : 'position < duration * 0.95'
   const limit = all ? 200 : 24
+  // On ne filtre pas la position/durée en SQL : pour Plex elles sont remplacées par les
+  // valeurs serveur (la position stockée via l'agent n'est pas fiable). On borne en JS
+  // APRÈS enrichissement.
   const { rows } = await db.execute(`
     SELECT media_key, catalog_id, app, title, thumb, plex_id, iptv_stream_id, iptv_type, iptv_ext,
            position, duration, updated_at
     FROM playback_progress
-    WHERE seekable = 1 AND duration > 0
-      AND ${lowBound} AND ${highBound}
-      AND iptv_type IS DISTINCT FROM 'live'
+    WHERE seekable = 1 AND iptv_type IS DISTINCT FROM 'live'
     ORDER BY updated_at DESC
-    LIMIT ${limit}
+    LIMIT 300
   `)
-  res.json(rows.map((r: any) => ({
+  const plexMeta = await fetchPlexProgress((rows as any[]).map(r => r.plex_id).filter(Boolean).map(String))
+  const enriched = (rows as any[]).map(r => {
+    const m = r.plex_id ? plexMeta[String(r.plex_id)] : undefined
+    return m ? { ...r, position: m.viewOffset, duration: m.duration } : r
+  })
+  const inWindow = enriched.filter(r => {
+    if (!(r.duration > 0)) return false
+    const low = all ? r.position > 30000 : r.position > r.duration * 0.02
+    const high = r.position < r.duration * (all ? 0.98 : 0.95)
+    return low && high
+  }).slice(0, limit)
+  res.json(inWindow.map(r => ({
     ...r,
-    percent: r.duration > 0 ? Math.min(100, Math.round((r.position / r.duration) * 100)) : 0,
+    percent: Math.min(100, Math.round((r.position / r.duration) * 100)),
   })))
 })
 

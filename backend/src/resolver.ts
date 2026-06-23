@@ -130,14 +130,26 @@ async function disambiguateByTmdb(credId: number, cands: StreamEntry[], tmdbId: 
 async function searchOnCred(credId: number, id: WorkIdentity, kind: 'vod' | 'series'): Promise<ResolvedStream | null> {
   const title = id.title!
   if (kind === 'series') {
-    const cands = findAllInList(await getSeriesList(credId), title)  // pas d'année pour une série
+    let cands = findAllInList(await getSeriesList(credId), title)  // pas d'année pour une série
     if (!cands.length) return null
-    const chosen = pickByLang(cands, id.preferred_lang)
-    if (id.season != null && id.episode != null) {
-      const ep = await resolveEpisodeId(credId, chosen.stream_id, id.season, id.episode)
-      if (!ep) return null
-      return { cred_id: credId, kind: 'series', stream_id: ep.episode_id, ext: ep.ext, lang: chosen.language }
+    // Ordonne par langue préférée d'abord (un provider a souvent plusieurs versions
+    // FR/EN/4K… de la même série).
+    if (id.preferred_lang) {
+      const pl = id.preferred_lang.toUpperCase()
+      cands = [...cands].sort((a, b) =>
+        (b.language?.toUpperCase() === pl ? 1 : 0) - (a.language?.toUpperCase() === pl ? 1 : 0))
     }
+    if (id.season != null && id.episode != null) {
+      // Plusieurs versions de la série existent ; certaines n'ont pas l'épisode (4K
+      // partiel, bande-annonce…). On essaie les candidates jusqu'à en trouver une qui
+      // contient bien la saison/épisode (≤8 appels get_series_info).
+      for (const c of cands.slice(0, 8)) {
+        const ep = await resolveEpisodeId(credId, c.stream_id, id.season, id.episode)
+        if (ep) return { cred_id: credId, kind: 'series', stream_id: ep.episode_id, ext: ep.ext, lang: c.language }
+      }
+      return null
+    }
+    const chosen = cands[0]
     return { cred_id: credId, kind: 'series', stream_id: chosen.stream_id, lang: chosen.language }
   }
   let cands = findAllInList(await getVodList(credId), title, id.year)

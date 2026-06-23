@@ -11,6 +11,7 @@ import AddToPlaylist from '../components/AddToPlaylist'
 import { CatalogDndProvider, DraggableMedia } from '../components/CatalogDnd'
 import Toast from '../components/Toast'
 import { PosterSkeletons } from '../components/Skeleton'
+import MobileSheet from '../components/MobileSheet'
 
 const SECTION_ICONS: Record<string, typeof Library> = {
   movie: Film,
@@ -153,6 +154,7 @@ export default function Plex() {
   const fetchedRef = useRef(0)
   // Cascade : développée à l'entrée du module (la sidebar système, elle, se réduit)
   const [sectionsCollapsed, setSectionsCollapsed] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false) // sélecteur de sections (mobile)
   const [devices, setDevices] = useState<Device[]>([])
   const { deviceId, setDeviceId, reconcile } = usePersistentDevice()
   const [sort, setSort] = usePersistedState('hub.plex.sort', 'titleSort') // tri natif Plex
@@ -320,13 +322,40 @@ export default function Plex() {
     )
   }
 
+  // Liste des sections, réutilisée par la sidebar desktop et le sheet mobile.
+  const sectionsList = (collapsed: boolean) => (
+    <nav className="flex-1 py-1 overflow-y-auto">
+      {sections.map(s => {
+        const Icon = sectionIcon(s.type)
+        return (
+          <button
+            key={s.id}
+            onClick={() => { setSectionId(s.id); setSheetOpen(false) }}
+            title={collapsed ? s.title : undefined}
+            className={`w-full flex items-center py-3 text-sm transition-colors text-left border-l-2 ${
+              collapsed ? 'justify-center px-0' : 'gap-2.5 px-4'
+            } ${
+              sectionId === s.id
+                ? 'bg-zinc-800 text-white border-amber-500'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 border-transparent'
+            }`}
+          >
+            <Icon size={15} strokeWidth={1.8} />
+            {!collapsed && <span className="truncate">{s.title}</span>}
+          </button>
+        )
+      })}
+    </nav>
+  )
+  const currentSection = sections.find(s => s.id === sectionId)
+
   return (
     <CatalogDndProvider>
     <div className="flex h-full">
 
-      {/* ── Sidebar bibliothèques (collapsible) ───────────────────── */}
+      {/* ── Sidebar bibliothèques (desktop ; masquée sur mobile → sheet) ───────────────────── */}
       <aside
-        className={`${sectionsCollapsed ? 'w-14 cursor-pointer' : 'w-52'} shrink-0 bg-zinc-950/60 border-r border-zinc-800 flex flex-col transition-[width] duration-200 overflow-hidden`}
+        className={`hidden md:flex ${sectionsCollapsed ? 'w-14 cursor-pointer' : 'w-52'} shrink-0 bg-zinc-950/60 border-r border-zinc-800 flex-col transition-[width] duration-200 overflow-hidden`}
         // Vue élargie d'un simple clic n'importe où sur la sidebar réduite
         onClick={e => {
           if (sectionsCollapsed && !(e.target as HTMLElement).closest('button')) setSectionsCollapsed(false)
@@ -338,28 +367,7 @@ export default function Plex() {
             : <span className="text-sm font-semibold text-white truncate">Plex</span>
           }
         </div>
-        <nav className="flex-1 py-1 overflow-y-auto">
-          {sections.map(s => {
-            const Icon = sectionIcon(s.type)
-            return (
-              <button
-                key={s.id}
-                onClick={() => setSectionId(s.id)}
-                title={sectionsCollapsed ? s.title : undefined}
-                className={`w-full flex items-center py-3 text-sm transition-colors text-left border-l-2 ${
-                  sectionsCollapsed ? 'justify-center px-0' : 'gap-2.5 px-4'
-                } ${
-                  sectionId === s.id
-                    ? 'bg-zinc-800 text-white border-amber-500'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 border-transparent'
-                }`}
-              >
-                <Icon size={15} strokeWidth={1.8} />
-                {!sectionsCollapsed && <span className="truncate">{s.title}</span>}
-              </button>
-            )
-          })}
-        </nav>
+        {sectionsList(sectionsCollapsed)}
         <div className="h-[45px] shrink-0 border-t border-zinc-800 flex items-center px-3">
           <button
             onClick={() => setSectionsCollapsed(v => !v)}
@@ -371,13 +379,28 @@ export default function Plex() {
         </div>
       </aside>
 
+      {/* Sheet sections (mobile) */}
+      <MobileSheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="Bibliothèques Plex">
+        {sectionsList(false)}
+      </MobileSheet>
+
       {/* ── Zone de contenu ───────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* Barre de contrôles */}
-        <div className="flex items-center gap-2 px-4 min-h-[53px] border-b border-zinc-800 shrink-0 flex-wrap">
+        <div className="flex items-center gap-2 px-3 md:px-4 py-2 md:py-0 md:min-h-[53px] border-b border-zinc-800 shrink-0 flex-wrap">
+          {/* Sélecteur de section (mobile uniquement) */}
+          <button
+            onClick={() => setSheetOpen(true)}
+            className="md:hidden flex items-center gap-2 h-9 px-3 bg-zinc-900 border border-zinc-800 rounded text-sm text-zinc-200 shrink-0"
+          >
+            <Library size={15} strokeWidth={1.8} />
+            <span className="truncate max-w-[34vw]">{currentSection?.title ?? 'Sections'}</span>
+            <ChevronDown size={14} className="text-zinc-500" />
+          </button>
+
           <select
-            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
+            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-2 md:py-1.5 text-sm focus:outline-none focus:border-zinc-600 max-w-[44vw] md:max-w-none"
             value={deviceId}
             onChange={e => setDeviceId(e.target.value)}
           >
@@ -391,7 +414,7 @@ export default function Plex() {
 
           {/* Tri (natif Plex, appliqué côté serveur) */}
           <select
-            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
+            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-2 md:py-1.5 text-sm focus:outline-none focus:border-zinc-600 max-w-[44vw] md:max-w-none"
             value={sort}
             onChange={e => setSort(e.target.value)}
             title="Tri"
@@ -405,10 +428,10 @@ export default function Plex() {
             <option value="lastViewedAt:desc">Vus récemment</option>
           </select>
 
-          <div className="relative flex-1 min-w-[200px]">
+          <div className="relative basis-full order-last md:order-none md:basis-auto md:flex-1 md:min-w-[200px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
             <input
-              className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 pl-8 text-sm focus:outline-none focus:border-zinc-600"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 md:py-1.5 pl-8 text-sm focus:outline-none focus:border-zinc-600"
               placeholder="Rechercher dans la bibliothèque…"
               value={search}
               onChange={e => setSearch(e.target.value)}

@@ -97,6 +97,21 @@ body {
   to { transform: translateX(0); opacity: 1; }
 }
 
+/* Drawer/sheet mobiles : entrée du scrim et glissement latéral. Désactivés
+   automatiquement par le bloc prefers-reduced-motion plus haut. */
+@keyframes fadein {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slidein-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+@keyframes slidein-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
 /* Anneau « hold-to-drag » : se remplit de 0 à la circonférence (2π·16 ≈ 100.53) */
 @keyframes holdFill {
   from { stroke-dashoffset: 100.53; }

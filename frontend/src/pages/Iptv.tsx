@@ -18,7 +18,8 @@ import VodDetail from '../components/VodDetail'
 import Toast from '../components/Toast'
 import { useModalA11y } from '../useModalA11y'
 import { PosterSkeletons, ChannelSkeletons } from '../components/Skeleton'
-import { LayoutGrid, CalendarDays } from 'lucide-react'
+import { LayoutGrid, CalendarDays, FolderTree, SlidersHorizontal } from 'lucide-react'
+import MobileSheet from '../components/MobileSheet'
 
 const PAGE_SIZE = 300
 
@@ -79,6 +80,8 @@ export default function Iptv() {
   // directement (anti-lancement accidentel, surtout sur mobile).
   const [vodDetail, setVodDetail] = useState<IptvStream | null>(null)
   const [liveView, setLiveView] = usePersistedState<'list' | 'guide'>('hub.iptv.liveview', 'list') // TV : liste / guide EPG
+  const [catSheetOpen, setCatSheetOpen] = useState(false) // catégories (mobile)
+  const [filtersOpen, setFiltersOpen] = useState(false)   // contrôles secondaires (mobile)
   const seriesModalRef = useModalA11y(!!selectedSeries, () => setSelectedSeries(null))
 
   useEffect(() => {
@@ -307,56 +310,78 @@ export default function Iptv() {
     )
   }
 
+  // Liste des catégories, réutilisée par la sidebar desktop et le sheet mobile.
+  const categoriesList = () => (
+    <div className="flex-1 overflow-y-auto py-1">
+      <button
+        onClick={() => { setCategoryId(''); setUnlockedCat(null); saveCat(type, ''); setCatSheetOpen(false) }}
+        className={`w-full px-3 py-2.5 md:py-2 text-sm md:text-xs text-left transition-colors truncate ${
+          categoryId === ''
+            ? 'bg-zinc-800 text-white'
+            : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
+        }`}
+      >
+        Toutes les catégories
+      </button>
+      {categories.map(c => (
+        <button
+          key={c.id}
+          onClick={() => {
+            if (c.state === 'locked' && unlockedCat !== c.id) { setPinPrompt({ catId: c.id, name: c.name }); return }
+            setCategoryId(c.id)
+            saveCat(type, c.id)
+            // Sortir d'un groupe verrouillé le re-verrouille
+            if (unlockedCat && unlockedCat !== c.id) setUnlockedCat(null)
+            setCatSheetOpen(false)
+          }}
+          className={`w-full px-3 py-2.5 md:py-2 text-sm md:text-xs text-left transition-colors truncate flex items-center gap-1.5 ${
+            categoryId === c.id
+              ? 'bg-zinc-800 text-white'
+              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
+          }`}
+        >
+          {c.state === 'locked' && (
+            <Lock size={11} className={`shrink-0 ${unlockedCat === c.id ? 'text-emerald-500' : 'text-amber-500'}`} />
+          )}
+          <span className="truncate">{c.name}</span>
+        </button>
+      ))}
+    </div>
+  )
+  const currentCat = categories.find(c => c.id === categoryId)
+
   return (
     <CatalogDndProvider>
     <div className="flex h-full">
 
-      {/* ── Sidebar catégories (toujours visible ; le type se choisit en header) ── */}
-      <aside className="w-48 shrink-0 border-r border-zinc-800 bg-zinc-950/40 flex flex-col overflow-hidden">
+      {/* ── Sidebar catégories (desktop ; masquée sur mobile → sheet) ── */}
+      <aside className="hidden md:flex w-48 shrink-0 border-r border-zinc-800 bg-zinc-950/40 flex-col overflow-hidden">
         <div className="h-[53px] shrink-0 flex items-center px-3 border-b border-zinc-800 text-[10px] uppercase tracking-widest text-zinc-600 font-medium">
           Catégories
         </div>
-        <div className="flex-1 overflow-y-auto py-1">
-          <button
-            onClick={() => { setCategoryId(''); setUnlockedCat(null); saveCat(type, '') }}
-            className={`w-full px-3 py-2 text-xs text-left transition-colors truncate ${
-              categoryId === ''
-                ? 'bg-zinc-800 text-white'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
-            }`}
-          >
-            Toutes les catégories
-          </button>
-          {categories.map(c => (
-            <button
-              key={c.id}
-              onClick={() => {
-                if (c.state === 'locked' && unlockedCat !== c.id) { setPinPrompt({ catId: c.id, name: c.name }); return }
-                setCategoryId(c.id)
-                saveCat(type, c.id)
-                // Sortir d'un groupe verrouillé le re-verrouille
-                if (unlockedCat && unlockedCat !== c.id) setUnlockedCat(null)
-              }}
-              className={`w-full px-3 py-2 text-xs text-left transition-colors truncate flex items-center gap-1.5 ${
-                categoryId === c.id
-                  ? 'bg-zinc-800 text-white'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
-              }`}
-            >
-              {c.state === 'locked' && (
-                <Lock size={11} className={`shrink-0 ${unlockedCat === c.id ? 'text-emerald-500' : 'text-amber-500'}`} />
-              )}
-              <span className="truncate">{c.name}</span>
-            </button>
-          ))}
-        </div>
+        {categoriesList()}
       </aside>
+
+      {/* Sheet catégories (mobile) */}
+      <MobileSheet open={catSheetOpen} onClose={() => setCatSheetOpen(false)} title="Catégories">
+        {categoriesList()}
+      </MobileSheet>
 
       {/* ── Zone de contenu ───────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* Barre de contrôles */}
-        <div className="flex items-center gap-2 px-4 min-h-[53px] border-b border-zinc-800 shrink-0 flex-wrap">
+        <div className="flex items-center gap-2 px-3 md:px-4 py-2 md:py-0 md:min-h-[53px] border-b border-zinc-800 shrink-0 flex-wrap">
+          {/* Catégories (mobile) : ouvre le sheet */}
+          <button
+            onClick={() => setCatSheetOpen(true)}
+            className="md:hidden flex items-center gap-2 h-9 px-3 bg-zinc-900 border border-zinc-800 rounded text-sm text-zinc-200 shrink-0"
+          >
+            <FolderTree size={15} strokeWidth={1.8} />
+            <span className="truncate max-w-[30vw]">{currentCat?.name ?? 'Catégories'}</span>
+            <ChevronDown size={14} className="text-zinc-500" />
+          </button>
+
           {/* Type de média (ex-sidebar) : segment en header pour aller plus vite */}
           <div className="flex items-center gap-0.5 bg-zinc-900 border border-zinc-800 rounded-lg p-0.5 mr-1">
             {MEDIA_TYPES.map(({ key, label, icon: Icon }) => (
@@ -372,8 +397,17 @@ export default function Iptv() {
             ))}
           </div>
 
+          {/* Filtres secondaires (mobile : repliés derrière un bouton ; desktop : inline) */}
+          <button
+            onClick={() => setFiltersOpen(v => !v)}
+            className={`md:hidden flex items-center gap-2 h-9 px-3 rounded text-sm shrink-0 border ${filtersOpen ? 'bg-zinc-800 border-zinc-600 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-300'}`}
+          >
+            <SlidersHorizontal size={15} strokeWidth={1.8} /> Filtres
+          </button>
+
+          <div className={`${filtersOpen ? 'flex' : 'hidden'} md:flex items-center gap-2 flex-wrap basis-full md:basis-auto`}>
           <select
-            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600"
+            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-2 md:py-1.5 text-sm focus:outline-none focus:border-zinc-600"
             value={credId ?? ''}
             onChange={e => setCredId(Number(e.target.value))}
           >
@@ -476,12 +510,13 @@ export default function Iptv() {
             <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
             <span className="hidden sm:inline">{refreshing ? 'Rafraîchissement…' : 'Rafraîchir'}</span>
           </button>
+          </div>
 
           {/* Recherche */}
-          <div className="relative flex-1 min-w-[180px]">
+          <div className="relative basis-full order-last md:order-none md:basis-auto md:flex-1 md:min-w-[180px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
             <input
-              className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 pl-8 text-sm focus:outline-none focus:border-zinc-600"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 md:py-1.5 pl-8 text-sm focus:outline-none focus:border-zinc-600"
               placeholder={type === 'live' ? 'Rechercher une chaîne…' : type === 'series' ? 'Rechercher une série…' : 'Rechercher un film…'}
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -516,7 +551,7 @@ export default function Iptv() {
           )}
 
           {type === 'live' ? (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2">
               {streams.map(s => (
                 <div key={s.stream_id} className="group relative">
                   <button

@@ -833,7 +833,7 @@ export const api = {
     // Crée une liste Trakt du profil actif et y verse les items de la playlist Hub
     // (résolution titre→ID Trakt côté backend). Renvoie l'URL + le bilan.
     pushList: (playlistId: number, opts: { privacy?: 'private' | 'friends' | 'public' } = {}) =>
-      post<{ ok: boolean; url: string; list_name: string; resolved: number; added?: { movies?: number; shows?: number; episodes?: number }; missing: string[] }>(
+      post<{ ok: boolean; url: string; list_name: string; resolved: number; added?: { movies?: number; shows?: number; episodes?: number }; reordered?: boolean; missing: string[] }>(
         '/trakt/lists/push', { playlist_id: playlistId, ...opts }),
   },
   play: (intent: PlayIntent) => post<{ ok: boolean; title: string; device_id: string; app: string }>('/play', intent),

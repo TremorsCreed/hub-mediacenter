@@ -235,6 +235,9 @@ router.post('/lists/push', async (req, res) => {
 
   // ── Résolution titre → ID Trakt (séquentiel : on reste sous le rate-limit Trakt) ──
   const movies: any[] = [], shows: any[] = [], episodes: any[] = []
+  // Ordre voulu (= ordre de la playlist), pour réordonner la liste Trakt après l'ajout.
+  // L'ajout batch groupe par type (films/séries/épisodes) et casse l'entrelacement.
+  const wantOrder: Array<{ type: 'movie' | 'show' | 'episode'; trakt: number }> = []
   const missing: string[] = []
   let apiErrors = 0
   for (const raw of items) {
@@ -252,15 +255,15 @@ router.post('/lists/push', async (req, res) => {
         if (showIds?.trakt) {
           const er = await traktFetch(userId, `/shows/${showIds.trakt}/seasons/${Number(se[1])}/episodes/${Number(se[2])}`)
           const ep: any = er.ok ? await er.json() : null
-          if (ep?.ids?.trakt) { episodes.push({ ids: { trakt: ep.ids.trakt } }); continue }
+          if (ep?.ids?.trakt) { episodes.push({ ids: { trakt: ep.ids.trakt } }); wantOrder.push({ type: 'episode', trakt: ep.ids.trakt }); continue }
         }
         missing.push(title)
       } else if (it.ref_type === 'series' || it.ref_type === 'show') {
         const ids = await searchTraktIds(userId, 'show', title, it.year)
-        if (ids?.trakt) shows.push({ ids: { trakt: ids.trakt } }); else missing.push(title)
+        if (ids?.trakt) { shows.push({ ids: { trakt: ids.trakt } }); wantOrder.push({ type: 'show', trakt: ids.trakt }) } else missing.push(title)
       } else {
         const ids = await searchTraktIds(userId, 'movie', title, it.year)
-        if (ids?.trakt) movies.push({ ids: { trakt: ids.trakt } }); else missing.push(title)
+        if (ids?.trakt) { movies.push({ ids: { trakt: ids.trakt } }); wantOrder.push({ type: 'movie', trakt: ids.trakt }) } else missing.push(title)
       }
     } catch { apiErrors++; missing.push(title) }
   }
@@ -277,29 +280,56 @@ router.post('/lists/push', async (req, res) => {
 
   // ── Création de la liste puis ajout des items ──────────────────────────────
   try {
+    // sort_by=rank → Trakt affiche dans l'ordre manuel (nos rangs), pas par titre/date.
     const createRes = await traktFetch(userId, '/users/me/lists', {
       method: 'POST',
-      body: JSON.stringify({ name: pl.name, description: pl.description ?? undefined, privacy: parsed.data.privacy ?? 'private' }),
+      body: JSON.stringify({ name: pl.name, description: pl.description ?? undefined, privacy: parsed.data.privacy ?? 'private', sort_by: 'rank', sort_how: 'asc' }),
     })
     if (!createRes.ok) {
       const txt = await createRes.text().catch(() => '')
       return res.status(502).json({ error: `Création de la liste Trakt refusée (${createRes.status}).`, detail: txt.slice(0, 200) })
     }
     const list: any = await createRes.json()
+    const listTrakt = list.ids?.trakt
     const listSlug = list.ids?.slug
-    const addRes = await traktFetch(userId, `/users/me/lists/${list.ids?.trakt}/items`, {
+    const addRes = await traktFetch(userId, `/users/me/lists/${listTrakt}/items`, {
       method: 'POST',
       body: JSON.stringify({ movies, shows, episodes }),
     })
     const added: any = addRes.ok ? await addRes.json() : null
-    const url = acc.username && listSlug ? `https://trakt.tv/users/${acc.username}/lists/${listSlug}` : `https://trakt.tv/lists/${list.ids?.trakt}`
-    console.log(`[trakt] liste « ${pl.name} » poussée → profil ${userId} (${resolvedCount} items, ${missing.length} manquants)`)
+
+    // ── Réordonnancement : impose l'ordre de la playlist ───────────────────────
+    // L'ajout batch a groupé par type. On relit la liste pour récupérer l'id de chaque
+    // item (≠ id Trakt de l'œuvre), on les remet dans l'ordre voulu et on POST /reorder.
+    let reordered = false
+    try {
+      const lr = await traktFetch(userId, `/users/me/lists/${listTrakt}/items`)
+      const listItems = (lr.ok ? await lr.json() : []) as any[]
+      // clé « type:traktId » → id de l'item dans la liste
+      const idByKey = new Map<string, number>()
+      for (const li of listItems) {
+        const t = li.type as string
+        const trakt = li[t]?.ids?.trakt
+        if (t && trakt != null && li.id != null) idByKey.set(`${t}:${trakt}`, li.id)
+      }
+      const rank = wantOrder.map(w => idByKey.get(`${w.type}:${w.trakt}`)).filter((x): x is number => x != null)
+      if (rank.length) {
+        const rr = await traktFetch(userId, `/users/me/lists/${listTrakt}/items/reorder`, {
+          method: 'POST', body: JSON.stringify({ rank }),
+        })
+        reordered = rr.ok
+      }
+    } catch { /* l'ordre est un bonus : un échec ne casse pas le push */ }
+
+    const url = acc.username && listSlug ? `https://trakt.tv/users/${acc.username}/lists/${listSlug}` : `https://trakt.tv/lists/${listTrakt}`
+    console.log(`[trakt] liste « ${pl.name} » poussée → profil ${userId} (${resolvedCount} items, ${missing.length} manquants, ordre=${reordered})`)
     res.json({
       ok: true,
       url,
       list_name: pl.name,
       resolved: resolvedCount,
       added: added?.added ?? { movies: movies.length, shows: shows.length, episodes: episodes.length },
+      reordered,
       missing,
     })
   } catch (e: any) {

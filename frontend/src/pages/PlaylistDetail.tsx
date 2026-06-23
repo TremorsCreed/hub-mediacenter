@@ -509,7 +509,8 @@ export default function PlaylistDetail() {
     try {
       const r = await api.trakt.pushList(pl.id)
       const miss = r.missing?.length ? ` · ${r.missing.length} introuvable${r.missing.length > 1 ? 's' : ''}` : ''
-      flash(`Poussé vers Trakt : ${r.resolved} ajouté${r.resolved > 1 ? 's' : ''}${miss}`, true)
+      const ord = r.reordered ? ' · ordre conservé' : ''
+      flash(`Poussé vers Trakt : ${r.resolved} ajouté${r.resolved > 1 ? 's' : ''}${ord}${miss}`, true)
       window.open(r.url, '_blank')
     } catch (e: any) {
       flash(`Trakt : ${e.message}`, false)

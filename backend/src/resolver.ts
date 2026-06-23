@@ -166,7 +166,15 @@ async function resolve(id: WorkIdentity, fresh: boolean): Promise<ResolvedStream
   const kind = wantKindOf(id)
   const season = id.season ?? -1
   const episode = id.episode ?? -1
-  const workId = await ensureWork(id)
+  // Pour un épisode, id.title est « Série · S02E09 · Titre épisode » : on isole le
+  // titre de la SÉRIE pour le matching et l'œuvre (la saison/épisode pinpointent
+  // l'épisode via get_series_info). Sinon on chercherait une série au titre complet.
+  const norm: WorkIdentity = { ...id }
+  if (id.season != null && id.episode != null && id.title) {
+    const show = id.title.replace(/\s*·\s*s\d{1,3}e\d{1,4}.*$/i, '').trim()
+    if (show) norm.title = show
+  }
+  const workId = await ensureWork(norm)
 
   if (!fresh && workId != null) {
     const { rows } = await db.execute({
@@ -181,10 +189,10 @@ async function resolve(id: WorkIdentity, fresh: boolean): Promise<ResolvedStream
     }
   }
 
-  if (!id.title) return null
+  if (!norm.title) return null
   for (const credId of await listActiveCredentialIds()) {
     try {
-      const found = await searchOnCred(credId, id, kind)
+      const found = await searchOnCred(credId, norm, kind)
       if (found) {
         found.work_id = workId ?? undefined
         if (workId != null) await upsertResolution(workId, found, season, episode)

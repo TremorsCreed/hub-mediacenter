@@ -63,6 +63,20 @@ export function jsonEntryToScraped(e: any): ScrapedListItem[] {
       const eps = seasonsToEpisodes(title, year, e.seasons)
       if (eps.length) return eps // sinon (saisons vides) on retombe sur la série entière
     }
+    // Titre d'épisode « Show · S01E02 · Titre » (round-trip depuis seasonsToEpisodes,
+    // ou collé tel quel) : on le reconnaît comme un épisode précis pour le résoudre
+    // au bon niveau, et non comme une série entière (sinon « Re-résoudre tout »
+    // casserait tous les épisodes en cherchant une série au titre de l'épisode).
+    const em = title.match(/^(.+?)\s*·\s*S(\d{1,3})E(\d{1,4})(?:\s*·\s*(.*))?$/i)
+    if (em) {
+      const showTitle = em[1].trim()
+      return [{
+        position: typeof e.position === 'number' ? e.position : 1,
+        title, year, type: 'series', kind: 'episode',
+        show_title: showTitle, season: Number(em[2]), episode: Number(em[3]),
+        episode_title: em[4]?.trim() || null,
+      }]
+    }
     const t = String(e.type ?? e.kind ?? '').toLowerCase()
     const type: 'movie' | 'series' = (t === 'series' || t === 'serie' || t === 'tv' || t === 'show') ? 'series' : 'movie'
     return [{ position: typeof e.position === 'number' ? e.position : 1, title, year, type, kind: type === 'series' ? 'show' : 'movie', original_title: e.original_title ?? null }]

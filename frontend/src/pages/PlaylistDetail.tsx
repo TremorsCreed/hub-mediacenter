@@ -546,7 +546,7 @@ export default function PlaylistDetail() {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-start gap-1">
-            <h1 className="flex-1 min-w-0 text-xl sm:text-2xl font-bold tracking-tight break-words">{pl.name}</h1>
+            <h1 title={pl.name} className="flex-1 min-w-0 text-xl sm:text-2xl font-bold tracking-tight truncate">{pl.name}</h1>
             {canEdit && (
               <button onClick={() => setEditing(true)} title="Modifier la playlist" aria-label="Modifier"
                 className="shrink-0 w-9 h-9 flex items-center justify-center text-zinc-400 hover:text-zinc-100 transition-colors">

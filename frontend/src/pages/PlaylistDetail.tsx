@@ -541,41 +541,44 @@ export default function PlaylistDetail() {
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">{pl.name}</h1>
           {pl.description && <p className="text-sm text-zinc-400 mt-1 line-clamp-3">{pl.description}</p>}
           <div className="text-xs text-zinc-500 mt-2">{items.length} élément{items.length > 1 ? 's' : ''}{pl.owner_name && pl.owner_user_id !== currentUser?.id ? ` · ${pl.owner_name}` : ''}</div>
-          <div className="flex items-center gap-2 mt-3 flex-wrap">
-            <button onClick={toggleShared} disabled={!canEdit}
-              className={`flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border transition-colors ${pl.is_shared ? 'border-cyan-700/60 text-cyan-300' : 'border-zinc-700 text-zinc-400'} ${canEdit ? 'hover:border-zinc-500' : 'opacity-70'}`}>
-              {pl.is_shared ? <><Users size={12} /> Partagée</> : <><Lock size={12} /> Perso</>}
-            </button>
-            <CurrentButton
-              item={{ key: `playlist:${pl.id}`, kind: 'playlist', playlist_id: pl.id, title: pl.name, thumb: pl.cover }}
-              label="En cours"
-              className="border border-zinc-700 px-2.5 py-1 hover:border-amber-500/50 text-xs"
-              size={13}
-            />
-            {canEdit && (
-              <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 transition-colors">
-                <Pencil size={12} /> Modifier
-              </button>
-            )}
-            {canEdit && (
-              <button onClick={() => setEditingJson(true)} title="Éditer la liste en JSON (réordonner, ajouter, retirer en masse)"
-                className="flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 transition-colors">
-                <Braces size={12} /> JSON
-              </button>
-            )}
-            {canEdit && traktLinked && (
-              <button onClick={pushToTrakt} disabled={pushing} title="Créer une liste Trakt à partir de cette playlist"
-                className="flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border border-red-700/60 text-red-300 hover:border-red-500 hover:text-red-200 transition-colors disabled:opacity-50">
-                {pushing ? <Loader2 size={12} className="animate-spin" /> : <Share2 size={12} />} Pousser vers Trakt
-              </button>
-            )}
-            {canEdit && (
-              <button onClick={deletePlaylist} className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-red-400 transition-colors px-2.5 py-1">
-                <Trash2 size={12} /> Supprimer
-              </button>
-            )}
-          </div>
         </div>
+      </div>
+
+      {/* Barre d'actions : pleine largeur (sous l'en-tête) pour rester lisible même
+          quand le panneau « lecture en cours » ancré à droite rétrécit la colonne. */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={toggleShared} disabled={!canEdit}
+          className={`flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border transition-colors ${pl.is_shared ? 'border-cyan-700/60 text-cyan-300' : 'border-zinc-700 text-zinc-400'} ${canEdit ? 'hover:border-zinc-500' : 'opacity-70'}`}>
+          {pl.is_shared ? <><Users size={12} /> Partagée</> : <><Lock size={12} /> Perso</>}
+        </button>
+        <CurrentButton
+          item={{ key: `playlist:${pl.id}`, kind: 'playlist', playlist_id: pl.id, title: pl.name, thumb: pl.cover }}
+          label="En cours"
+          className="border border-zinc-700 px-2.5 py-1 hover:border-amber-500/50 text-xs"
+          size={13}
+        />
+        {canEdit && (
+          <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 transition-colors">
+            <Pencil size={12} /> Modifier
+          </button>
+        )}
+        {canEdit && (
+          <button onClick={() => setEditingJson(true)} title="Éditer la liste en JSON (réordonner, ajouter, retirer en masse)"
+            className="flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 transition-colors">
+            <Braces size={12} /> JSON
+          </button>
+        )}
+        {canEdit && traktLinked && (
+          <button onClick={pushToTrakt} disabled={pushing} title="Créer une liste Trakt à partir de cette playlist"
+            className="flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border border-red-700/60 text-red-300 hover:border-red-500 hover:text-red-200 transition-colors disabled:opacity-50">
+            {pushing ? <Loader2 size={12} className="animate-spin" /> : <Share2 size={12} />} Pousser vers Trakt
+          </button>
+        )}
+        {canEdit && (
+          <button onClick={deletePlaylist} className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-red-400 transition-colors px-2.5 py-1">
+            <Trash2 size={12} /> Supprimer
+          </button>
+        )}
       </div>
 
       {/* Barre device */}

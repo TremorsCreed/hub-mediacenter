@@ -505,6 +505,10 @@ export async function initDb() {
   try { await db.execute("ALTER TABLE playlist_items ADD COLUMN IF NOT EXISTS season INTEGER") } catch {}
   try { await db.execute("ALTER TABLE playlist_items ADD COLUMN IF NOT EXISTS episode INTEGER") } catch {}
 
+  // Trace du dernier push vers Trakt (pastille « déjà poussée » + lien vers la liste).
+  try { await db.execute("ALTER TABLE playlists ADD COLUMN IF NOT EXISTS trakt_list_url TEXT") } catch {}
+  try { await db.execute("ALTER TABLE playlists ADD COLUMN IF NOT EXISTS trakt_pushed_at BIGINT") } catch {}
+
   // Seed : profil Admin par défaut (PIN 0000) si aucun utilisateur n'existe.
   const { rows: userCount } = await db.execute("SELECT COUNT(*) as n FROM users")
   if (Number((userCount[0] as any).n) === 0) {

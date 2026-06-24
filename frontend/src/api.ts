@@ -210,6 +210,8 @@ export interface Playlist {
   is_shared: number
   source: string
   source_url?: string
+  trakt_list_url?: string | null
+  trakt_pushed_at?: number | null
   item_count?: number
   created_at: number
   updated_at: number

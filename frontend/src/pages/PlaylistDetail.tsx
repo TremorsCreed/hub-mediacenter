@@ -10,19 +10,19 @@ import { usePersistentDevice } from '../usePersistentDevice'
 import { useUser } from '../UserContext'
 import { useWatched } from '../WatchedContext'
 import Toast from '../components/Toast'
-import CurrentButton from '../components/CurrentButton'
 import ResolveItemModal from '../components/ResolveItemModal'
 import EditPlaylistModal from '../components/EditPlaylistModal'
 import PlaylistJsonModal from '../components/PlaylistJsonModal'
+import { useCurrent } from '../CurrentContext'
 import {
   ArrowLeft, Play, Loader2, Trash2, GripVertical, Film, Tv, Gamepad2, Radio, MonitorPlay,
   Users, Lock, AlertTriangle, Check, Eye, EyeOff, RotateCcw, Replace, Pencil, Share2, Menu, Braces,
-  ChevronRight, ChevronDown, RefreshCw,
+  ChevronRight, ChevronDown, RefreshCw, MoreHorizontal, Bookmark, ExternalLink,
 } from 'lucide-react'
 
 // Menu d'actions d'une ligne (burger) : ouvert en position fixe pour ne pas être
 // rogné par l'overflow-hidden de la tuile (barre de progression). Ferme au clic extérieur.
-function RowMenu({ busy, children }: { busy: boolean; children: (close: () => void) => ReactNode }) {
+function RowMenu({ busy, icon: Icon = Menu, dot, children }: { busy: boolean; icon?: typeof Tv; dot?: boolean; children: (close: () => void) => ReactNode }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -35,8 +35,9 @@ function RowMenu({ busy, children }: { busy: boolean; children: (close: () => vo
   return (
     <>
       <button ref={btnRef} onClick={toggle} title="Options" aria-label="Options"
-        className="shrink-0 text-zinc-500 hover:text-zinc-200 p-1.5 transition-colors">
-        {busy ? <Loader2 size={16} className="animate-spin text-amber-400" /> : <Menu size={16} />}
+        className="relative shrink-0 text-zinc-500 hover:text-zinc-200 p-1.5 transition-colors">
+        {busy ? <Loader2 size={16} className="animate-spin text-amber-400" /> : <Icon size={16} />}
+        {dot && !busy && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-emerald-500" />}
       </button>
       {open && pos && (
         <>
@@ -51,11 +52,13 @@ function RowMenu({ busy, children }: { busy: boolean; children: (close: () => vo
   )
 }
 
-function MenuItem({ icon: Icon, label, onClick, danger }: { icon: typeof Tv; label: string; onClick: () => void; danger?: boolean }) {
+function MenuItem({ icon: Icon, label, onClick, danger, active, trailing, disabled }: { icon: typeof Tv; label: string; onClick: () => void; danger?: boolean; active?: boolean; trailing?: ReactNode; disabled?: boolean }) {
   return (
-    <button onClick={onClick}
-      className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors hover:bg-zinc-800 ${danger ? 'text-red-300 hover:text-red-200' : 'text-zinc-200'}`}>
-      <Icon size={15} className="shrink-0" /> {label}
+    <button onClick={onClick} disabled={disabled}
+      className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors hover:bg-zinc-800 disabled:opacity-50 ${danger ? 'text-red-300 hover:text-red-200' : active ? 'text-amber-400' : 'text-zinc-200'}`}>
+      <Icon size={15} className="shrink-0" fill={active ? 'currentColor' : 'none'} />
+      <span className="flex-1">{label}</span>
+      {trailing}
     </button>
   )
 }
@@ -248,6 +251,7 @@ export default function PlaylistDetail() {
   const navigate = useNavigate()
   const { currentUser, adminUnlocked } = useUser()
   const { isWatched, toggle: toggleWatched } = useWatched()
+  const { isCurrent, toggle: toggleCurrent } = useCurrent()
   const [pl, setPl] = useState<Playlist | null>(null)
   const [items, setItems] = useState<PlaylistItem[]>([])
   const [devices, setDevices] = useState<Device[]>([])
@@ -511,6 +515,7 @@ export default function PlaylistDetail() {
       const miss = r.missing?.length ? ` · ${r.missing.length} introuvable${r.missing.length > 1 ? 's' : ''}` : ''
       const ord = r.reordered ? ' · ordre conservé' : ''
       flash(`Poussé vers Trakt : ${r.resolved} ajouté${r.resolved > 1 ? 's' : ''}${ord}${miss}`, true)
+      setPl(prev => prev ? { ...prev, trakt_list_url: r.url, trakt_pushed_at: Date.now() } : prev)
       window.open(r.url, '_blank')
     } catch (e: any) {
       flash(`Trakt : ${e.message}`, false)
@@ -532,62 +537,67 @@ export default function PlaylistDetail() {
         <ArrowLeft size={13} /> Playlists
       </button>
 
-      {/* En-tête */}
+      {/* En-tête : titre + actions condensées (crayon « Modifier » + menu ⋯). Les
+          actions secondaires vivent dans le menu pour garder l'en-tête lisible même
+          quand le panneau « lecture en cours » ancré à droite rétrécit la colonne. */}
       <div className="flex gap-4 items-start">
         <div className="w-28 sm:w-40 aspect-[16/9] rounded-lg bg-zinc-800 overflow-hidden shrink-0 flex items-center justify-center">
           {pl.cover ? <img src={pl.cover} alt="" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} /> : <MonitorPlay size={28} className="text-zinc-700" />}
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">{pl.name}</h1>
+          <div className="flex items-start gap-1">
+            <h1 className="flex-1 min-w-0 text-xl sm:text-2xl font-bold tracking-tight break-words">{pl.name}</h1>
+            {canEdit && (
+              <button onClick={() => setEditing(true)} title="Modifier la playlist" aria-label="Modifier"
+                className="shrink-0 w-9 h-9 flex items-center justify-center text-zinc-400 hover:text-zinc-100 transition-colors">
+                <Pencil size={16} />
+              </button>
+            )}
+            <RowMenu busy={pushing} icon={MoreHorizontal} dot={!!pl.trakt_pushed_at}>
+              {close => (
+                <>
+                  <MenuItem icon={Bookmark} active={isCurrent(`playlist:${pl.id}`)}
+                    label={isCurrent(`playlist:${pl.id}`) ? 'Retirer de « En cours »' : 'Marquer « En cours »'}
+                    onClick={() => { close(); toggleCurrent({ key: `playlist:${pl.id}`, kind: 'playlist', playlist_id: pl.id, title: pl.name, thumb: pl.cover }) }} />
+                  {canEdit && (
+                    <MenuItem icon={pl.is_shared ? Users : Lock} label={pl.is_shared ? 'Rendre perso' : 'Rendre partagée'}
+                      onClick={() => { close(); toggleShared() }} />
+                  )}
+                  {canEdit && <MenuItem icon={Braces} label="Éditer en JSON" onClick={() => { close(); setEditingJson(true) }} />}
+                  {canEdit && traktLinked && (
+                    <MenuItem icon={Share2} label={pl.trakt_pushed_at ? 'Repousser vers Trakt' : 'Pousser vers Trakt'}
+                      onClick={() => { close(); pushToTrakt() }}
+                      trailing={pl.trakt_pushed_at ? <span className="w-2 h-2 rounded-full bg-emerald-500" title="Déjà poussée" /> : undefined} />
+                  )}
+                  {pl.trakt_list_url && (
+                    <MenuItem icon={ExternalLink} label="Voir sur Trakt" onClick={() => { close(); window.open(pl.trakt_list_url!, '_blank') }} />
+                  )}
+                  {canEdit && <MenuItem icon={Trash2} label="Supprimer" danger onClick={() => { close(); deletePlaylist() }} />}
+                </>
+              )}
+            </RowMenu>
+          </div>
           {pl.description && <p className="text-sm text-zinc-400 mt-1 line-clamp-3">{pl.description}</p>}
-          <div className="text-xs text-zinc-500 mt-2">{items.length} élément{items.length > 1 ? 's' : ''}{pl.owner_name && pl.owner_user_id !== currentUser?.id ? ` · ${pl.owner_name}` : ''}</div>
+          <div className="text-xs text-zinc-500 mt-2 flex items-center gap-x-3 gap-y-1 flex-wrap">
+            <span>{items.length} élément{items.length > 1 ? 's' : ''}{pl.owner_name && pl.owner_user_id !== currentUser?.id ? ` · ${pl.owner_name}` : ''}</span>
+            <span className="inline-flex items-center gap-1">{pl.is_shared ? <><Users size={11} /> Partagée</> : <><Lock size={11} /> Perso</>}</span>
+            {pl.trakt_pushed_at && (
+              <a href={pl.trakt_list_url ?? '#'} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-emerald-400/90 hover:text-emerald-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Sur Trakt
+              </a>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Barre d'actions : pleine largeur (sous l'en-tête) pour rester lisible même
-          quand le panneau « lecture en cours » ancré à droite rétrécit la colonne. */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <button onClick={toggleShared} disabled={!canEdit}
-          className={`flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border transition-colors ${pl.is_shared ? 'border-cyan-700/60 text-cyan-300' : 'border-zinc-700 text-zinc-400'} ${canEdit ? 'hover:border-zinc-500' : 'opacity-70'}`}>
-          {pl.is_shared ? <><Users size={12} /> Partagée</> : <><Lock size={12} /> Perso</>}
-        </button>
-        <CurrentButton
-          item={{ key: `playlist:${pl.id}`, kind: 'playlist', playlist_id: pl.id, title: pl.name, thumb: pl.cover }}
-          label="En cours"
-          className="border border-zinc-700 px-2.5 py-1 hover:border-amber-500/50 text-xs"
-          size={13}
-        />
-        {canEdit && (
-          <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 transition-colors">
-            <Pencil size={12} /> Modifier
-          </button>
-        )}
-        {canEdit && (
-          <button onClick={() => setEditingJson(true)} title="Éditer la liste en JSON (réordonner, ajouter, retirer en masse)"
-            className="flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 transition-colors">
-            <Braces size={12} /> JSON
-          </button>
-        )}
-        {canEdit && traktLinked && (
-          <button onClick={pushToTrakt} disabled={pushing} title="Créer une liste Trakt à partir de cette playlist"
-            className="flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border border-red-700/60 text-red-300 hover:border-red-500 hover:text-red-200 transition-colors disabled:opacity-50">
-            {pushing ? <Loader2 size={12} className="animate-spin" /> : <Share2 size={12} />} Pousser vers Trakt
-          </button>
-        )}
-        {canEdit && (
-          <button onClick={deletePlaylist} className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-red-400 transition-colors px-2.5 py-1">
-            <Trash2 size={12} /> Supprimer
-          </button>
-        )}
-      </div>
-
-      {/* Barre device */}
-      <div className="flex items-center gap-2">
-        <select value={deviceId} onChange={e => setDeviceId(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600">
+      {/* Barre device : le conseil de drag passe sur sa propre ligne (basis-full) pour
+          ne pas se faire écraser en colonne étroite (panneau ancré à droite). */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <select value={deviceId} onChange={e => setDeviceId(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-600 shrink-0">
           <option value="">— device —</option>
           {devices.map(d => <option key={d.id} value={d.id} disabled={!d.ws_connected}>{d.name} {d.ws_connected ? '' : '(offline)'}</option>)}
         </select>
-        {canEdit && <span className="text-[11px] text-zinc-600">Appui long (~1s) pour déplacer une ligne ou une saison entière. Clique une saison pour la déplier.</span>}
+        {canEdit && <span className="basis-full text-[11px] text-zinc-600">Appui long (~1s) pour déplacer une ligne ou une saison entière. Clique une saison pour la déplier.</span>}
       </div>
 
       {/* Reprendre la playlist : item entamé en priorité, sinon 1er non-vu */}

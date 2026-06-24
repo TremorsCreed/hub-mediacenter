@@ -322,6 +322,8 @@ router.post('/lists/push', async (req, res) => {
     } catch { /* l'ordre est un bonus : un échec ne casse pas le push */ }
 
     const url = acc.username && listSlug ? `https://trakt.tv/users/${acc.username}/lists/${listSlug}` : `https://trakt.tv/lists/${listTrakt}`
+    // Trace « déjà poussée » (pastille + lien côté UI).
+    await db.execute({ sql: 'UPDATE playlists SET trakt_list_url = ?, trakt_pushed_at = ? WHERE id = ?', args: [url, Date.now(), pl.id] }).catch(() => {})
     console.log(`[trakt] liste « ${pl.name} » poussée → profil ${userId} (${resolvedCount} items, ${missing.length} manquants, ordre=${reordered})`)
     res.json({
       ok: true,

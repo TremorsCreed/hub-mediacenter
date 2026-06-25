@@ -7,6 +7,36 @@ body {
 }
 
 /* ──────────────────────────────────────────────────────────────
+   Barres de défilement
+   Firefox sait styler nativement via scrollbar-width/color, mais
+   Chromium/Electron (l'app ancrée) affiche la barre grise par défaut.
+   On câble donc les deux : Firefox (standard) + ::-webkit-scrollbar.
+   ────────────────────────────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: theme('colors.zinc.700') transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: theme('colors.zinc.700');
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: theme('colors.zinc.600');
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ──────────────────────────────────────────────────────────────
    Accessibilité globale (Lot 1)
    ────────────────────────────────────────────────────────────── */
 

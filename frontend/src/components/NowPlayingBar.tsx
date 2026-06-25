@@ -186,7 +186,7 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
   // ── Repos (épinglé, rien en lecture) ───────────────────────────────────────
   if (!hasMedia) {
     if (isRight) return (
-      <aside className="w-80 shrink-0 bg-zinc-900 border-l border-zinc-800 flex flex-col overflow-y-auto">
+      <aside className="w-full md:w-80 shrink-0 bg-zinc-900 border-l border-zinc-800 flex flex-col overflow-y-auto">
         <div className="flex flex-col items-center gap-2 text-zinc-500 p-6 pb-2">
           <Music size={28} className="text-zinc-600" />
           <div className="text-sm text-center">Rien en lecture{device ? ` sur ${device.name}` : ''}</div>
@@ -214,7 +214,7 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
       className="inline-flex items-center justify-center gap-1.5 px-3 min-h-11 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 text-sm transition-colors">
       <X size={15} /> Annuler</button>
     if (isRight) return (
-      <aside className="w-80 shrink-0 bg-zinc-900 border-l border-amber-500/40 flex flex-col">
+      <aside className="w-full md:w-80 shrink-0 bg-zinc-900 border-l border-amber-500/40 flex flex-col">
         <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6 text-center">
           <div className="flex items-center justify-center h-16 w-16 rounded-full bg-amber-500/15 text-amber-400"><SkipForward size={26} /></div>
           <div className="text-[11px] uppercase tracking-wider text-amber-400 font-semibold">À suivre · dans {secs}s</div>
@@ -322,7 +322,7 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
   // ── Panneau vertical (ancré à droite) — vue riche ──────────────────────────
   if (isRight) {
     return (
-      <aside className="w-80 shrink-0 bg-zinc-900 border-l border-zinc-800 flex flex-col overflow-y-auto">
+      <aside className="w-full md:w-80 shrink-0 bg-zinc-900 border-l border-zinc-800 flex flex-col overflow-y-auto">
         <div className="relative w-full aspect-video bg-zinc-800 shrink-0">
           {m.thumb
             ? <img src={m.thumb} alt="" className="w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />

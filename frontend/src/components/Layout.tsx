@@ -226,8 +226,11 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* Colonne contenu : barre du haut mobile + zone principale */}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* Colonne contenu : barre du haut mobile + zone principale.
+          Ancré à droite en fenêtre étroite, on masque complètement cette colonne
+          pour que le panneau de contrôle occupe 100 % (sinon un liseré d'accueil
+          reste visible et inutilisable). On y revient via le bouton « ancrer en bas ». */}
+      <div className={`flex-1 flex-col min-w-0 ${dock === 'right' ? 'hidden md:flex' : 'flex'}`}>
         {/* Barre d'app mobile (hamburger + titre + profil) */}
         <header className="md:hidden h-12 shrink-0 bg-zinc-900 border-b border-zinc-800 flex items-center gap-1 px-1">
           <button

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, Device, Favorite, ProgressItem, PlexOnDeckItem, DashboardPrefs, TraktDiscover, TraktDiscoverItem, CompanionInboxItem } from '../api'
+import { api, Device, Favorite, ProgressItem, PlexOnDeckItem, DashboardPrefs, TraktDiscover, TraktDiscoverItem, CompanionInboxItem, Playlist, PlaylistItem } from '../api'
 import CompanionFicheCard from '../components/CompanionFicheCard'
 import { usePersistentDevice } from '../usePersistentDevice'
 import { useUser, initials } from '../UserContext'
@@ -9,20 +9,21 @@ import { useCurrent } from '../CurrentContext'
 import Toast from '../components/Toast'
 import {
   Heart, Play, Loader2, Tv, Film, Gamepad2, MonitorPlay, Radio, Compass, ListMusic,
-  RotateCcw, Settings2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, X, Youtube, Bookmark, TrendingUp,
+  RotateCcw, Settings2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, X, Youtube, Bookmark, TrendingUp, Dices,
 } from 'lucide-react'
 
 // ── Rangées disponibles + ordre par défaut ───────────────────────────────────
-type RailId = 'current' | 'resume' | 'favorites' | 'ondeck' | 'quick'
+type RailId = 'current' | 'resume' | 'favorites' | 'default_playlist' | 'ondeck' | 'quick'
 const RAIL_META: Record<RailId, { label: string }> = {
   current: { label: 'En cours' },
   resume: { label: 'Reprendre' },
   favorites: { label: 'Mes favoris' },
+  default_playlist: { label: 'Playlist par défaut' },
   ondeck: { label: 'À suivre sur Plex' },
   quick: { label: 'Accès rapide' },
 }
 const DEFAULT_RAILS: { id: RailId; on: boolean }[] = [
-  { id: 'current', on: true }, { id: 'resume', on: true }, { id: 'favorites', on: true }, { id: 'ondeck', on: true }, { id: 'quick', on: true },
+  { id: 'current', on: true }, { id: 'resume', on: true }, { id: 'favorites', on: true }, { id: 'default_playlist', on: true }, { id: 'ondeck', on: true }, { id: 'quick', on: true },
 ]
 
 const KIND_LABEL: Record<string, string> = { series: 'Série', show: 'Série', playlist: 'Playlist', movie: 'Film', vod: 'Film' }
@@ -55,18 +56,24 @@ const QUICK_TILES: { label: string; to: string; icon: typeof Tv; grad: string }[
   { label: 'Playlists', to: '/playlists', icon: ListMusic, grad: 'from-rose-600/30 to-rose-900/5' },
 ]
 
-const APP_ICON: Record<string, typeof Tv> = { iptv: Radio, plex: Film, launchbox: Gamepad2, catalog: MonitorPlay }
+const APP_ICON: Record<string, typeof Tv> = { iptv: Radio, plex: Film, launchbox: Gamepad2, catalog: MonitorPlay, companion: Compass }
 // Libellé de la source d'un favori (Plex / IPTV / Jeu …), affiché en badge sur la carte.
-const SOURCE_LABEL: Record<string, string> = { iptv: 'IPTV', plex: 'Plex', launchbox: 'Jeu', catalog: 'Catalogue' }
+const SOURCE_LABEL: Record<string, string> = { iptv: 'IPTV', plex: 'Plex', launchbox: 'Jeu', catalog: 'Catalogue', companion: 'Fiche' }
 function favImg(f: Favorite): string {
   if (!f.thumb) return ''
   if (f.app === 'launchbox') return f.thumb
   if (f.app === 'plex') return api.plex.imageUrl(f.thumb)
   return api.iptv.imageUrl(f.thumb)
 }
+function plImg(it: PlaylistItem): string {
+  if (!it.thumb) return ''
+  if (it.app === 'launchbox') return it.thumb
+  if (it.app === 'plex') return api.plex.imageUrl(it.thumb)
+  return api.iptv.imageUrl(it.thumb)
+}
 
 // Conteneur de rangée scrollable horizontalement (flèches au desktop).
-function Rail({ icon: Icon, title, count, children }: { icon: typeof Tv; title: string; count?: number; children: ReactNode }) {
+function Rail({ icon: Icon, title, count, headerExtra, children }: { icon: typeof Tv; title: string; count?: number; headerExtra?: ReactNode; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   const scroll = (dir: number) => ref.current?.scrollBy({ left: dir * ref.current.clientWidth * 0.8, behavior: 'smooth' })
   return (
@@ -75,15 +82,18 @@ function Rail({ icon: Icon, title, count, children }: { icon: typeof Tv; title: 
         <Icon size={15} className="text-amber-400" />
         <h2 className="text-sm font-medium uppercase tracking-widest text-zinc-400">{title}</h2>
         {count != null && <span className="text-xs text-zinc-600">{count}</span>}
-        <div className="ml-auto hidden sm:flex gap-1">
-          <button onClick={() => scroll(-1)} aria-label="Précédent"
-            className="inline-flex items-center justify-center w-8 h-8 rounded-full text-zinc-500 hover:text-white hover:bg-zinc-800 transition-colors">
-            <ChevronLeft size={16} />
-          </button>
-          <button onClick={() => scroll(1)} aria-label="Suivant"
-            className="inline-flex items-center justify-center w-8 h-8 rounded-full text-zinc-500 hover:text-white hover:bg-zinc-800 transition-colors">
-            <ChevronRight size={16} />
-          </button>
+        <div className="ml-auto flex items-center gap-1">
+          {headerExtra}
+          <div className="hidden sm:flex gap-1">
+            <button onClick={() => scroll(-1)} aria-label="Précédent"
+              className="inline-flex items-center justify-center w-8 h-8 rounded-full text-zinc-500 hover:text-white hover:bg-zinc-800 transition-colors">
+              <ChevronLeft size={16} />
+            </button>
+            <button onClick={() => scroll(1)} aria-label="Suivant"
+              className="inline-flex items-center justify-center w-8 h-8 rounded-full text-zinc-500 hover:text-white hover:bg-zinc-800 transition-colors">
+              <ChevronRight size={16} />
+            </button>
+          </div>
         </div>
       </div>
       <div ref={ref} className="flex gap-3 overflow-x-auto scrollbar-thin snap-x py-2 -mx-1 px-1">
@@ -123,6 +133,8 @@ export default function UserDashboard() {
   const [discover, setDiscover] = useState<TraktDiscover | null>(null)
   const [discoverLoading, setDiscoverLoading] = useState(true)
   const [ficheItem, setFicheItem] = useState<CompanionInboxItem | null>(null)
+  const [defaultPlaylist, setDefaultPlaylist] = useState<Playlist | null>(null)
+  const [defaultPlaylistLoading, setDefaultPlaylistLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [rails, setRails] = useState(() => normalizeRails(currentUser?.dashboard_prefs))
   const [autoplay, setAutoplay] = useState(currentUser?.autoplay_next ?? true)
@@ -148,6 +160,19 @@ export default function UserDashboard() {
   useEffect(() => {
     api.trakt.discover().then(setDiscover).catch(() => {}).finally(() => setDiscoverLoading(false))
   }, [])
+
+  // Playlist par défaut du profil (rangée « inspiration » sur l'Accueil).
+  useEffect(() => {
+    const plId = currentUser?.default_playlist_id
+    if (!plId) { setDefaultPlaylist(null); setDefaultPlaylistLoading(false); return }
+    setDefaultPlaylistLoading(true)
+    let alive = true
+    api.playlists.get(plId)
+      .then(p => { if (alive) setDefaultPlaylist(p) })
+      .catch(() => { if (alive) setDefaultPlaylist(null) })
+      .finally(() => { if (alive) setDefaultPlaylistLoading(false) })
+    return () => { alive = false }
+  }, [currentUser?.default_playlist_id])
 
   // Clic sur une tendance : on n'auto-lance plus rien. On ouvre la fiche (détail +
   // disponibilité) avec un candidat synthétique dérivé de la tendance Trakt ;
@@ -241,6 +266,48 @@ export default function UserDashboard() {
         flash(`▶ ${r.title}`, true)
       }
     } catch (e: any) { flash(`Échec : ${e.message}`, false) } finally { setLaunching(null) }
+  }
+
+  // Lance un item de la playlist par défaut (films/épisodes directement, séries → module).
+  // Inspiré de PlaylistDetail.play, version « inspiration » sans reprise de position.
+  const playlistPlayable = (defaultPlaylist?.items ?? []).filter(it => it.status !== 'missing' && it.app !== 'unresolved' && it.ref_id)
+  const launchPlaylistItem = async (it: PlaylistItem) => {
+    // Item « companion » (issu d'un partage, pas encore relié à une source streamable) :
+    // on ouvre sa fiche de disponibilité (comme une tendance) plutôt que de tenter une
+    // lecture impossible. L'utilisateur y choisit Plex/IPTV puis lance.
+    if (it.app !== 'plex' && it.app !== 'iptv' && it.app !== 'launchbox') {
+      const candType: 'movie' | 'series' = it.ref_type === 'show' || it.ref_type === 'series' ? 'series' : 'movie'
+      const ids = it.ref_id ? (it.ref_id.startsWith('tt') ? { imdb: it.ref_id } : { trakt: Number(it.ref_id) || undefined }) : undefined
+      setFicheItem({ id: -1, status: 'detail', thumb: it.thumb ?? null, resolved_title: it.title, candidates: [{ type: candType, title: it.title, year: it.year, ids }] })
+      return
+    }
+    if (it.app === 'iptv' && it.ref_type === 'series' && !it.ext) { navigate('/catalog/iptv'); return }
+    if (it.app === 'plex' && it.ref_type === 'show') { navigate('/catalog/plex'); return }
+    if (it.app !== 'launchbox' && !deviceId) { flash('Choisis un device', false); return }
+    if (!it.ref_id) return
+    setLaunching(`pl:${it.id}`)
+    try {
+      if (it.app === 'launchbox') {
+        const r = await fetch('/api/launchbox/launch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(currentUser ? { 'X-User-Id': String(currentUser.id) } : {}) },
+          body: JSON.stringify({ game_id: it.ref_id }),
+        })
+        if (!r.ok) throw new Error('échec du lancement')
+        flash(`▶ ${it.title}`, true)
+      } else if (it.app === 'iptv') {
+        const r = await api.play({ iptv_stream_id: it.ref_id, iptv_type: (it.ref_type as any) ?? 'vod', iptv_ext: it.ext ?? undefined, title: it.title, thumb: it.thumb, app: 'iptv', device_id: deviceId, requester: 'manual', work_id: it.work_id, year: it.year, iptv_season: it.season, iptv_episode: it.episode, preferred_lang: it.lang ?? undefined })
+        flash(`▶ ${r.title}`, true)
+      } else if (it.app === 'plex') {
+        const r = await api.play({ plex_id: it.ref_id, title: it.title, thumb: it.thumb, app: 'plex', device_id: deviceId, requester: 'manual' })
+        flash(`▶ ${r.title}`, true)
+      }
+    } catch (e: any) { flash(`Échec : ${e.message}`, false) } finally { setLaunching(null) }
+  }
+  // « Au hasard » : pioche un titre jouable au pif et le lance (zéro réflexion).
+  const surprise = () => {
+    if (!playlistPlayable.length) { flash('Playlist par défaut vide', false); return }
+    launchPlaylistItem(playlistPlayable[Math.floor(Math.random() * playlistPlayable.length)])
   }
 
   // « En cours » (favori du moment) : image résolue selon la source, ouverture ciblée.
@@ -434,6 +501,57 @@ export default function UserDashboard() {
                   </div>
                 )
               })}
+            </Rail>
+          )
+        }
+        if (id === 'default_playlist') {
+          if (!currentUser?.default_playlist_id) return null
+          if (defaultPlaylistLoading && !defaultPlaylist) {
+            return <Rail key={id} icon={ListMusic} title={RAIL_META.default_playlist.label}><RailLoading /></Rail>
+          }
+          if (!defaultPlaylist || playlistPlayable.length === 0) return null
+          const dpId = defaultPlaylist.id
+          const surpriseBtn = (
+            <button onClick={surprise} title="Lancer un titre au hasard"
+              className="inline-flex items-center gap-1.5 px-3 h-8 rounded-full bg-amber-500/15 text-amber-300 text-xs font-semibold hover:bg-amber-500/25 transition-colors">
+              <Dices size={14} /> Au hasard
+            </button>
+          )
+          return (
+            <Rail key={id} icon={ListMusic} title={defaultPlaylist.name} count={playlistPlayable.length} headerExtra={surpriseBtn}>
+              {playlistPlayable.map(it => {
+                const Icon = APP_ICON[it.app] ?? Tv
+                const busy = launching === `pl:${it.id}`
+                const src = plImg(it)
+                return (
+                  <button key={it.id} onClick={() => launchPlaylistItem(it)} disabled={busy}
+                    className="hover-pop group relative w-32 shrink-0 snap-start text-left disabled:opacity-50">
+                    <div className="relative w-full aspect-[2/3] bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden group-hover:border-amber-500/60 transition-colors">
+                      {src
+                        ? <img src={src} alt={it.title ?? ''} loading="lazy" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none' }} />
+                        : <div className="w-full h-full flex items-center justify-center text-zinc-700"><Icon size={26} /></div>}
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                        <div className="w-11 h-11 rounded-full bg-amber-500/90 text-zinc-950 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Play size={18} fill="currentColor" />
+                        </div>
+                      </div>
+                      <div className="absolute top-1.5 left-1.5 bg-black/65 backdrop-blur-sm rounded px-1.5 py-0.5 flex items-center gap-1">
+                        <Icon size={11} className="text-white/90" />
+                        <span className="text-[9px] font-bold uppercase tracking-wide text-white/90">{SOURCE_LABEL[it.app] ?? it.app}</span>
+                      </div>
+                      {busy && <div className="absolute inset-0 bg-black/70 flex items-center justify-center"><Loader2 size={18} className="animate-spin text-amber-400" /></div>}
+                    </div>
+                    <div className="text-xs mt-1.5 truncate">{it.title}</div>
+                    {it.year && <div className="text-[10px] text-zinc-500">{it.year}</div>}
+                  </button>
+                )
+              })}
+              {/* Accès à la playlist complète */}
+              <button onClick={() => navigate(`/playlists/${dpId}`)}
+                className="hover-pop shrink-0 w-32 aspect-[2/3] snap-start rounded-lg border border-dashed border-zinc-700 hover:border-amber-500/60 text-zinc-500 hover:text-amber-400 flex flex-col items-center justify-center gap-2 transition-colors self-start">
+                <ListMusic size={22} />
+                <span className="text-xs font-medium">Tout voir</span>
+              </button>
             </Rail>
           )
         }

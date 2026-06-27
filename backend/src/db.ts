@@ -491,6 +491,16 @@ export async function initDb() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_iptvres_work ON iptv_resolutions(work_id, cred_id);
+
+    -- Cache persistant des listes/catégories Xtream (redeploy-proof). Le cache vit
+    -- en mémoire (iptvVodCache), mais on en garde une copie ici pour qu'un redeploy
+    -- ne reparte pas à vide : au boot on réhydrate, et tant que la donnée a < 1h,
+    -- aucun appel provider n'est nécessaire. data = JSON (TEXT, TOAST-compressé).
+    CREATE TABLE IF NOT EXISTS iptv_list_cache (
+      cache_key TEXT PRIMARY KEY,
+      data TEXT NOT NULL,
+      loaded_at BIGINT NOT NULL DEFAULT 0
+    );
   `)
 
   // work_id sur les tables qui référencent une œuvre (nullable : migration

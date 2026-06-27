@@ -68,7 +68,9 @@ async function loadCached<T>(k: string, empty: T, fetcher: () => Promise<T | nul
       cache.set(k, { value: prev, loadedAt: prevLoadedAt, cooldownUntil: Date.now() + COOLDOWN_MS })
       return prev
     }
-    cache.set(k, { value: v, loadedAt: Date.now() })
+    const ts = Date.now()
+    cache.set(k, { value: v, loadedAt: ts })
+    persist(k, v, ts)
     return v
   }).catch(() => {
     cache.set(k, { value: prev, loadedAt: prevLoadedAt, cooldownUntil: Date.now() + COOLDOWN_MS })
@@ -76,6 +78,34 @@ async function loadCached<T>(k: string, empty: T, fetcher: () => Promise<T | nul
   })
   cache.set(k, { value: prev, loadedAt: prevLoadedAt, cooldownUntil: c?.cooldownUntil, inFlight: promise })
   return promise
+}
+
+// Persistance redeploy-proof : on copie chaque valeur cachée en base. Au boot,
+// hydrate() recharge tout en mémoire — donc une donnée < 1h évite tout appel
+// provider après un redeploy, et la dernière version connue survit même si le
+// provider boude au démarrage.
+function persist(k: string, value: unknown, loadedAt: number): void {
+  db.execute({
+    sql: `INSERT INTO iptv_list_cache (cache_key, data, loaded_at) VALUES (?, ?, ?)
+          ON CONFLICT (cache_key) DO UPDATE SET data = EXCLUDED.data, loaded_at = EXCLUDED.loaded_at`,
+    args: [k, JSON.stringify(value), loadedAt],
+  }).catch(e => console.warn('[iptv-cache] persist échec:', (e as Error).message))
+}
+
+export async function hydrate(): Promise<void> {
+  try {
+    const { rows } = await db.execute('SELECT cache_key, data, loaded_at FROM iptv_list_cache')
+    let n = 0
+    for (const r of rows as any[]) {
+      try {
+        cache.set(String(r.cache_key), { value: JSON.parse(r.data), loadedAt: Number(r.loaded_at) || 0 })
+        n++
+      } catch { /* ligne corrompue ignorée */ }
+    }
+    if (n) console.log(`[iptv-cache] réhydraté ${n} entrée(s) depuis la base`)
+  } catch (e) {
+    console.warn('[iptv-cache] hydrate échec:', (e as Error).message)
+  }
 }
 
 async function fetchCred(credId: number) {

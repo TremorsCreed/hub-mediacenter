@@ -26,7 +26,7 @@ import spotifyRouter from './routes/spotify'
 import companionRouter from './routes/companion'
 import llmRouter from './routes/llm'
 import { attachUser, requireAdmin } from './auth'
-import { preloadAll as preloadIptvVod } from './iptvVodCache'
+import { preloadAll as preloadIptvVod, hydrate as hydrateIptvCache } from './iptvVodCache'
 import { backfillWorks } from './migrations/backfillWorks'
 import { startReminderChecker } from './epgReminders'
 import { startScrobbler } from './scrobble'
@@ -65,6 +65,10 @@ app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }))
 
 async function start() {
   await initDb()
+  // Réhydrate le cache IPTV (listes + catégories) depuis la base AVANT tout fetch :
+  // après un redeploy, une donnée < 1h évite tout appel provider, et la dernière
+  // version connue reste servie même si le provider boude au démarrage.
+  await hydrateIptvCache().catch(() => {})
   // Préchauffe les listes VOD IPTV en arrière-plan pour que le 1er cross-ref Discover
   // soit instantané. Ne bloque pas le démarrage.
   preloadIptvVod().catch(() => {})

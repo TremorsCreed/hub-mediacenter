@@ -92,17 +92,21 @@ export default function RemoteScreen() {
   // PIP pilote l'échelle ; la hauteur rogne le vide gris en bas.
   const LOGICAL_W = 1024, LOGICAL_H = 576
   const scale = size.w / LOGICAL_W
+  // Hauteur verrouillée au ratio 16:9 de la largeur : le cadre colle toujours à
+  // l'image du miroir (16:9), quelle que soit la résolution de sortie du device
+  // (4K, 1080p…). Plus de bande noire en bas, et l'image est maximale pour la
+  // largeur choisie. La hauteur persistée est ignorée au profit de ce calcul.
+  const frameH = Math.round(size.w * LOGICAL_H / LOGICAL_W)
 
   // Poignée de redimensionnement (coin haut-gauche, le PIP est ancré bas-droite :
-  // tirer vers le haut-gauche agrandit, vers le bas-droite réduit/rogne).
+  // tirer vers le haut-gauche agrandit). Seule la largeur est pilotée ; la hauteur
+  // en découle (16:9).
   const onResizeDown = (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation()
-    const sx = e.clientX, sy = e.clientY, sw = size.w, sh = size.h
+    const sx = e.clientX, sw = size.w
     const move = (ev: MouseEvent) => {
-      setSize({
-        w: Math.min(960, Math.max(240, Math.round(sw + (sx - ev.clientX)))),
-        h: Math.min(620, Math.max(120, Math.round(sh + (sy - ev.clientY)))),
-      })
+      const w = Math.min(960, Math.max(240, Math.round(sw + (sx - ev.clientX))))
+      setSize({ w, h: Math.round(w * LOGICAL_H / LOGICAL_W) })
     }
     const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up) }
     window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
@@ -115,7 +119,7 @@ export default function RemoteScreen() {
         className="absolute top-0 left-0 w-4 h-4 z-10 cursor-nwse-resize"
         style={{ background: 'linear-gradient(135deg, #f59e0b 0 35%, transparent 35%)' }} />
       {Header}
-      <div style={{ width: size.w, height: size.h, overflow: 'hidden', position: 'relative', background: '#000' }}>
+      <div style={{ width: size.w, height: frameH, overflow: 'hidden', position: 'relative', background: '#000' }}>
         <iframe
           key={`pip-${open.ip}-${player}-${reloadKey}`}
           src={src}

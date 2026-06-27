@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api, MediaNow, Device, NowMeta } from '../api'
 import { useCurrentDeviceId } from '../usePersistentDevice'
 import { usePersistedState } from '../usePersistedState'
+import { useIsMobile } from '../useMediaQuery'
 import { launchRemote, canRemote } from '../remote'
 import Toast from './Toast'
 import AddToPlaylist from './AddToPlaylist'
@@ -58,6 +59,11 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
   const [meta, setMeta] = useState<NowMeta | null>(null)
   const nullStreak = useRef(0)
   const isRight = dock === 'right'
+  const isMobile = useIsMobile()
+  // Plein écran « lecture en cours » sur mobile (la barre du bas est trop tassée
+  // pour tous les contrôles sur petit écran).
+  const [expanded, setExpanded] = useState(false)
+  const [volScrub, setVolScrub] = useState<number | null>(null)
 
   // Métadonnées étendues (synopsis/genre/casting) du média en cours — seulement en
   // panneau droit, refetch quand le titre change (pas à chaque tick de position).
@@ -95,6 +101,10 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
     const id = setInterval(() => forceTick(t => t + 1), 500)
     return () => clearInterval(id)
   }, [])
+
+  // Referme le plein écran quand la lecture s'arrête (sinon il se rouvrirait
+  // tout seul à la lecture suivante).
+  useEffect(() => { if (!now || now.state === 'stopped') setExpanded(false) }, [now])
 
   // Barre d'espace = play/pause global (ignoré pendant la saisie / sur un bouton focus).
   useEffect(() => {
@@ -318,6 +328,130 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
       )}
     </div>
   ) : null
+
+  // ── Mobile : barre compacte (tap pour agrandir) + plein écran ──────────────
+  if (isMobile) {
+    const cover = m.thumb
+      ? <img src={m.thumb} alt="" className="h-full w-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+      : <div className="h-full w-full flex items-center justify-center text-zinc-600"><Music size={28} /></div>
+
+    if (!expanded) {
+      return (
+        <div className="shrink-0 h-16 bg-zinc-900 border-t border-zinc-800 flex items-center gap-3 px-3"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          <button onClick={() => setExpanded(true)} title="Agrandir" className="flex items-center gap-3 min-w-0 flex-1 text-left">
+            <div className="h-11 w-11 shrink-0 rounded overflow-hidden bg-zinc-800 ring-1 ring-zinc-700/60">{cover}</div>
+            <div className="min-w-0">
+              <div className="text-sm text-zinc-100 truncate font-medium">{m.title || 'Lecture en cours'}</div>
+              {device && <div className="text-[11px] text-zinc-400 truncate">sur {device.name}</div>}
+            </div>
+          </button>
+          <button onClick={() => ctrl(() => api.control.send(deviceId, 'play_pause'))} disabled={busy} title="Play / Pause"
+            className="inline-flex items-center justify-center min-w-11 min-h-11 rounded-full bg-zinc-800 text-white hover:bg-zinc-700 disabled:opacity-40 transition-colors">
+            {playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+          </button>
+          <button onClick={() => setExpanded(true)} title="Agrandir"
+            className="inline-flex items-center justify-center min-w-11 min-h-11 rounded text-zinc-400 hover:text-white transition-colors">
+            <ChevronUp size={20} />
+          </button>
+          {toast && <Toast msg={toast.msg} ok={toast.ok} />}
+        </div>
+      )
+    }
+
+    const hasVolLevel = typeof m.volume === 'number'
+    const volLevel = volScrub ?? (hasVolLevel ? (m.volume as number) : 50)
+    const setVol = (lvl: number) => ctrl(() => api.control.setVolume(deviceId, lvl))
+
+    return (
+      <div className="fixed inset-0 z-[120] bg-zinc-950 flex flex-col overflow-y-auto"
+        style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        {/* Backdrop flou de la jaquette */}
+        {m.thumb && (
+          <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
+            <img src={m.thumb} alt="" className="w-full h-full object-cover scale-125 blur-2xl opacity-30" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+            <div className="absolute inset-0 bg-zinc-950/70" />
+          </div>
+        )}
+
+        {/* Header */}
+        <div className="flex items-center gap-2 px-4 h-14 shrink-0">
+          <button onClick={() => setExpanded(false)} title="Réduire"
+            className="inline-flex items-center justify-center min-w-11 min-h-11 -ml-2 rounded text-zinc-300 hover:text-white transition-colors">
+            <ChevronDown size={24} />
+          </button>
+          <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${appStyle.cls}`}>{appStyle.label}</span>
+          <div className="flex-1" />
+          {PinBtn}
+        </div>
+
+        {/* Jaquette + titre */}
+        <div className="px-6 flex-1 flex flex-col justify-center min-h-0">
+          <div className="w-full max-w-xs mx-auto aspect-square rounded-2xl overflow-hidden bg-zinc-800 ring-1 ring-zinc-700/60 shadow-2xl">{cover}</div>
+          <div className="mt-6 text-center">
+            <div className="text-xl font-bold text-white line-clamp-2">{m.title || 'Lecture en cours'}</div>
+            {device && <div className="text-sm text-zinc-400 mt-1">sur {device.name}</div>}
+          </div>
+        </div>
+
+        {/* Contrôles */}
+        <div className="px-6 pb-6 pt-4 space-y-5 shrink-0">
+          {hasBar ? (
+            <div>
+              <input type="range" min={0} max={m.duration} value={pos}
+                onChange={e => setScrub(Number(e.target.value))}
+                onMouseUp={() => { if (scrub != null) { seekTo(scrub); setScrub(null) } }}
+                onTouchEnd={() => { if (scrub != null) { seekTo(scrub); setScrub(null) } }}
+                className="w-full h-1.5 accent-amber-500 cursor-pointer" />
+              <div className="flex justify-between text-[11px] tabular-nums text-zinc-400 mt-1">
+                <span>{fmt(pos)}</span><span>{fmt(m.duration)}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-center"><span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-red-400"><Radio size={14} /> En direct</span></div>
+          )}
+
+          {/* Transport */}
+          <div className="flex items-center justify-center gap-4">
+            {hasBar && <button onClick={() => seekTo(pos - 10000)} disabled={busy} title="−10 s" className="inline-flex items-center justify-center w-12 h-12 rounded-full text-zinc-300 hover:text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors"><Rewind size={24} /></button>}
+            <button onClick={() => ctrl(() => api.control.send(deviceId, 'play_pause'))} disabled={busy} title="Play / Pause"
+              className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-500 text-zinc-950 hover:bg-amber-400 disabled:opacity-40 transition-colors">
+              {playing ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" />}
+            </button>
+            <button onClick={() => ctrl(() => api.control.send(deviceId, 'stop'))} disabled={busy} title="Stop" className="inline-flex items-center justify-center w-12 h-12 rounded-full text-zinc-300 hover:text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors"><Square size={20} fill="currentColor" /></button>
+            {hasBar && <button onClick={() => seekTo(pos + 10000)} disabled={busy} title="+10 s" className="inline-flex items-center justify-center w-12 h-12 rounded-full text-zinc-300 hover:text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors"><FastForward size={24} /></button>}
+          </div>
+
+          {/* Volume (slider qui pilote le volume du device) */}
+          <div className="flex items-center gap-3">
+            <button onClick={() => ctrl(() => api.control.send(deviceId, 'mute'))} disabled={busy} title={m.muted ? 'Réactiver le son' : 'Couper le son'}
+              className={`inline-flex items-center justify-center min-w-11 min-h-11 rounded transition-colors disabled:opacity-40 ${m.muted ? 'text-amber-400' : 'text-zinc-300 hover:text-white'}`}><VolIcon size={22} /></button>
+            {hasVolLevel ? (
+              <>
+                <input type="range" min={0} max={100} value={volLevel}
+                  onChange={e => setVolScrub(Number(e.target.value))}
+                  onMouseUp={() => { if (volScrub != null) { setVol(volScrub); setVolScrub(null) } }}
+                  onTouchEnd={() => { if (volScrub != null) { setVol(volScrub); setVolScrub(null) } }}
+                  className="flex-1 h-1.5 accent-amber-500 cursor-pointer" />
+                <span className="text-xs tabular-nums text-zinc-400 w-8 text-right">{Math.round(volLevel)}</span>
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center gap-3">
+                <button onClick={() => ctrl(() => api.control.send(deviceId, 'volume_down'))} disabled={busy} title="Baisser le volume" className="inline-flex items-center justify-center min-w-11 min-h-11 rounded text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"><Minus size={20} /></button>
+                <button onClick={() => ctrl(() => api.control.send(deviceId, 'volume_up'))} disabled={busy} title="Monter le volume" className="inline-flex items-center justify-center min-w-11 min-h-11 rounded text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"><Plus size={20} /></button>
+              </div>
+            )}
+          </div>
+
+          {/* Transfert vers un autre lecteur + remote */}
+          {(transferControl || RemoteBtn) && (
+            <div className="flex items-center justify-center gap-2">{transferControl}{RemoteBtn}</div>
+          )}
+        </div>
+        {toast && <Toast msg={toast.msg} ok={toast.ok} />}
+      </div>
+    )
+  }
 
   // ── Panneau vertical (ancré à droite) — vue riche ──────────────────────────
   if (isRight) {

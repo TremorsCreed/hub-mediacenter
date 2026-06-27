@@ -3,6 +3,7 @@
 // Sert au Catalog IPTV (Local) et au cross-ref Discover.
 
 import { db } from './db.js'
+import { withProviderLock } from './providerLock.js'
 
 export interface StreamEntry {
   stream_id: string
@@ -77,19 +78,6 @@ async function loadCached<T>(k: string, empty: T, fetcher: () => Promise<T | nul
   return promise
 }
 
-// Le provider limite les connexions simultanées : on sérialise les appels réseau
-// par credential (1 à la fois) pour ne jamais dépasser sa limite. Sans ça, les
-// fetchs de listes + catégories partent en parallèle (boot, warmer, on-demand)
-// → 403 en rafale. Les credentials différents (serveurs différents) restent en
-// parallèle entre eux.
-const credLocks = new Map<number, Promise<unknown>>()
-function withCredLock<T>(credId: number, fn: () => Promise<T>): Promise<T> {
-  const prev = credLocks.get(credId) ?? Promise.resolve()
-  const run = prev.then(fn, fn)  // enchaîne après le précédent (succès comme échec)
-  credLocks.set(credId, run.then(() => {}, () => {}))
-  return run
-}
-
 async function fetchCred(credId: number) {
   const { rows } = await db.execute({
     sql: "SELECT data FROM credentials WHERE id = ? AND type = 'xtream'",
@@ -115,37 +103,39 @@ async function fetchAll(credId: number, kind: Kind): Promise<StreamEntry[] | nul
                 : kind === 'series' ? 'get_series'
                 : 'get_live_streams'
   const url = `${cred.server}/player_api.php?username=${encodeURIComponent(cred.user)}&password=${encodeURIComponent(cred.pass)}&action=${action}`
-  console.log(`[iptv-cache] fetching ${kind} list for credential #${credId}...`)
-  const t0 = Date.now()
-  try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(45000) } as any)
-    if (!r.ok) { console.warn(`[iptv-cache] fetch ${kind} ${credId} returned ${r.status}`); return null }
-    const data = await r.json() as any[]
-    const items: StreamEntry[] = (data ?? []).map(s => {
-      const name = String(s.name ?? '')
-      // Pour les séries Xtream, l'identifiant principal est series_id (pas stream_id)
-      const id = kind === 'series' ? String(s.series_id ?? s.num ?? s.stream_id ?? '') : String(s.stream_id)
-      return {
-        stream_id: id,
-        name,
-        year: String(s.releaseDate ?? s.year ?? ''),
-        logo: (s.cover || s.stream_icon) as string | undefined,
-        category_id: String(s.category_id ?? ''),
-        added: (s.last_modified ?? s.added) as string | undefined,
-        rating: s.rating as string | undefined,
-        language: detectLanguage(name),
-      }
-    })
-    console.log(`[iptv-cache] cached ${items.length} ${kind} items for credential #${credId} in ${Date.now() - t0}ms`)
-    return items
-  } catch (e) {
-    console.warn(`[iptv-cache] fetch ${kind} ${credId} failed:`, (e as Error).message)
-    return null
-  }
+  return withProviderLock(cred.server, async () => {
+    console.log(`[iptv-cache] fetching ${kind} list for credential #${credId}...`)
+    const t0 = Date.now()
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(45000) } as any)
+      if (!r.ok) { console.warn(`[iptv-cache] fetch ${kind} ${credId} returned ${r.status}`); return null }
+      const data = await r.json() as any[]
+      const items: StreamEntry[] = (data ?? []).map(s => {
+        const name = String(s.name ?? '')
+        // Pour les séries Xtream, l'identifiant principal est series_id (pas stream_id)
+        const id = kind === 'series' ? String(s.series_id ?? s.num ?? s.stream_id ?? '') : String(s.stream_id)
+        return {
+          stream_id: id,
+          name,
+          year: String(s.releaseDate ?? s.year ?? ''),
+          logo: (s.cover || s.stream_icon) as string | undefined,
+          category_id: String(s.category_id ?? ''),
+          added: (s.last_modified ?? s.added) as string | undefined,
+          rating: s.rating as string | undefined,
+          language: detectLanguage(name),
+        }
+      })
+      console.log(`[iptv-cache] cached ${items.length} ${kind} items for credential #${credId} in ${Date.now() - t0}ms`)
+      return items
+    } catch (e) {
+      console.warn(`[iptv-cache] fetch ${kind} ${credId} failed:`, (e as Error).message)
+      return null
+    }
+  })
 }
 
 export async function getList(credId: number, kind: Kind): Promise<StreamEntry[]> {
-  return loadCached<StreamEntry[]>(key(kind, credId), [], () => withCredLock(credId, () => fetchAll(credId, kind)))
+  return loadCached<StreamEntry[]>(key(kind, credId), [], () => fetchAll(credId, kind))
 }
 
 export const getVodList = (credId: number) => getList(credId, 'vod')
@@ -161,20 +151,22 @@ async function fetchCategories(credId: number, kind: Kind): Promise<CategoryEntr
                 : kind === 'series' ? 'get_series_categories'
                 : 'get_live_categories'
   const url = `${cred.server}/player_api.php?username=${encodeURIComponent(cred.user)}&password=${encodeURIComponent(cred.pass)}&action=${action}`
-  console.log(`[iptv-cache] fetching ${kind} categories for credential #${credId}...`)
-  try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(30000) } as any)
-    if (!r.ok) { console.warn(`[iptv-cache] fetch ${kind} categories ${credId} returned ${r.status}`); return null }
-    const data = await r.json() as any[]
-    return (data ?? []).map(c => ({ id: String(c.category_id), name: String(c.category_name ?? '') }))
-  } catch (e) {
-    console.warn(`[iptv-cache] fetch ${kind} categories ${credId} failed:`, (e as Error).message)
-    return null
-  }
+  return withProviderLock(cred.server, async () => {
+    console.log(`[iptv-cache] fetching ${kind} categories for credential #${credId}...`)
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(30000) } as any)
+      if (!r.ok) { console.warn(`[iptv-cache] fetch ${kind} categories ${credId} returned ${r.status}`); return null }
+      const data = await r.json() as any[]
+      return (data ?? []).map(c => ({ id: String(c.category_id), name: String(c.category_name ?? '') }))
+    } catch (e) {
+      console.warn(`[iptv-cache] fetch ${kind} categories ${credId} failed:`, (e as Error).message)
+      return null
+    }
+  })
 }
 
 export async function getCategories(credId: number, kind: Kind): Promise<CategoryEntry[]> {
-  return loadCached<CategoryEntry[]>(key(`cat-${kind}`, credId), [], () => withCredLock(credId, () => fetchCategories(credId, kind)))
+  return loadCached<CategoryEntry[]>(key(`cat-${kind}`, credId), [], () => fetchCategories(credId, kind))
 }
 
 export function normalizeTitle(s: string): string {

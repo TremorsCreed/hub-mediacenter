@@ -4,6 +4,7 @@ import { db } from '../db'
 import { requireAdmin } from '../auth'
 import { getList, getCategories, normalizeTitle, refresh as refreshList } from '../iptvVodCache'
 import { warmImages } from '../iptvImageWarmer'
+import { withProviderLock } from '../providerLock'
 import { isDead, markDead } from '../imageNegCache'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -27,9 +28,13 @@ export async function getXtreamCred(id: string) {
 export async function xtreamCall(cred: NonNullable<Awaited<ReturnType<typeof getXtreamCred>>>, action: string, extra: Record<string, string> = {}) {
   const params = new URLSearchParams({ username: cred.user, password: cred.pass, action, ...extra })
   const url = `${cred.server}/player_api.php?${params}`
-  const r = await fetch(url)
-  if (!r.ok) throw new Error(`xtream ${action} failed: ${r.status}`)
-  return r.json()
+  // Sérialisé par serveur : jamais plus d'1 appel API simultané vers cet abonnement
+  // (le provider bannit sinon). Voir providerLock.
+  return withProviderLock(cred.server, async () => {
+    const r = await fetch(url)
+    if (!r.ok) throw new Error(`xtream ${action} failed: ${r.status}`)
+    return r.json()
+  })
 }
 
 // ── EPG (guide) ──────────────────────────────────────────────────────────────

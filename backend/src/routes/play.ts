@@ -8,6 +8,7 @@ import { resolvePlexWatchUrl } from './plex'
 import { spotifyFetch, MAISON_USER_ID } from './spotify'
 import { notifyOverlay, notifyOverlayPlayer, hideOverlay } from '../notify'
 import { resolveStream, reresolveStream, findCredForVodStream, type WorkIdentity } from '../resolver'
+import { withProviderLock } from '../providerLock'
 
 // Résout l'extension réelle d'une VOD via get_vod_info, de façon FIABLE — c.-à-d. en
 // distinguant 3 cas, pour décider AVANT de lancer le flux sur le device :
@@ -24,11 +25,16 @@ async function resolveVodExtension(base: string, user: string, pass: string, str
   const apiUrl = `${base}/player_api.php?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&action=get_vod_info&vod_id=${streamId}`
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const r = await fetch(apiUrl, { signal: AbortSignal.timeout(10000) } as any)
-      if (!r.ok) { console.warn(`[iptv] get_vod_info #${attempt} HTTP ${r.status} pour vod=${streamId}`); continue }
+      // Sérialisé par serveur (providerLock) : on ne tape jamais le provider en
+      // parallèle d'un autre appel (cache, EPG, autre lecture) → évite les 403/ban.
+      const payload = await withProviderLock(base, async () => {
+        const r = await fetch(apiUrl, { signal: AbortSignal.timeout(10000) } as any)
+        return { ok: r.ok, status: r.status, text: r.ok ? await r.text() : '' }
+      })
+      if (!payload.ok) { console.warn(`[iptv] get_vod_info #${attempt} HTTP ${payload.status} pour vod=${streamId}`); continue }
       // Réponse non-JSON (403 HTML d'un nginx qui rate-limite) → on retente / indéterminé.
       let data: any
-      try { data = await r.json() } catch { console.warn(`[iptv] get_vod_info #${attempt} non-JSON pour vod=${streamId}`); continue }
+      try { data = JSON.parse(payload.text) } catch { console.warn(`[iptv] get_vod_info #${attempt} non-JSON pour vod=${streamId}`); continue }
       const md = data?.movie_data
       const empty = !md || (Array.isArray(md) ? md.length === 0 : Object.keys(md).length === 0)
       if (empty) return { status: 'unavailable' }

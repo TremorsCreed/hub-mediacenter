@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { db } from '../db'
 import { requireAdmin } from '../auth'
-import { getList, normalizeTitle, refresh as refreshList } from '../iptvVodCache'
+import { getList, getCategories, normalizeTitle, refresh as refreshList } from '../iptvVodCache'
 import { warmImages } from '../iptvImageWarmer'
 import { isDead, markDead } from '../imageNegCache'
 import { createHash } from 'node:crypto'
@@ -239,14 +239,11 @@ router.put('/:credId/category-prefs/bulk', requireAdmin, async (req, res) => {
 router.get('/:credId/categories', async (req, res) => {
   const cred = await getXtreamCred(req.params.credId)
   if (!cred) return res.status(404).json({ error: 'credential not found or incomplete' })
-  const type = (req.query.type as string) ?? 'live'
+  const type = ((req.query.type as string) ?? 'live') as 'live' | 'vod' | 'series'
   const all = req.query.all === '1'
-  const action = type === 'vod' ? 'get_vod_categories'
-               : type === 'series' ? 'get_series_categories'
-               : 'get_live_categories'
   try {
-    const data = await xtreamCall(cred, action) as any[]
-    let cats = data.map(c => ({ id: String(c.category_id), name: c.category_name as string })) as { id: string; name: string; state?: CatState }[]
+    const data = await getCategories(parseInt(req.params.credId), type)
+    let cats = data.map(c => ({ id: c.id, name: c.name })) as { id: string; name: string; state?: CatState }[]
     if (!all) {
       const effective = await getEffectiveCatPrefs(parseInt(req.params.credId), type, (req as any).userId)
       cats = cats

@@ -32,16 +32,50 @@ export function detectLanguage(name: string): string | undefined {
 
 type Kind = 'vod' | 'live' | 'series'
 
-interface CacheEntry {
-  items: StreamEntry[]
+export interface CategoryEntry { id: string; name: string }
+
+interface CacheEntry<T> {
+  value: T
   loadedAt: number
-  inFlight?: Promise<StreamEntry[]>
+  cooldownUntil?: number   // après un échec upstream (403/timeout) : pas de re-fetch avant cette date
+  inFlight?: Promise<T>
 }
 
-const TTL_MS = 60 * 60 * 1000
-const cache = new Map<string, CacheEntry>()  // key = "vod:credId" ou "live:credId"
+const TTL_MS = 60 * 60 * 1000      // listes/catégories fraîches 1h
+const COOLDOWN_MS = 60 * 1000      // après un échec, on sert le cache et on attend 60s avant de réessayer
+const cache = new Map<string, CacheEntry<any>>()
 
-function key(kind: Kind, credId: number) { return `${kind}:${credId}` }
+function key(kind: string, credId: number) { return `${kind}:${credId}` }
+
+// Cœur du cache « charger une fois, servir à tous » (listes ET catégories) :
+//  - frais (< TTL) → cache direct, aucun appel provider
+//  - requête concurrente déjà en vol → on s'y rattache (pas de double fetch)
+//  - en cooldown après un échec → on sert la dernière version connue SANS resolliciter
+//    le provider (évite la tempête de re-fetch qui amplifie les 403)
+//  - sinon → fetch ; succès = remplace + efface le cooldown ; échec = garde la dernière
+//    version connue + pose un cooldown
+async function loadCached<T>(k: string, empty: T, fetcher: () => Promise<T | null>): Promise<T> {
+  const now = Date.now()
+  const c = cache.get(k) as CacheEntry<T> | undefined
+  if (c && (now - c.loadedAt) < TTL_MS) return c.value
+  if (c?.inFlight) return c.inFlight
+  if (c?.cooldownUntil && now < c.cooldownUntil) return c.value ?? empty
+  const prev = c?.value ?? empty
+  const prevLoadedAt = c?.loadedAt ?? 0
+  const promise = fetcher().then(v => {
+    if (v === null) {
+      cache.set(k, { value: prev, loadedAt: prevLoadedAt, cooldownUntil: Date.now() + COOLDOWN_MS })
+      return prev
+    }
+    cache.set(k, { value: v, loadedAt: Date.now() })
+    return v
+  }).catch(() => {
+    cache.set(k, { value: prev, loadedAt: prevLoadedAt, cooldownUntil: Date.now() + COOLDOWN_MS })
+    return prev
+  })
+  cache.set(k, { value: prev, loadedAt: prevLoadedAt, cooldownUntil: c?.cooldownUntil, inFlight: promise })
+  return promise
+}
 
 async function fetchCred(credId: number) {
   const { rows } = await db.execute({
@@ -98,30 +132,37 @@ async function fetchAll(credId: number, kind: Kind): Promise<StreamEntry[] | nul
 }
 
 export async function getList(credId: number, kind: Kind): Promise<StreamEntry[]> {
-  const k = key(kind, credId)
-  const now = Date.now()
-  const c = cache.get(k)
-  if (c && (now - c.loadedAt) < TTL_MS) return c.items
-  if (c?.inFlight) return c.inFlight
-  const prev = c?.items ?? []
-  const prevLoadedAt = c?.loadedAt ?? 0
-  const promise = fetchAll(credId, kind).then(items => {
-    if (items === null) {
-      // Échec upstream : on garde la dernière liste valide et on NE rafraîchit PAS
-      // loadedAt — le TTL reste expiré, donc le prochain appel réessaiera.
-      cache.set(k, { items: prev, loadedAt: prevLoadedAt })
-      return prev
-    }
-    cache.set(k, { items, loadedAt: Date.now() })
-    return items
-  })
-  cache.set(k, { items: prev, loadedAt: prevLoadedAt, inFlight: promise })
-  return promise
+  return loadCached<StreamEntry[]>(key(kind, credId), [], () => fetchAll(credId, kind))
 }
 
 export const getVodList = (credId: number) => getList(credId, 'vod')
 export const getLiveList = (credId: number) => getList(credId, 'live')
 export const getSeriesList = (credId: number) => getList(credId, 'series')
+
+// Catégories Xtream (get_*_categories) — cachées comme les listes : un seul appel
+// provider, servi à tous, avec repli sur la dernière version connue en cas de 403.
+async function fetchCategories(credId: number, kind: Kind): Promise<CategoryEntry[] | null> {
+  const cred = await fetchCred(credId)
+  if (!cred) return null
+  const action = kind === 'vod' ? 'get_vod_categories'
+                : kind === 'series' ? 'get_series_categories'
+                : 'get_live_categories'
+  const url = `${cred.server}/player_api.php?username=${encodeURIComponent(cred.user)}&password=${encodeURIComponent(cred.pass)}&action=${action}`
+  console.log(`[iptv-cache] fetching ${kind} categories for credential #${credId}...`)
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(30000) } as any)
+    if (!r.ok) { console.warn(`[iptv-cache] fetch ${kind} categories ${credId} returned ${r.status}`); return null }
+    const data = await r.json() as any[]
+    return (data ?? []).map(c => ({ id: String(c.category_id), name: String(c.category_name ?? '') }))
+  } catch (e) {
+    console.warn(`[iptv-cache] fetch ${kind} categories ${credId} failed:`, (e as Error).message)
+    return null
+  }
+}
+
+export async function getCategories(credId: number, kind: Kind): Promise<CategoryEntry[]> {
+  return loadCached<CategoryEntry[]>(key(`cat-${kind}`, credId), [], () => fetchCategories(credId, kind))
+}
 
 export function normalizeTitle(s: string): string {
   return s.toLowerCase()
@@ -216,9 +257,10 @@ export async function preloadAll() {
 
 // Invalide les caches d'un credential (à appeler quand on update/delete une credential)
 export function invalidate(credId: number) {
-  cache.delete(key('vod', credId))
-  cache.delete(key('live', credId))
-  cache.delete(key('series', credId))
+  for (const kind of ['vod', 'live', 'series'] as const) {
+    cache.delete(key(kind, credId))
+    cache.delete(key(`cat-${kind}`, credId))
+  }
 }
 
 // Force le rechargement d'une liste (vod/live/series) depuis l'upstream et attend
@@ -231,7 +273,7 @@ export async function refresh(credId: number, kind: Kind): Promise<number> {
   // Expire le TTL (loadedAt=0) sans jeter une éventuelle promise inFlight ni la
   // dernière liste valide : getList relancera un fetch, et conservera l'ancienne
   // liste en fallback si l'upstream échoue.
-  cache.set(k, { items: c?.items ?? [], loadedAt: 0 })
+  cache.set(k, { value: c?.value ?? [], loadedAt: 0 })  // loadedAt=0 + pas de cooldown → re-fetch immédiat
   const items = await getList(credId, kind)
   return items.length
 }

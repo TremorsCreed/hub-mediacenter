@@ -8,12 +8,16 @@ import { useIsMobile } from '../useMediaQuery'
 import NowPlayingBar, { type Dock } from './NowPlayingBar'
 import RemoteScreen from './RemoteScreen'
 
+// Horodatage de build compact (UTC) : "MM-DD HH:mm" depuis un ISO.
+const fmtBuild = (iso?: string) => (iso ? iso.slice(5, 16).replace('T', ' ') : '…')
+
 export default function Layout() {
   const [modules, setModules] = useState<{ plex: boolean; iptv: boolean; discover: boolean; launchbox: boolean }>({ plex: false, iptv: false, discover: false, launchbox: false })
   const [inboxCount, setInboxCount] = useState(0)
   const [collapsed, setCollapsed] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [dock, setDock] = usePersistedState<Dock>('hub.nowplaying.dock', 'bottom')
+  const [backBuild, setBackBuild] = useState<{ version: string; buildTime: string } | null>(null)
   const location = useLocation()
   const { currentUser, switchProfile } = useUser()
   const isMobile = useIsMobile()
@@ -33,6 +37,9 @@ export default function Layout() {
 
   // Le drawer mobile se referme à chaque changement de route.
   useEffect(() => { setMobileNavOpen(false) }, [location.pathname])
+
+  // Version/build du backend (pour vérifier l'alignement front/back dans le footer).
+  useEffect(() => { fetch('/api/version').then(r => r.json()).then(setBackBuild).catch(() => {}) }, [])
 
   const refreshModules = useCallback(() => {
     Promise.all([
@@ -215,7 +222,13 @@ export default function Layout() {
 
         {/* Footer toggle (réduction = desktop uniquement) */}
         <div className="h-[45px] shrink-0 border-t border-zinc-800 hidden md:flex items-center px-3">
-          {!showCollapsed && <span className="text-xs text-zinc-600 mr-auto">v0.1.0</span>}
+          {!showCollapsed && (
+            <div className="mr-auto flex flex-col leading-tight text-[10px] text-zinc-600"
+              title={`front build ${__BUILD_TIME__}\nback build ${backBuild?.buildTime ?? '?'} (UTC)`}>
+              <span>front v{__APP_VERSION__} · {fmtBuild(__BUILD_TIME__)}</span>
+              <span>back v{backBuild?.version ?? '…'} · {fmtBuild(backBuild?.buildTime)}</span>
+            </div>
+          )}
           <button
             onClick={() => setCollapsed(v => !v)}
             title={showCollapsed ? 'Agrandir la sidebar' : 'Réduire la sidebar'}

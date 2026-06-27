@@ -1,6 +1,8 @@
 import express from 'express'
 import cors from 'cors'
 import http from 'http'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { initDb } from './db'
 import { setupWebSocket } from './ws'
 import devicesRouter from './routes/devices'
@@ -34,6 +36,11 @@ import { startScrobbler } from './scrobble'
 const app = express()
 const PORT = parseInt(process.env.PORT ?? '8020', 10)
 
+// Identifiant de build backend (généré au `npm run build`, cf. dist/build-info.json).
+// Exposé en /api/version pour vérifier l'alignement front/back dans l'UI.
+let BUILD: { version: string; buildTime: string } = { version: '0.0.0', buildTime: '' }
+try { BUILD = JSON.parse(readFileSync(join(__dirname, 'build-info.json'), 'utf8')) } catch { /* dev (tsx) : pas de stamp */ }
+
 app.use(cors({ exposedHeaders: ['X-User-Id', 'X-Admin-Token'] }))
 app.use(express.json())
 app.use(attachUser) // attache req.userId depuis le header X-User-Id
@@ -62,6 +69,7 @@ app.use('/api/control', controlRouter)
 app.use('/api/launchbox', launchboxRouter)
 
 app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }))
+app.get('/api/version', (_req, res) => res.json(BUILD))
 
 async function start() {
   await initDb()

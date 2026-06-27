@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "commonjs",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"require('fs').writeFileSync('dist/build-info.json', JSON.stringify({ version: process.env.npm_package_version || '0.0.0', buildTime: new Date().toISOString() }))\"",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "migrate:pg": "tsx scripts/migrate-sqlite-to-pg.ts"

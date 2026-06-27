@@ -9,17 +9,51 @@ import { spotifyFetch, MAISON_USER_ID } from './spotify'
 import { notifyOverlay, notifyOverlayPlayer, hideOverlay } from '../notify'
 import { resolveStream, reresolveStream, findCredForVodStream, type WorkIdentity } from '../resolver'
 
+// Résout l'extension réelle d'une VOD via get_vod_info, de façon FIABLE — c.-à-d. en
+// distinguant 3 cas, pour décider AVANT de lancer le flux sur le device :
+//   'ok'          : le provider connaît le film → on a sa vraie container_extension.
+//   'unavailable' : JSON valide mais movie_data vide → le film n'est PAS chez ce
+//                   provider (ex. titre trop récent). Inutile d'envoyer un flux mort.
+//   'unknown'     : provider injoignable/lent/403 (réseau ou rate-limit) → on ne
+//                   tranche pas ; l'appelant retombe sur l'extension fournie / mp4.
+// 2 tentatives, 10s chacune : get_vod_info de certains providers (ex. line.rex2705.me)
+// est lent ; l'ancien repli silencieux sur mp4 au 1er ralentissement envoyait la
+// mauvaise extension (fichier réellement en .mkv) → Just Player restait bloqué à 0:00.
+type VodExt = { status: 'ok'; ext: string } | { status: 'unavailable' } | { status: 'unknown' }
+async function resolveVodExtension(base: string, user: string, pass: string, streamId: string): Promise<VodExt> {
+  const apiUrl = `${base}/player_api.php?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&action=get_vod_info&vod_id=${streamId}`
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const r = await fetch(apiUrl, { signal: AbortSignal.timeout(10000) } as any)
+      if (!r.ok) { console.warn(`[iptv] get_vod_info #${attempt} HTTP ${r.status} pour vod=${streamId}`); continue }
+      // Réponse non-JSON (403 HTML d'un nginx qui rate-limite) → on retente / indéterminé.
+      let data: any
+      try { data = await r.json() } catch { console.warn(`[iptv] get_vod_info #${attempt} non-JSON pour vod=${streamId}`); continue }
+      const md = data?.movie_data
+      const empty = !md || (Array.isArray(md) ? md.length === 0 : Object.keys(md).length === 0)
+      if (empty) return { status: 'unavailable' }
+      const ext = String(md.container_extension || data?.info?.container_extension || 'mp4').replace(/^\./, '')
+      return { status: 'ok', ext }
+    } catch (e) {
+      console.warn(`[iptv] get_vod_info #${attempt} échec pour vod=${streamId}: ${(e as any).message}`)
+    }
+  }
+  return { status: 'unknown' }
+}
+
 // Helper pour construire l'URL stream Xtream complète côté backend.
 // On résout l'extension réelle pour les VOD via get_vod_info (container_extension).
 // Pour series, le streamId est en réalité l'episode_id et l'extension est fournie
 // par le frontend (déjà récupérée via get_series_info à l'ouverture de la série).
+// Retourne { unavailable: true } si la VOD est confirmée absente du provider (l'appelant
+// remonte alors une erreur claire à l'utilisateur au lieu de lancer un flux mort).
 async function buildIptvStreamUrl(
   deviceId: string,
   streamId: string,
   type: 'live' | 'vod' | 'series',
   explicitExt?: string,
   credIdOverride?: number,
-): Promise<{ url: string; container: string } | null> {
+): Promise<{ url: string; container: string } | { unavailable: true } | null> {
   let server = '', user = '', pass = '', ext = 'ts'
   if (credIdOverride) {
     // Stream re-résolu sur un provider précis (resolver) : on construit l'URL avec
@@ -64,17 +98,17 @@ async function buildIptvStreamUrl(
     url = `${base}/series/${user}/${pass}/${streamId}.${epExt}`
     container = epExt
   } else if (type === 'vod') {
-    // Récupérer container_extension via get_vod_info — l'extension réelle varie (mkv/mp4/avi)
-    let containerExt = explicitExt?.replace(/^\./, '') || 'mp4'
-    if (!explicitExt) {
-      try {
-        const apiUrl = `${base}/player_api.php?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&action=get_vod_info&vod_id=${streamId}`
-        const r = await fetch(apiUrl, { signal: AbortSignal.timeout(5000) } as any)
-        if (r.ok) {
-          const data: any = await r.json()
-          containerExt = data?.movie_data?.container_extension || data?.info?.container_extension || 'mp4'
-        }
-      } catch (e) { console.warn('[iptv] get_vod_info failed:', (e as any).message) }
+    // Extension réelle via get_vod_info. On la vérifie quand on n'a pas d'extension
+    // explicite OU quand l'explicite vaut 'mp4' (la valeur par défaut/repli, donc peu
+    // fiable) ; mkv/avi/etc. fournis sont des résolutions délibérées → on leur fait
+    // confiance et on évite un appel réseau de plus (le provider rate-limite).
+    const hint = explicitExt?.replace(/^\./, '')
+    let containerExt = hint || 'mp4'
+    if (!hint || hint === 'mp4') {
+      const res = await resolveVodExtension(base, user, pass, streamId)
+      if (res.status === 'unavailable') return { unavailable: true }
+      if (res.status === 'ok') containerExt = res.ext
+      // 'unknown' (provider lent/403) : on garde l'indice (ou mp4) et on laisse lancer.
     }
     url = `${base}/movie/${user}/${pass}/${streamId}.${containerExt}`
     container = containerExt
@@ -586,6 +620,10 @@ async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, 
       const r = await reresolveStream(identity)
       if (r) {
         const built = await buildIptvStreamUrl(target_device_id, r.stream_id, r.kind, r.ext ?? iptv_ext, r.cred_id)
+        if (built && 'unavailable' in built) {
+          notifyOverlay(target_device_id, { title: '✗ Indisponible', message: `« ${entry.title} » absent du provider`, duration: 5 })
+          return { status: 404, body: { error: `« ${entry.title} » introuvable chez le provider IPTV`, hint: 'iptv_unavailable' } }
+        }
         if (built) {
           streamUrl = built.url; iptvContainer = built.container
           entry.tivimate_id = r.stream_id  // l'agent reçoit le stream à jour
@@ -598,6 +636,10 @@ async function doPlay(input: z.infer<typeof PlaySchema>, userId: number | null, 
     // série/live inchangés). Construit l'URL si la re-résolution n'a pas déjà servi.
     if (!streamUrl && entry.tivimate_id) {
       const built = await buildIptvStreamUrl(target_device_id, entry.tivimate_id, resolvedIptvType, iptv_ext, credForUrl)
+      if (built && 'unavailable' in built) {
+        notifyOverlay(target_device_id, { title: '✗ Indisponible', message: `« ${entry.title} » absent du provider`, duration: 5 })
+        return { status: 404, body: { error: `« ${entry.title} » introuvable chez le provider IPTV`, hint: 'iptv_unavailable' } }
+      }
       if (built) {
         streamUrl = built.url; iptvContainer = built.container
         console.log(`[iptv] resolved ${resolvedIptvType} stream URL: ${built.url} (container=${built.container})`)

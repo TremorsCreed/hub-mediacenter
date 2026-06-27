@@ -7,7 +7,7 @@ import { launchRemote, canRemote } from '../remote'
 import Toast from './Toast'
 import AddToPlaylist from './AddToPlaylist'
 import {
-  Play, Pause, Square, Rewind, FastForward, Radio, Pin, PinOff, Music, MonitorPlay,
+  Play, Pause, Square, Rewind, FastForward, Radio, Music, MonitorPlay,
   Volume2, VolumeX, Minus, Plus, ArrowRightLeft, SkipForward, X, PanelRight, PanelBottom,
   ChevronUp, ChevronDown, ChevronLeft, ChevronRight, CircleDot, Undo2, Home, Menu, Power, Gamepad2,
 } from 'lucide-react'
@@ -54,7 +54,6 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
   const [busy, setBusy] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
-  const [pinned, setPinned] = usePersistedState('hub.nowplaying.pin', false)
   const [remoteOpen, setRemoteOpen] = usePersistedState('hub.nowplaying.remote', false)
   const [meta, setMeta] = useState<NowMeta | null>(null)
   const nullStreak = useRef(0)
@@ -125,8 +124,8 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
   const device = devices.find(d => d.id === deviceId)
   const hasMedia = !!now && now.state !== 'stopped'
 
-  if (!hasMedia && !pinned) return null
-
+  // La barre de contrôle reste affichée en permanence (état « au repos » quand rien
+  // ne joue) : on ne masque plus jamais le composant.
   const RemoteBtn = device && canRemote(device) ? (
     <button onClick={() => launchRemote(device.ip)} title={`Remote (miroir/contrôle) de ${device.name}`}
       className="inline-flex items-center justify-center min-w-11 min-h-11 rounded text-zinc-500 hover:text-amber-400 transition-colors">
@@ -138,13 +137,6 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
     <button onClick={onToggleDock} title={isRight ? 'Ancrer la barre en bas' : 'Ancrer le panneau à droite'}
       className="inline-flex items-center justify-center min-w-11 min-h-11 rounded text-zinc-500 hover:text-amber-400 transition-colors">
       {isRight ? <PanelBottom size={15} /> : <PanelRight size={15} />}
-    </button>
-  )
-
-  const PinBtn = (
-    <button onClick={() => setPinned(!pinned)} title={pinned ? 'Détacher' : 'Épingler'}
-      className={`inline-flex items-center justify-center min-w-11 min-h-11 rounded transition-colors ${pinned ? 'text-amber-400 hover:text-amber-300' : 'text-zinc-500 hover:text-zinc-300'}`}>
-      {pinned ? <Pin size={15} /> : <PinOff size={15} />}
     </button>
   )
 
@@ -202,14 +194,14 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
           <div className="text-sm text-center">Rien en lecture{device ? ` sur ${device.name}` : ''}</div>
         </div>
         <div className="px-4 pb-4 flex-1">{deviceControls}</div>
-        <div className="flex items-center justify-center gap-1 p-2 border-t border-zinc-800">{RemoteBtn}{DockBtn}{PinBtn}</div>
+        <div className="flex items-center justify-center gap-1 p-2 border-t border-zinc-800">{RemoteBtn}{DockBtn}</div>
       </aside>
     )
     return (
       <div className="shrink-0 h-20 bg-zinc-900 border-t border-zinc-800 flex items-center gap-3 px-4">
         <Music size={16} className="text-zinc-600" />
         <div className="text-sm text-zinc-500 flex-1">Rien en lecture{device ? ` sur ${device.name}` : ''}</div>
-        {RemoteBtn}{DockBtn}{PinBtn}
+        {RemoteBtn}{DockBtn}
       </div>
     )
   }
@@ -231,7 +223,7 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
           <div className="text-sm text-zinc-100 font-medium line-clamp-3">{now.up_next.title}</div>
           <div className="flex flex-col gap-2 w-full pt-2">{launch}{cancel}</div>
         </div>
-        <div className="flex items-center justify-center gap-1 p-2 border-t border-zinc-800">{RemoteBtn}{DockBtn}{PinBtn}</div>
+        <div className="flex items-center justify-center gap-1 p-2 border-t border-zinc-800">{RemoteBtn}{DockBtn}</div>
       </aside>
     )
     return (
@@ -242,7 +234,7 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
           <div className="text-sm text-zinc-100 truncate font-medium">{now.up_next.title}</div>
           {device && <div className="text-[11px] text-zinc-400 truncate">sur {device.name}</div>}
         </div>
-        {launch}{cancel}{RemoteBtn}{DockBtn}{PinBtn}
+        {launch}{cancel}{RemoteBtn}{DockBtn}
       </div>
     )
   }
@@ -382,7 +374,6 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
           </button>
           <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${appStyle.cls}`}>{appStyle.label}</span>
           <div className="flex-1" />
-          {PinBtn}
         </div>
 
         {/* Jaquette + titre */}
@@ -514,7 +505,7 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
           {transferControl}
           {deviceControls}
         </div>
-        <div className="flex items-center justify-center gap-1 p-2 border-t border-zinc-800">{RemoteBtn}{DockBtn}{PinBtn}</div>
+        <div className="flex items-center justify-center gap-1 p-2 border-t border-zinc-800">{RemoteBtn}{DockBtn}</div>
         {toast && <Toast msg={toast.msg} ok={toast.ok} />}
       </aside>
     )
@@ -557,7 +548,7 @@ export default function NowPlayingBar({ dock, onToggleDock }: Props) {
 
       {volume}
       {transferControl}
-      {RemoteBtn}{DockBtn}{PinBtn}
+      {RemoteBtn}{DockBtn}
       {toast && <Toast msg={toast.msg} ok={toast.ok} />}
     </div>
   )

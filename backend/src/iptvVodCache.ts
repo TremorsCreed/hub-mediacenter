@@ -77,6 +77,19 @@ async function loadCached<T>(k: string, empty: T, fetcher: () => Promise<T | nul
   return promise
 }
 
+// Le provider limite les connexions simultanées : on sérialise les appels réseau
+// par credential (1 à la fois) pour ne jamais dépasser sa limite. Sans ça, les
+// fetchs de listes + catégories partent en parallèle (boot, warmer, on-demand)
+// → 403 en rafale. Les credentials différents (serveurs différents) restent en
+// parallèle entre eux.
+const credLocks = new Map<number, Promise<unknown>>()
+function withCredLock<T>(credId: number, fn: () => Promise<T>): Promise<T> {
+  const prev = credLocks.get(credId) ?? Promise.resolve()
+  const run = prev.then(fn, fn)  // enchaîne après le précédent (succès comme échec)
+  credLocks.set(credId, run.then(() => {}, () => {}))
+  return run
+}
+
 async function fetchCred(credId: number) {
   const { rows } = await db.execute({
     sql: "SELECT data FROM credentials WHERE id = ? AND type = 'xtream'",
@@ -132,7 +145,7 @@ async function fetchAll(credId: number, kind: Kind): Promise<StreamEntry[] | nul
 }
 
 export async function getList(credId: number, kind: Kind): Promise<StreamEntry[]> {
-  return loadCached<StreamEntry[]>(key(kind, credId), [], () => fetchAll(credId, kind))
+  return loadCached<StreamEntry[]>(key(kind, credId), [], () => withCredLock(credId, () => fetchAll(credId, kind)))
 }
 
 export const getVodList = (credId: number) => getList(credId, 'vod')
@@ -161,7 +174,7 @@ async function fetchCategories(credId: number, kind: Kind): Promise<CategoryEntr
 }
 
 export async function getCategories(credId: number, kind: Kind): Promise<CategoryEntry[]> {
-  return loadCached<CategoryEntry[]>(key(`cat-${kind}`, credId), [], () => fetchCategories(credId, kind))
+  return loadCached<CategoryEntry[]>(key(`cat-${kind}`, credId), [], () => withCredLock(credId, () => fetchCategories(credId, kind)))
 }
 
 export function normalizeTitle(s: string): string {
@@ -248,11 +261,16 @@ export async function listActiveCredentialIds(): Promise<number[]> {
 export async function preloadAll() {
   const ids = await listActiveCredentialIds()
   for (const id of ids) {
+    // Catégories d'abord (petites/rapides → sidebar prête vite), puis les grosses
+    // listes. Tout est sérialisé par credential via withCredLock (1 appel à la fois).
+    getCategories(id, 'live').catch(() => {})
+    getCategories(id, 'vod').catch(() => {})
+    getCategories(id, 'series').catch(() => {})
     getVodList(id).catch(() => {})
     getLiveList(id).catch(() => {})
     getSeriesList(id).catch(() => {})
   }
-  if (ids.length) console.log(`[iptv-cache] preloading ${ids.length} credential(s) (vod + live + series)...`)
+  if (ids.length) console.log(`[iptv-cache] preloading ${ids.length} credential(s) (catégories + vod + live + series)...`)
 }
 
 // Invalide les caches d'un credential (à appeler quand on update/delete une credential)

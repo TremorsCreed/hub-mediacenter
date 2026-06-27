@@ -61,6 +61,9 @@ class HubService : Service() {
     private var reconnectAttempts = 0
     private val maxReconnectDelay = 60_000L
     private val hubConfig = AtomicReference<HubConfig?>(null)
+    // Reconnexion : un SEUL handler/runnable, pour garantir au plus un reconnect en vol.
+    private val reconnectHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val reconnectRunnable = Runnable { connect() }
 
     private val deviceId by lazy {
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -129,6 +132,14 @@ class HubService : Service() {
             Log.i(TAG, "OkHttpClient executor was shutdown — rebuilding")
             client = buildClient()
         }
+        // Anti-storm : Fire OS redémarre le service agressivement (onStartCommand rappelle
+        // connect()) et un reconnect peut être en attente. On annule le reconnect programmé
+        // et on coupe la socket précédente AVANT d'en ouvrir une neuve, sinon des connexions
+        // concurrentes s'évincent mutuellement côté hub en boucle. Le stale-guard dans
+        // onFailure/onClosed empêche le listener de l'ancienne socket de relancer un reconnect.
+        reconnectHandler.removeCallbacks(reconnectRunnable)
+        webSocket?.let { old -> webSocket = null; old.cancel() }
+
         val wsUrl = "${hubUrl.trimEnd('/').let {
             if (it.startsWith("http://")) it.replace("http://", "ws://")
             else if (it.startsWith("https://")) it.replace("https://", "wss://")
@@ -168,11 +179,15 @@ class HubService : Service() {
             }
 
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                // Socket déjà remplacée par un connect() plus récent → on ignore son échec,
+                // sinon chaque ancienne socket relancerait un reconnect (storm auto-entretenu).
+                if (ws !== webSocket) return
                 Log.e(TAG, "WS failure: ${t.message}")
                 scheduleReconnect()
             }
 
             override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                if (ws !== webSocket) return
                 Log.i(TAG, "WS closed: $code $reason")
                 if (code != 1000) scheduleReconnect()
             }
@@ -556,7 +571,9 @@ class HubService : Service() {
         reconnectAttempts++
         val delay = minOf(1000L * reconnectAttempts * reconnectAttempts, maxReconnectDelay)
         updateNotification("Reconnecting in ${delay / 1000}s...")
-        android.os.Handler(mainLooper).postDelayed({ connect() }, delay)
+        // Au plus un reconnect en vol : on annule l'éventuel précédent avant de reprogrammer.
+        reconnectHandler.removeCallbacks(reconnectRunnable)
+        reconnectHandler.postDelayed(reconnectRunnable, delay)
     }
 
     private fun detectPlatform(): String {

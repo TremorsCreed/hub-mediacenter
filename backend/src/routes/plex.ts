@@ -336,6 +336,46 @@ router.get('/show/:ratingKey', async (req, res) => {
   }
 })
 
+// GET /api/plex/movie/:ratingKey — fiche détaillée d'un film (aperçu avant lancement,
+// même rôle que vod-info côté IPTV) : synopsis, genres, casting, réalisation.
+router.get('/movie/:ratingKey', async (req, res) => {
+  const cfg = await getConfig()
+  if (!cfg.auth_token || !cfg.server_url) return res.status(400).json({ error: 'not connected to plex' })
+  try {
+    const r = await fetch(`${cfg.server_url}/library/metadata/${req.params.ratingKey}?X-Plex-Token=${cfg.auth_token}`, { headers: { Accept: 'application/json' } })
+    if (!r.ok) return res.status(502).json({ error: 'plex metadata fetch failed' })
+    const data: any = await r.json()
+    const m = data?.MediaContainer?.Metadata?.[0]
+    if (!m) return res.status(404).json({ error: 'not found' })
+    const tags = (arr: any[] | undefined, max = 0) => {
+      const t = (arr ?? []).map((x: any) => String(x.tag ?? '')).filter(Boolean)
+      return max > 0 ? t.slice(0, max) : t
+    }
+    res.json({
+      ratingKey: String(m.ratingKey),
+      title: m.title as string,
+      originalTitle: m.originalTitle as string | undefined,
+      tagline: m.tagline as string | undefined,
+      year: m.year as number | undefined,
+      duration: m.duration as number | undefined,
+      rating: m.rating as number | undefined,
+      audienceRating: m.audienceRating as number | undefined,
+      contentRating: m.contentRating as string | undefined,
+      studio: m.studio as string | undefined,
+      thumb: m.thumb as string | undefined,
+      art: m.art as string | undefined,
+      summary: m.summary as string | undefined,
+      viewOffset: m.viewOffset as number | undefined,
+      genres: tags(m.Genre),
+      directors: tags(m.Director),
+      cast: tags(m.Role, 10),
+      countries: tags(m.Country),
+    })
+  } catch (e: any) {
+    res.status(502).json({ error: e.message })
+  }
+})
+
 // GET /api/plex/onDeck?limit=20 — items en cours de lecture (continue watching)
 router.get('/onDeck', async (req, res) => {
   const cfg = await getConfig()

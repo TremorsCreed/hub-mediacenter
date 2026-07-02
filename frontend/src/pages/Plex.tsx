@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom'
 import { api, Device, PlexItem, PlexOnDeckItem, PlexSection, PlexShowDetail, UpNextItem } from '../api'
 import { usePersistentDevice } from '../usePersistentDevice'
 import { usePersistedState } from '../usePersistedState'
-import { Search, Play, Loader2, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, X, ChevronDown, Check, Film, Tv, Music, Image, Library } from 'lucide-react'
+import { Search, Play, Loader2, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, X, ChevronDown, Check, Film, Tv, Music, Image, Library, Info, MonitorPlay } from 'lucide-react'
+import PlexMovieDetail from '../components/PlexMovieDetail'
 import FavoriteButton from '../components/FavoriteButton'
 import WatchedButton from '../components/WatchedButton'
 import CurrentButton from '../components/CurrentButton'
@@ -162,6 +163,7 @@ export default function Plex() {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [selectedShow, setSelectedShow] = useState<PlexItem | null>(null)
   const [showDetail, setShowDetail] = useState<PlexShowDetail | null>(null)
+  const [movieItem, setMovieItem] = useState<PlexItem | null>(null) // fiche film (aperçu avant lancement)
   const [loadingShow, setLoadingShow] = useState(false)
   const [openSeasons, setOpenSeasons] = useState<Set<number>>(new Set([1]))
 
@@ -465,7 +467,7 @@ export default function Plex() {
               className="relative group"
             >
               <button
-                onClick={() => play(item, { resume: inProgress })}
+                onClick={() => item.type === 'movie' ? setMovieItem(item) : play(item, { resume: inProgress })}
                 disabled={launching === item.ratingKey}
                 className="relative aspect-[2/3] w-full bg-zinc-900 border border-zinc-800 rounded overflow-hidden hover:border-amber-500/60 transition active:scale-[0.97] text-left disabled:opacity-50 block"
               >
@@ -480,7 +482,11 @@ export default function Plex() {
                   <div className="text-xs font-medium line-clamp-2">{item.title}</div>
                   {item.year && <div className="text-[10px] text-zinc-400 mt-0.5">{item.year}</div>}
                   <div className="flex items-center gap-1 mt-1.5 text-amber-400 text-xs">
-                    {inProgress ? <><RotateCcw size={10} /> Reprendre</> : <><Play size={11} fill="currentColor" /> Lancer</>}
+                    {item.type === 'show'
+                      ? <><MonitorPlay size={11} /> Épisodes</>
+                      : item.type === 'movie'
+                        ? <><Info size={11} /> Détails</>
+                        : inProgress ? <><RotateCcw size={10} /> Reprendre</> : <><Play size={11} fill="currentColor" /> Lancer</>}
                   </div>
                 </div>
 
@@ -668,6 +674,16 @@ export default function Plex() {
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Fiche film (aperçu avant lancement, même expérience que le VOD IPTV) */}
+      {movieItem && (
+        <PlexMovieDetail
+          item={movieItem}
+          deviceName={devices.find(d => d.id === deviceId)?.name}
+          onPlay={resume => { const it = movieItem; setMovieItem(null); play(it, { resume }) }}
+          onClose={() => setMovieItem(null)}
+        />
       )}
 
       {toast && <Toast msg={toast.msg} ok={toast.ok} />}

@@ -558,6 +558,28 @@ export interface PlexItem {
   viewOffset?: number  // ms — si > 0, l'item est en cours de lecture
 }
 
+// Fiche détaillée d'un film Plex (aperçu avant lancement, pendant de IptvVodInfo)
+export interface PlexMovieInfo {
+  ratingKey: string
+  title: string
+  originalTitle?: string
+  tagline?: string
+  year?: number
+  duration?: number
+  rating?: number
+  audienceRating?: number
+  contentRating?: string
+  studio?: string
+  thumb?: string
+  art?: string
+  summary?: string
+  viewOffset?: number
+  genres: string[]
+  directors: string[]
+  cast: string[]
+  countries: string[]
+}
+
 export interface PlexOnDeckItem extends PlexItem {
   viewedAt?: number
   grandparentTitle?: string
@@ -959,6 +981,7 @@ export const api = {
     sections: () => get<PlexSection[]>('/plex/sections'),
     onDeck: (limit = 20) => get<PlexOnDeckItem[]>(`/plex/onDeck?limit=${limit}`),
     show: (ratingKey: string) => get<PlexShowDetail>(`/plex/show/${ratingKey}`),
+    movieInfo: (ratingKey: string) => get<PlexMovieInfo>(`/plex/movie/${ratingKey}`),
     discoverSearch: (q: string) => get<DiscoverItem[]>(`/plex/discover/search?q=${encodeURIComponent(q)}`),
     discoverAvailabilities: (ratingKey: string, title?: string, year?: number) => {
       const p = new URLSearchParams()

@@ -1028,5 +1028,10 @@ export const api = {
       post<{ ok: boolean }>(`/companion/inbox/${id}/decide`, { action }),
     // Suppression définitive d'un item de la boîte de réception.
     delete: (id: number) => del<{ ok: boolean }>(`/companion/inbox/${id}`),
+  },
+  settings: {
+    get: () => get<{ iptv_refresh_hours: number }>('/settings'),
+    update: (iptv_refresh_hours: number) =>
+      put<{ ok: boolean; iptv_refresh_hours: number }>('/settings', { iptv_refresh_hours }),
   }
 }

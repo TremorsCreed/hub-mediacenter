@@ -42,7 +42,24 @@ interface CacheEntry<T> {
   inFlight?: Promise<T>
 }
 
-const TTL_MS = 60 * 60 * 1000      // listes/catégories fraîches 1h
+// TTL configurable (Admin > Settings → table app_settings.iptv_refresh_hours). Défaut 24h.
+// Chargé au boot par loadRefreshSetting(), mis à jour à chaud par setRefreshHours().
+// Espacer ce TTL = moins d'appels au provider (anti-ban). Le cache est persistant +
+// réhydraté, donc un catalogue < TTL n'entraîne AUCUN appel réseau.
+let ttlMs = 24 * 60 * 60 * 1000
+export function setRefreshHours(hours: number): void {
+  const h = Math.max(1, Math.min(168, Math.floor(hours) || 24))
+  ttlMs = h * 60 * 60 * 1000
+}
+export function getRefreshHours(): number { return Math.round(ttlMs / (60 * 60 * 1000)) }
+export async function loadRefreshSetting(): Promise<void> {
+  try {
+    const { rows } = await db.execute('SELECT iptv_refresh_hours FROM app_settings WHERE id = 1')
+    if (rows.length) setRefreshHours(Number((rows[0] as any).iptv_refresh_hours))
+    console.log(`[iptv-cache] TTL de rafraîchissement catalogue = ${getRefreshHours()}h`)
+  } catch (e) { console.warn('[iptv-cache] loadRefreshSetting échec:', (e as Error).message) }
+}
+
 const COOLDOWN_MS = 60 * 1000      // après un échec, on sert le cache et on attend 60s avant de réessayer
 const cache = new Map<string, CacheEntry<any>>()
 
@@ -58,7 +75,7 @@ function key(kind: string, credId: number) { return `${kind}:${credId}` }
 async function loadCached<T>(k: string, empty: T, fetcher: () => Promise<T | null>): Promise<T> {
   const now = Date.now()
   const c = cache.get(k) as CacheEntry<T> | undefined
-  if (c && (now - c.loadedAt) < TTL_MS) return c.value
+  if (c && (now - c.loadedAt) < ttlMs) return c.value
   if (c?.inFlight) return c.inFlight
   if (c?.cooldownUntil && now < c.cooldownUntil) return c.value ?? empty
   const prev = c?.value ?? empty

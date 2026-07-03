@@ -27,8 +27,9 @@ import traktAuthRouter from './routes/traktAuth'
 import spotifyRouter from './routes/spotify'
 import companionRouter from './routes/companion'
 import llmRouter from './routes/llm'
+import settingsRouter from './routes/settings'
 import { attachUser, requireAdmin } from './auth'
-import { preloadAll as preloadIptvVod, hydrate as hydrateIptvCache } from './iptvVodCache'
+import { preloadAll as preloadIptvVod, hydrate as hydrateIptvCache, loadRefreshSetting as loadIptvRefreshSetting } from './iptvVodCache'
 import { backfillWorks } from './migrations/backfillWorks'
 import { startReminderChecker } from './epgReminders'
 import { startScrobbler } from './scrobble'
@@ -56,6 +57,7 @@ app.use('/api/trakt', traktRouter)
 app.use('/api/spotify', spotifyRouter)
 app.use('/api/companion', companionRouter)
 app.use('/api/llm', requireAdmin, llmRouter)
+app.use('/api/settings', requireAdmin, settingsRouter)
 app.use('/api/devices/:id/config', requireAdmin, configRouter)
 app.use('/api/devices', devicesRouter)
 app.use('/api/discover', discoverRouter)
@@ -73,6 +75,8 @@ app.get('/api/version', (_req, res) => res.json(BUILD))
 
 async function start() {
   await initDb()
+  // Charge l'intervalle de rafraîchissement du catalogue IPTV (app_settings, défaut 24h).
+  await loadIptvRefreshSetting().catch(() => {})
   // Réhydrate le cache IPTV (listes + catégories) depuis la base AVANT tout fetch :
   // après un redeploy, une donnée < 1h évite tout appel provider, et la dernière
   // version connue reste servie même si le provider boude au démarrage.

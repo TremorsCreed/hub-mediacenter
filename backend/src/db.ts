@@ -446,6 +446,16 @@ export async function initDb() {
 
     INSERT INTO llm_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
+    -- Réglages globaux de l'app (singleton id=1). iptv_refresh_hours = intervalle de
+    -- rafraîchissement du cache catalogue IPTV, en heures (défaut 24h ; configurable
+    -- dans Admin > Settings). Espacer ce refresh limite les appels au provider (anti-ban).
+    CREATE TABLE IF NOT EXISTS app_settings (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      iptv_refresh_hours INTEGER NOT NULL DEFAULT 24
+    );
+
+    INSERT INTO app_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
     -- ── Fondation « source de vérité souveraine » (Chantier B) ────────────────
     -- works : l'identité canonique d'une œuvre, possédée par le Hub (id interne),
     -- avec les IDs externes (tmdb/imdb/tvdb) attachés comme attributs copiés une

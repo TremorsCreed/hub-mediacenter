@@ -21,9 +21,15 @@ import PlaylistDetail from './pages/PlaylistDetail'
 import ImportPlaylist from './pages/ImportPlaylist'
 import Inbox from './pages/Inbox'
 import AdminLlm from './pages/AdminLlm'
+import EmbedRemote from './pages/EmbedRemote'
 
 export default function App() {
   const { currentUser, loading } = useUser()
+
+  // Route d'embed sans auth (integration tierce, ex: carte iframe Home
+  // Assistant) : court-circuite le layout et le gate profil.
+  const embedMatch = window.location.pathname.match(/^\/embed\/remote\/(.+)$/)
+  if (embedMatch) return <EmbedRemote ip={decodeURIComponent(embedMatch[1])} />
 
   if (loading) return null
   if (!currentUser) return <ProfileSelect />
